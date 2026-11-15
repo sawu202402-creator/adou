@@ -55,21 +55,22 @@ export type RangeShape =
 
 export type AttackPattern =
   | 'none'
-  | 'cleave'
+  | 'single_chop'
   | 'pierce_lance'
-  | 'cavalry_slash'
-  | 'arrow'
-  | 'mortar_aoe'
-  | 'dragon_sweep'
-  | 'jade_execute'
+  | 'cavalry_aoe'
+  | 'focus_arrow'
+  | 'mortar_siege'
+  | 'dragon_boomerang'
+  | 'crescent_execute'
   | 'roar_quake'
   | 'chain_lightning'
-  | 'lotus_blizzard'
-  | 'phoenix_volley';
+  | 'frost_vortex'
+  | 'phoenix_multishot';
 
 export interface UnitDef {
   id: UnitId;
   category: TileCategory;
+  cellSpan: 1 | 2;
   heroKey?: HeroKey;
   spriteKey: string;
   accentColor: string;
@@ -94,12 +95,19 @@ export interface TileUnit {
   uid: number;
   unitId: UnitId;
   tier: number; // 1..5 merge rarity tier
+  cellSpan: 1 | 2; // 1 for troops/puzzle pieces, 2 for Awakened Generals (2x1 or 1x2)!
+  anchorCol: number;
+  anchorRow: number;
+  secCol: number;
+  secRow: number;
   combatLevel: number; // 1..12 combat XP level for Awakened Generals!
   xp: number;
   maxXp: number;
   levelUpAnimTimer: number;
   cooldown: number;
   attackCount: number;
+  focusTargetId: number;
+  focusStacks: number;
   recoilTimer: number;
   recoilAngle: number;
   mergeAnimTimer: number;

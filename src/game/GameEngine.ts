@@ -58,6 +58,7 @@ export interface EnemyEntity {
   speed: number;
   armor: number;
   armorBrokenTimer: number;
+  brittleTimer: number;
   rewardRations: number;
   hitFlash: number;
   slowTimer: number;
@@ -75,6 +76,8 @@ export interface EnemyEntity {
 export interface ProjectileEntity {
   side: SideOwner;
   sourceUnitUid?: number;
+  startX: number;
+  startY: number;
   x: number;
   y: number;
   vx: number;
@@ -87,14 +90,20 @@ export interface ProjectileEntity {
     | 'lance'
     | 'mortar'
     | 'dragon'
+    | 'boomerang_lance'
     | 'glaive'
     | 'lotus'
     | 'phoenix';
   color: string;
   damage: number;
   bossBonusMult: number;
+  armorPen: number;
   aoeRadius: number;
+  hitRadiusBonus: number;
   pierceLeft: number;
+  pierceEscalation: number;
+  returning: boolean;
+  spawnZoneOnHit?: 'frost_zone' | 'fire_patch';
   hitIds: Set<number>;
   slowFactor: number;
   slowDur: number;
@@ -105,9 +114,25 @@ export interface ProjectileEntity {
   maxLife: number;
 }
 
+export interface GroundZone {
+  side: SideOwner;
+  sourceUnitUid?: number;
+  kind: 'thunder_sigil' | 'frost_zone' | 'fire_patch';
+  x: number;
+  y: number;
+  radius: number;
+  dps: number;
+  slowFactor: number;
+  tickTimer: number;
+  timer: number;
+  duration: number;
+}
+
 export interface VisualEffect {
   kind:
     | 'slash'
+    | 'heavy_chop'
+    | 'lance_beam'
     | 'ring'
     | 'explosion'
     | 'lightning'
@@ -118,6 +143,8 @@ export interface VisualEffect {
     | 'chest_drop';
   x: number;
   y: number;
+  endX?: number;
+  endY?: number;
   points?: { x: number; y: number }[];
   radius: number;
   color: string;
@@ -229,6 +256,7 @@ export interface RunState {
   spawnTimer: number;
   enemies: EnemyEntity[];
   projectiles: ProjectileEntity[];
+  zones: GroundZone[];
   effects: VisualEffect[];
   floatTexts: FloatingText[];
 
@@ -296,10 +324,10 @@ export class GameEngine {
 
   /**
    * Every summon of 5 bench items becomes progressively more expensive!
-   * Sequence: 10 -> 12 -> 15 -> 18 -> 22 -> 26 -> 31 -> 36 -> 42 -> 48 -> 55 -> 63...
+   * Sequence: 10 -> 13 -> 17 -> 22 -> 28 -> 35 -> 43 -> 52 -> 62 -> 73...
    */
   public computeNextRecruitCost(count: number): number {
-    return 10 + count * 2 + Math.floor((count * (count + 1)) / 5);
+    return 10 + count * 3 + Math.floor((count * (count - 1)) / 2);
   }
 
   // ==================== RUN INITIALIZATION ====================
@@ -364,8 +392,8 @@ export class GameEngine {
         side: 'ai',
         col: stage.aiLane.barricadeCell.col,
         row: stage.aiLane.barricadeCell.row,
-        hp: 290,
-        maxHp: 290,
+        hp: 340,
+        maxHp: 340,
         shakeTimer: 0,
       },
       aiActionTimer: 1.8,
@@ -384,7 +412,7 @@ export class GameEngine {
       talismanMode: false,
       meteorTimer: 7.5,
 
-      ultCharge: 45,
+      ultCharge: 15,
       reviveUsed: false,
       heroScrollAdUsed: false,
       supplyAdCooldown: 0,
@@ -393,6 +421,7 @@ export class GameEngine {
       spawnTimer: 0,
       enemies: [],
       projectiles: [],
+      zones: [],
       effects: [],
       floatTexts: [],
 
@@ -410,31 +439,31 @@ export class GameEngine {
       selectedUnitInfo: null,
     };
 
-    // Starter 5-slot War-Camp Bench (like reference screenshot: troops + 1 puzzle piece, and random chance for a starter shovel!)
+    // Starter 5-slot War-Camp Bench (troops + 1 puzzle piece, and 22% chance for a lucky starter shovel!)
     const starterHero: HeroKey = 'zhaoyun';
     this.state.bench[0] = this.makeTile('blade', 1);
     this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
     this.state.bench[2] = this.makeTile('lancer', 1);
     this.state.bench[3] = this.makeTile('archer', 1);
-    if (Math.random() < 0.45) {
+    if (Math.random() < 0.22) {
       this.state.bench[4] = this.makeTile('shovel', 1);
       this.state.benchShovelRolledOnce = true;
     } else {
       this.state.bench[4] = this.makeTile('spear', 1);
     }
 
-    // Place 1 starter Cavalry on a deploy pedestal adjacent to road
+    // Place 1 starter Spearman on a deploy pedestal adjacent to road
     const playerDeploys = this.getSideCells('player', 'deploy');
     if (playerDeploys.length > 0) {
       const roadAdj = playerDeploys[playerDeploys.length - 1];
-      this.state.board[roadAdj.row][roadAdj.col] = this.makeTile('lancer', 1);
+      this.placeBoardUnit(this.state, this.makeTile('spear', 1), roadAdj.col, roadAdj.row);
     }
 
     // Seed Rival AI 2 starting tiles on Top Half deploy cells
     const aiDeploys = this.getSideCells('ai', 'deploy');
     if (aiDeploys.length >= 2) {
-      this.state.board[aiDeploys[0].row][aiDeploys[0].col] = this.makeTile('lancer', 1);
-      this.state.board[aiDeploys[1].row][aiDeploys[1].col] = this.makeTile('archer', 1);
+      this.placeBoardUnit(this.state, this.makeTile('lancer', 1), aiDeploys[0].col, aiDeploys[0].row);
+      this.placeBoardUnit(this.state, this.makeTile('archer', 1), aiDeploys[1].col, aiDeploys[1].row);
     }
 
     this.recalcSynergies();
@@ -442,21 +471,200 @@ export class GameEngine {
   }
 
   private makeTile(unitId: UnitId, tier: number, combatLevel = 1): TileUnit {
+    const def = UNITS[unitId];
     return {
       uid: this.nextUid++,
       unitId,
       tier,
+      cellSpan: def.cellSpan,
+      anchorCol: -1,
+      anchorRow: -1,
+      secCol: -1,
+      secRow: -1,
       combatLevel,
       xp: 0,
       maxXp: getHeroXpForNextLevel(combatLevel),
       levelUpAnimTimer: 0,
-      cooldown: Math.random() * 0.3,
+      cooldown: Math.random() * 0.25,
       attackCount: 0,
+      focusTargetId: -1,
+      focusStacks: 0,
       recoilTimer: 0,
       recoilAngle: 0,
       mergeAnimTimer: 0.25,
       frenzyTimer: 0,
     };
+  }
+
+  // ==================== 2-CELL GENERAL BOARD FOOTPRINT HELPERS ====================
+
+  public isPrimaryBoardCell(u: TileUnit, col: number, row: number): boolean {
+    return u.cellSpan === 1 || (u.anchorCol === col && u.anchorRow === row);
+  }
+
+  public getUnitBoardCenter(u: TileUnit, fallbackCol: number, fallbackRow: number): { x: number; y: number } {
+    if (u.cellSpan === 2 && u.anchorCol >= 0 && u.secCol >= 0) {
+      return {
+        x: (u.anchorCol + u.secCol) * 0.5 + 0.5,
+        y: (u.anchorRow + u.secRow) * 0.5 + 0.5,
+      };
+    }
+    return { x: fallbackCol + 0.5, y: fallbackRow + 0.5 };
+  }
+
+  private placeBoardUnit(
+    s: RunState,
+    u: TileUnit,
+    c1: number,
+    r1: number,
+    c2 = -1,
+    r2 = -1
+  ): void {
+    if (u.cellSpan === 2 && c2 >= 0 && r2 >= 0) {
+      const firstIsTopLeft = r1 < r2 || (r1 === r2 && c1 <= c2);
+      const aC = firstIsTopLeft ? c1 : c2;
+      const aR = firstIsTopLeft ? r1 : r2;
+      const bC = firstIsTopLeft ? c2 : c1;
+      const bR = firstIsTopLeft ? r2 : r1;
+      u.anchorCol = aC;
+      u.anchorRow = aR;
+      u.secCol = bC;
+      u.secRow = bR;
+      s.board[aR][aC] = u;
+      s.board[bR][bC] = u;
+    } else {
+      u.anchorCol = c1;
+      u.anchorRow = r1;
+      u.secCol = -1;
+      u.secRow = -1;
+      s.board[r1][c1] = u;
+    }
+  }
+
+  private removeBoardUnit(s: RunState, u: TileUnit): void {
+    if (u.anchorRow >= 0 && u.anchorCol >= 0 && s.board[u.anchorRow]?.[u.anchorCol]?.uid === u.uid) {
+      s.board[u.anchorRow][u.anchorCol] = null;
+    }
+    if (
+      u.cellSpan === 2 &&
+      u.secRow >= 0 &&
+      u.secCol >= 0 &&
+      s.board[u.secRow]?.[u.secCol]?.uid === u.uid
+    ) {
+      s.board[u.secRow][u.secCol] = null;
+    }
+    u.anchorCol = -1;
+    u.anchorRow = -1;
+    u.secCol = -1;
+    u.secRow = -1;
+  }
+
+  /**
+   * Finds an orthogonally adjacent deploy cell on `side` next to `(col, row)`:
+   * - Priority 1: empty cell (or holding `ignoreUid`)
+   * - Priority 2 (if `allowDisplaceOneCell`): cell holding a 1x1 unit
+   */
+  private findAdjacentDeployPartner(
+    s: RunState,
+    side: SideOwner,
+    col: number,
+    row: number,
+    preferHoriz: boolean,
+    allowDisplaceOneCell: boolean,
+    ignoreUid?: number
+  ): { col: number; row: number } | null {
+    const rMin = side === 'ai' ? 0 : s.stage.dividerRow;
+    const rMax = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
+    const dirs = preferHoriz
+      ? [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]
+      : [
+          [0, 1],
+          [0, -1],
+          [1, 0],
+          [-1, 0],
+        ];
+
+    for (const [dc, dr] of dirs) {
+      const nc = col + dc;
+      const nr = row + dr;
+      if (nc < 0 || nc >= s.stage.cols || nr < rMin || nr >= rMax) continue;
+      if (s.cells[nr][nc] !== 'deploy') continue;
+      const occ = s.board[nr][nc];
+      if (!occ || occ.uid === ignoreUid) return { col: nc, row: nr };
+    }
+
+    if (allowDisplaceOneCell) {
+      for (const [dc, dr] of dirs) {
+        const nc = col + dc;
+        const nr = row + dr;
+        if (nc < 0 || nc >= s.stage.cols || nr < rMin || nr >= rMax) continue;
+        if (s.cells[nr][nc] !== 'deploy') continue;
+        const occ = s.board[nr][nc];
+        if (occ && occ.cellSpan === 1) return { col: nc, row: nr };
+      }
+    }
+
+    return null;
+  }
+
+  private findEmptyAdjacentDeployPair(
+    s: RunState,
+    side: SideOwner
+  ): { c1: number; r1: number; c2: number; r2: number } | null {
+    const empties = this.getSideCells(side, 'deploy').filter((pt) => s.board[pt.row][pt.col] === null);
+    // Prefer pairs closer to road!
+    empties.sort((a, b) => {
+      const aRoad = this.cellHasRoadInMelee(s, side, a.col, a.row) ? 0 : 1;
+      const bRoad = this.cellHasRoadInMelee(s, side, b.col, b.row) ? 0 : 1;
+      return aRoad - bRoad;
+    });
+
+    for (const pt of empties) {
+      const partner = this.findAdjacentDeployPartner(s, side, pt.col, pt.row, true, false);
+      if (partner) {
+        return { c1: pt.col, r1: pt.row, c2: partner.col, r2: partner.row };
+      }
+    }
+    return null;
+  }
+
+  public previewTwoCellPlacement(
+    col: number,
+    row: number,
+    preferHoriz: boolean,
+    ignoreUid?: number
+  ): { c1: number; r1: number; c2: number; r2: number } | null {
+    const s = this.state;
+    if (!s) return null;
+    if (col < 0 || col >= s.stage.cols || row < s.stage.dividerRow || row >= s.stage.rows) {
+      return null;
+    }
+    if (s.cells[row][col] !== 'deploy') return null;
+
+    const cur = s.board[row][col];
+    if (cur && cur.cellSpan === 2 && cur.uid !== ignoreUid) {
+      return { c1: cur.anchorCol, r1: cur.anchorRow, c2: cur.secCol, r2: cur.secRow };
+    }
+
+    const partner = this.findAdjacentDeployPartner(
+      s,
+      'player',
+      col,
+      row,
+      preferHoriz,
+      true,
+      ignoreUid
+    );
+    if (!partner) return null;
+    const firstTopLeft = row < partner.row || (row === partner.row && col <= partner.col);
+    return firstTopLeft
+      ? { c1: col, r1: row, c2: partner.col, r2: partner.row }
+      : { c1: partner.col, r1: partner.row, c2: col, r2: row };
   }
 
   private setSelectedInfoFromUnit(u: TileUnit | null): void {
@@ -576,9 +784,9 @@ export class GameEngine {
     if (s.supplyAdCooldown > 0) s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
     if (s.exorciseCooldown > 0) s.exorciseCooldown = Math.max(0, s.exorciseCooldown - dt);
 
-    // Passive Granary Steamed Bun income
+    // Passive Granary Steamed Bun income (tighter economy so Farm upgrades & merges truly matter!)
     const meta = SaveManager.getEffectiveBonuses();
-    const rationsPerSec = 1.15 + (s.farmLevel - 1) * 0.72 + meta.passiveRationBonus;
+    const rationsPerSec = 0.78 + (s.farmLevel - 1) * 0.54 + meta.passiveRationBonus;
     s.passiveRationAcc += rationsPerSec * dt;
     if (s.passiveRationAcc >= 1) {
       const whole = Math.floor(s.passiveRationAcc);
@@ -587,7 +795,7 @@ export class GameEngine {
     }
 
     // Passive 神兵符 charge
-    s.ultCharge = Math.min(100, s.ultCharge + dt * 2.0);
+    s.ultCharge = Math.min(100, s.ultCharge + dt * 1.15);
 
     // Passive Meteor Tome Skill (天降陨石)
     if (meta.meteorLevel > 0 && s.wavePhase === 'combat') {
@@ -606,6 +814,7 @@ export class GameEngine {
 
     this.updateBoardUnits(s, dt);
     this.updateProjectiles(s, dt);
+    this.updateGroundZones(s, dt);
     this.updateEnemies(s, dt, meta.roadSlowRatio);
     this.updateEffectsAndTexts(s, dt);
 
@@ -669,11 +878,11 @@ export class GameEngine {
         const aiRemaining = !s.aiCollapsed && s.enemies.some((e) => e.side === 'ai');
         if (!playerRemaining && !aiRemaining) {
           if (s.maxWaves !== null && s.wave >= s.maxWaves) {
-            this.finishRun(true, false);
+            this.finishRun(true, s.aiCollapsed);
           } else {
-            s.rations += 15 + s.farmLevel * 3 + Math.floor(s.wave * 1.5);
+            s.rations += 10 + s.farmLevel * 3 + Math.floor(s.wave * 1.2);
             s.wavePhase = 'intermission';
-            s.phaseTimer = 2.8;
+            s.phaseTimer = 2.5;
           }
         }
       }
@@ -692,11 +901,11 @@ export class GameEngine {
     const isFinalBossWave = w % 10 === 0;
     const isEliteBossWave = !isFinalBossWave && w % 5 === 0;
 
-    // Progressive wave size & composition escalation!
+    // Steeper wave size & tactical counter-composition escalation!
     const queue: SpawnOrder[] = [];
-    const totalCount = 6 + Math.floor(w * 2.5) + (w >= 6 ? (w - 5) * 2 : 0);
-    const shieldChance = w < 3 ? 0 : Math.min(0.42, 0.2 + (w - 3) * 0.035);
-    const wolfChance = w < 2 ? 0 : Math.min(0.38, 0.24 + (w - 2) * 0.02);
+    const totalCount = 9 + Math.floor(w * 3.1) + (w >= 5 ? (w - 4) * 2 : 0);
+    const shieldChance = w < 3 ? 0 : Math.min(0.46, 0.25 + (w - 3) * 0.035);
+    const wolfChance = w < 2 ? 0 : Math.min(0.4, 0.28 + (w - 2) * 0.02);
 
     for (let i = 0; i < totalCount; i++) {
       let kind: EnemyKind = 'grunt';
@@ -704,7 +913,7 @@ export class GameEngine {
       if (roll < shieldChance) kind = 'shield';
       else if (roll < shieldChance + wolfChance) kind = 'wolf';
 
-      const gap = Math.max(0.28, 1.04 - w * 0.042) * (kind === 'wolf' ? 0.76 : 1.0);
+      const gap = Math.max(0.24, 0.92 - w * 0.045) * (kind === 'wolf' ? 0.72 : 1.0);
       queue.push({
         delay: i === 0 ? 0.2 : gap,
         kind,
@@ -714,12 +923,12 @@ export class GameEngine {
       });
     }
 
-    // Wave 8+ mid-late pressure: add an extra Sorcerer / Armored Captain vanguard!
-    if (w >= 8 && !isEliteBossWave && !isFinalBossWave) {
+    // Wave 4, 7, 8, 9 mid-wave Elite Armored / Sorcerer Captains!
+    if ((w === 4 || w >= 7) && !isEliteBossWave && !isFinalBossWave) {
       queue.push({
-        delay: 0.9,
-        kind: 'zhangjiao',
-        bossType: 'zhangbao',
+        delay: 0.85,
+        kind: w === 4 ? 'shield' : 'zhangjiao',
+        bossType: w === 4 ? 'none' : 'zhangbao',
         isBoss: false,
         isMiniBoss: true,
       });
@@ -788,50 +997,50 @@ export class GameEngine {
     order: SpawnOrder
   ): void {
     const w = s.wave;
-    const stageMult = 1 + s.stage.index * 0.22;
-    // Progressive difficulty ramp: gentle W1-2, firm W3-5, steep W6-10+!
-    const lateSurge = w <= 2 ? 1.0 : 1 + (w - 2) * 0.14;
-    const waveMult = Math.pow(1.28, w - 1) * lateSurge * stageMult;
-    const spdScale = Math.min(1.45, 1 + (w - 1) * 0.028);
+    const stageMult = 1 + s.stage.index * 0.3;
+    // Firm difficulty ramp demanding counter-troops, merges, and leveled 2-cell Generals!
+    const lateSurge = w <= 2 ? 1.0 : 1 + Math.pow(w - 2, 1.22) * 0.16;
+    const waveMult = Math.pow(1.33, w - 1) * lateSurge * stageMult;
+    const spdScale = Math.min(1.55, 1 + (w - 1) * 0.034);
 
-    let hp = 62 * waveMult;
-    let speed = 0.92 * spdScale;
-    let armor = Math.min(0.18, Math.max(0, (w - 4) * 0.02));
-    let reward = 3 + Math.floor(w / 4);
+    let hp = 86 * waveMult;
+    let speed = 0.96 * spdScale;
+    let armor = Math.min(0.24, Math.max(0, (w - 3) * 0.03));
+    let reward = w <= 4 ? 2 : 3;
     let radius = 0.3;
 
     if (order.kind === 'wolf') {
-      hp = 44 * waveMult;
-      speed = 1.46 * spdScale;
+      hp = 58 * waveMult;
+      speed = 1.6 * spdScale;
       armor = 0;
-      reward = 3 + Math.floor(w / 4);
+      reward = 2;
       radius = 0.28;
     } else if (order.kind === 'shield') {
-      hp = 142 * waveMult;
-      speed = 0.68 * spdScale;
-      armor = Math.min(0.45, 0.3 + Math.max(0, w - 3) * 0.02);
-      reward = 5 + Math.floor(w / 3);
-      radius = 0.34;
+      hp = (order.isMiniBoss ? 360 : 225) * waveMult;
+      speed = 0.72 * spdScale;
+      armor = Math.min(0.62, 0.46 + Math.max(0, w - 3) * 0.022);
+      reward = order.isMiniBoss ? 14 : 4;
+      radius = order.isMiniBoss ? 0.39 : 0.34;
     }
 
     if (order.bossType === 'zhangbao') {
-      hp = 460 * waveMult;
-      speed = 0.56 * spdScale;
-      armor = 0.18;
-      reward = 24;
-      radius = 0.4;
+      hp = 590 * waveMult;
+      speed = 0.6 * spdScale;
+      armor = 0.28;
+      reward = 22;
+      radius = 0.41;
     } else if (order.bossType === 'zhangjiao') {
-      hp = 840 * waveMult;
-      speed = 0.55 * spdScale;
-      armor = 0.22;
-      reward = 45;
+      hp = 1080 * waveMult;
+      speed = 0.58 * spdScale;
+      armor = 0.32;
+      reward = 42;
       radius = 0.44;
     } else if (order.bossType === 'lubu') {
-      hp = 980 * waveMult;
-      speed = 0.58 * spdScale;
-      armor = 0.38;
-      reward = 50;
-      radius = 0.45;
+      hp = 1260 * waveMult;
+      speed = 0.62 * spdScale;
+      armor = 0.46;
+      reward = 48;
+      radius = 0.46;
     }
 
     const wp0 = lane.waypoints[0];
@@ -851,6 +1060,7 @@ export class GameEngine {
       speed,
       armor,
       armorBrokenTimer: 0,
+      brittleTimer: 0,
       rewardRations: reward,
       hitFlash: 0,
       slowTimer: 0,
@@ -874,6 +1084,7 @@ export class GameEngine {
     s.aiActionTimer = 2.4 + Math.random() * 1.1;
 
     const rMax = s.stage.dividerRow;
+    const seenUids = new Set<number>();
     const occupied: { col: number; row: number; unit: TileUnit }[] = [];
     const emptyDeploys: { col: number; row: number }[] = [];
 
@@ -881,44 +1092,75 @@ export class GameEngine {
       for (let c = 0; c < s.stage.cols; c++) {
         if (s.cells[r][c] === 'deploy') {
           const u = s.board[r][c];
-          if (u) occupied.push({ col: c, row: r, unit: u });
-          else emptyDeploys.push({ col: c, row: r });
+          if (u) {
+            if (!seenUids.has(u.uid)) {
+              seenUids.add(u.uid);
+              occupied.push({ col: u.anchorCol >= 0 ? u.anchorCol : c, row: u.anchorRow >= 0 ? u.anchorRow : r, unit: u });
+            }
+          } else {
+            emptyDeploys.push({ col: c, row: r });
+          }
         }
       }
     }
 
-    // 1) Fuse matching Puzzle Piece I + Puzzle Piece II into Awakened General!
+    // 1) Fuse matching Puzzle Piece I + Puzzle Piece II into a 2-CELL Awakened General!
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'awaken') {
-          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier, 1);
-          s.board[a.row][a.col] = null;
-          this.spawnCombineFX(b.col + 0.5, b.row + 0.5, 'awaken', res.resultId);
-          const heroTxt = getUnitDisplayText(res.resultId);
-          this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.3);
-          this.recalcSynergies();
-          return;
+          this.removeBoardUnit(s, a.unit);
+          this.removeBoardUnit(s, b.unit);
+
+          const adjToB = this.findAdjacentDeployPartner(s, 'ai', b.col, b.row, true, true);
+          if (adjToB) {
+            const displaced = s.board[adjToB.row][adjToB.col];
+            if (displaced && displaced.cellSpan === 1) {
+              this.removeBoardUnit(s, displaced);
+              this.placeBoardUnit(s, displaced, a.col, a.row);
+            }
+            const heroTile = this.makeTile(res.resultId, res.resultTier, 1);
+            this.placeBoardUnit(s, heroTile, b.col, b.row, adjToB.col, adjToB.row);
+            const ctr = this.getUnitBoardCenter(heroTile, b.col, b.row);
+            this.spawnCombineFX(ctr.x, ctr.y, 'awaken', res.resultId);
+            const heroTxt = getUnitDisplayText(res.resultId);
+            this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.3);
+            this.recalcSynergies();
+            return;
+          } else {
+            // Restore if no valid 2-cell pair around b yet
+            this.placeBoardUnit(s, a.unit, a.col, a.row);
+            this.placeBoardUnit(s, b.unit, b.col, b.row);
+          }
         }
       }
     }
 
-    // 2) Merge identical same-tier units
+    // 2) Merge identical same-tier units (supports both 1x1 troops and 2-cell Generals!)
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'merge') {
-          const nextCombatLvl =
-            UNITS[res.resultId].category === 'awakened'
-              ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(a.unit.combatLevel, b.unit.combatLevel) + 1)
-              : 1;
-          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier, nextCombatLvl);
-          s.board[a.row][a.col] = null;
-          this.spawnCombineFX(b.col + 0.5, b.row + 0.5, 'merge', res.resultId);
+          const isAwk = UNITS[res.resultId].category === 'awakened';
+          const nextCombatLvl = isAwk
+            ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(a.unit.combatLevel, b.unit.combatLevel) + 1)
+            : 1;
+          const bAnchorC = b.unit.anchorCol >= 0 ? b.unit.anchorCol : b.col;
+          const bAnchorR = b.unit.anchorRow >= 0 ? b.unit.anchorRow : b.row;
+          const bSecC = b.unit.secCol;
+          const bSecR = b.unit.secRow;
+
+          this.removeBoardUnit(s, a.unit);
+          this.removeBoardUnit(s, b.unit);
+
+          const merged = this.makeTile(res.resultId, res.resultTier, nextCombatLvl);
+          this.placeBoardUnit(s, merged, bAnchorC, bAnchorR, bSecC, bSecR);
+          const ctr = this.getUnitBoardCenter(merged, bAnchorC, bAnchorR);
+          this.spawnCombineFX(ctr.x, ctr.y, 'merge', res.resultId);
           this.recalcSynergies();
           return;
         }
@@ -926,7 +1168,7 @@ export class GameEngine {
     }
 
     // 3) Excavate outer-ring locked cells progressively
-    const targetExcavations = Math.min(4, Math.floor((s.wave + 1) / 2));
+    const targetExcavations = Math.min(5, Math.floor((s.wave + 1) / 2));
     if (s.aiExcavated < targetExcavations) {
       const lockedCells = this.getSideCells('ai', 'locked');
       if (lockedCells.length > 0) {
@@ -947,9 +1189,9 @@ export class GameEngine {
     }
 
     // 4) Emergency AI barricade repair once
-    if (!s.aiFortifiedOnce && s.aiBarricade.hp < s.aiBarricade.maxHp * 0.3 && s.aiHearts <= 5) {
+    if (!s.aiFortifiedOnce && s.aiBarricade.hp < s.aiBarricade.maxHp * 0.35 && s.aiHearts <= 5) {
       s.aiFortifiedOnce = true;
-      s.aiBarricade.hp = Math.min(s.aiBarricade.maxHp, s.aiBarricade.hp + s.aiBarricade.maxHp * 0.6);
+      s.aiBarricade.hp = Math.min(s.aiBarricade.maxHp, s.aiBarricade.hp + s.aiBarricade.maxHp * 0.65);
       s.aiHearts = Math.min(s.aiMaxHearts, s.aiHearts + 1);
       return;
     }
@@ -965,14 +1207,14 @@ export class GameEngine {
       if (unitId === 'blade' && !this.cellHasRoadInMelee(s, 'ai', slot.col, slot.row)) {
         unitId = 'archer';
       }
-      s.board[slot.row][slot.col] = this.makeTile(unitId, 1);
+      this.placeBoardUnit(s, this.makeTile(unitId, 1), slot.col, slot.row);
       this.recalcSynergies();
       return;
     }
 
-    // 6) Anti-deadlock partner cycle when full
+    // 6) Anti-deadlock partner cycle when full (only replace 1x1 low-tier tiles!)
     const lowTiles = occupied.filter(
-      (o) => o.unit.tier === 1 && UNITS[o.unit.unitId].category !== 'awakened'
+      (o) => o.unit.cellSpan === 1 && o.unit.tier === 1 && UNITS[o.unit.unitId].category !== 'awakened'
     );
     if (lowTiles.length >= 2) {
       const victim = lowTiles[0];
@@ -984,7 +1226,8 @@ export class GameEngine {
       } else if (partnerDef.category === 'shard2' && partnerDef.heroKey) {
         replacementId = `shard1_${partnerDef.heroKey}`;
       }
-      s.board[victim.row][victim.col] = this.makeTile(replacementId, 1);
+      this.removeBoardUnit(s, victim.unit);
+      this.placeBoardUnit(s, this.makeTile(replacementId, 1), victim.col, victim.row);
       this.recalcSynergies();
     }
   }
@@ -1116,14 +1359,13 @@ export class GameEngine {
       s.bench[idx] = this.makeTile(this.rollUnitForSide('player'), 1);
     }
 
-    // Random Golden Shovel appearance inside one of the newly summoned bench slots!
+    // Random Golden Shovel appearance inside one of the newly summoned bench slots (scarce so board space is precious!)
     const hasLockedStone = this.getSideCells('player', 'locked').length > 0;
     const alreadyHasBenchShovel = s.bench.some((u) => u?.unitId === 'shovel');
     if (hasLockedStone && !alreadyHasBenchShovel && indicesToFill.length > 0) {
       const meta = SaveManager.getEffectiveBonuses();
-      const shovelProb = Math.min(0.62, 0.34 + meta.benchShovelChanceBonus * 3);
-      const forceEarlyPity = !s.benchShovelRolledOnce && s.recruitCount >= 2;
-      if (forceEarlyPity || Math.random() < shovelProb) {
+      const shovelProb = Math.min(0.45, 0.2 + meta.benchShovelChanceBonus * 2.5);
+      if (Math.random() < shovelProb) {
         const pickSlot = indicesToFill[Math.floor(Math.random() * indicesToFill.length)];
         s.bench[pickSlot] = this.makeTile('shovel', 1);
         s.benchShovelRolledOnce = true;
@@ -1168,8 +1410,8 @@ export class GameEngine {
 
   public getFarmCost(): number {
     const s = this.state;
-    if (!s) return 18;
-    return 18 + (s.farmLevel - 1) * 14;
+    if (!s) return 20;
+    return 20 + (s.farmLevel - 1) * 18;
   }
 
   public upgradeFarm(): void {
@@ -1190,7 +1432,7 @@ export class GameEngine {
   }
 
   public getExorciseCost(): number {
-    return 20;
+    return 28;
   }
 
   /**
@@ -1212,7 +1454,7 @@ export class GameEngine {
     if (foes.length === 0) return;
 
     s.rations -= cost;
-    s.exorciseCooldown = 7.5;
+    s.exorciseCooldown = 12.5;
     s.screenShake = 0.4;
     SoundFX.attack('thunder');
     this.showBanner(t().bannerExorciseCast, 2.2);
@@ -1268,7 +1510,8 @@ export class GameEngine {
         }
       }
       if (best) {
-        this.applyDivineTalismanToUnit(best.u, best.c + 0.5, best.r + 0.5);
+        const center = this.getUnitBoardCenter(best.u, best.c, best.r);
+        this.applyDivineTalismanToUnit(best.u, center.x, center.y);
       } else {
         s.talismanMode = false;
       }
@@ -1407,7 +1650,7 @@ export class GameEngine {
   }
 
   public getFortifyCost(): number {
-    return 26;
+    return 36;
   }
 
   public fortifyLord(): void {
@@ -1419,10 +1662,10 @@ export class GameEngine {
       return;
     }
     s.rations -= cost;
-    s.hearts = Math.min(s.maxHearts, s.hearts + 2);
+    s.hearts = Math.min(s.maxHearts, s.hearts + 1);
     s.playerBarricade.hp = Math.min(
       s.playerBarricade.maxHp,
-      s.playerBarricade.hp + Math.round(s.playerBarricade.maxHp * 0.6)
+      s.playerBarricade.hp + Math.round(s.playerBarricade.maxHp * 0.45)
     );
     s.effects.push({
       kind: 'heal_ring',
@@ -1578,7 +1821,7 @@ export class GameEngine {
     }
   }
 
-  // ==================== COMBAT: CIRCULAR RANGE TARGETING & HERO XP ====================
+  // ==================== COMBAT: 2-CELL CENTERS, DISTINCT TROOPS & GENERAL ATTACKS ====================
 
   private updateBoardUnits(s: RunState, dt: number): void {
     const meta = SaveManager.getEffectiveBonuses();
@@ -1588,12 +1831,14 @@ export class GameEngine {
       if (side === 'ai' && s.aiCollapsed) continue;
 
       const syn = side === 'player' ? s.synBonuses : s.aiSynBonuses;
-      const sideDmgScale = side === 'player' ? meta.damageMult : 0.88;
-      const sideAspdScale = side === 'player' ? meta.aspdMult : 1.0;
+      const sideDmgScale = side === 'player' ? meta.damageMult : 1.12 + s.stage.index * 0.08;
+      const sideAspdScale = side === 'player' ? meta.aspdMult : 1.05;
 
       for (let c = 0; c < s.stage.cols; c++) {
         const u = s.board[r][c];
         if (!u) continue;
+        // 2-Cell Generals occupy 2 cells on s.board — only tick once on their primary anchor cell!
+        if (!this.isPrimaryBoardCell(u, c, r)) continue;
 
         if (u.recoilTimer > 0) u.recoilTimer = Math.max(0, u.recoilTimer - dt);
         if (u.mergeAnimTimer > 0) u.mergeAnimTimer = Math.max(0, u.mergeAnimTimer - dt);
@@ -1604,8 +1849,7 @@ export class GameEngine {
           this.drag?.active &&
           this.drag.movedEnough &&
           this.drag.sourceType === 'board' &&
-          this.drag.col === c &&
-          this.drag.row === r
+          this.drag.unit.uid === u.uid
         ) {
           continue;
         }
@@ -1633,10 +1877,11 @@ export class GameEngine {
         u.cooldown -= dt * speedMult;
         if (u.cooldown > 0) continue;
 
-        const ux = c + 0.5;
-        const uy = r + 0.5;
+        const center = this.getUnitBoardCenter(u, c, r);
+        const ux = center.x;
+        const uy = center.y;
 
-        // Pick target inside circular attack ring (minR .. maxR)!
+        // Pick target inside circular attack ring (minR .. maxR) around unit/plaque center!
         const target = this.pickTargetInCircleRange(
           s,
           side,
@@ -1646,7 +1891,7 @@ export class GameEngine {
           rangeInfo.maxR
         );
         if (!target) {
-          u.cooldown = 0.1;
+          u.cooldown = 0.08;
           continue;
         }
 
@@ -1677,9 +1922,9 @@ export class GameEngine {
           : 0;
         const isSkillStrike = skillPeriod > 0 && u.attackCount % skillPeriod === 0;
 
-        // Awakened Generals gain Combat XP on EVERY attack!
+        // Awakened 2-Cell Generals gain Combat XP on EVERY attack!
         if (def.category === 'awakened') {
-          this.grantHeroCombatXp(s, side, u, ux, uy, isSkillStrike ? 9 : 5);
+          this.grantHeroCombatXp(s, side, u, ux, uy, isSkillStrike ? 8 : 4);
         }
 
         this.executeUnitAttack(
@@ -1693,7 +1938,8 @@ export class GameEngine {
           angle,
           dmg,
           isSkillStrike,
-          weapBonus.isSignature
+          weapBonus.isSignature,
+          rangeInfo.maxR
         );
       }
     }
@@ -1735,7 +1981,8 @@ export class GameEngine {
     angle: number,
     dmg: number,
     isSkill: boolean,
-    hasSigWeapon: boolean
+    hasSigWeapon: boolean,
+    unitMaxRange: number
   ): void {
     const playSfx = side === 'player';
 
@@ -1743,32 +1990,55 @@ export class GameEngine {
       case 'none':
         break;
 
-      case 'cleave': {
+      // 1) 刀兵 (Blade): STRICTLY SINGLE-TARGET! Huge armor-cracking heavy chop!
+      case 'single_chop': {
         if (playSfx) SoundFX.attack('slash');
+        const chopMult = isSkill ? 1.85 : 1.0;
         s.effects.push({
-          kind: 'slash',
+          kind: 'heavy_chop',
+          x: target.x,
+          y: target.y,
+          radius: isSkill ? 0.72 : 0.52,
+          color: isSkill ? '#facc15' : '#dc2626',
+          timer: 0,
+          duration: 0.22,
+          angle,
+        });
+        if (isSkill) {
+          target.armorBrokenTimer = Math.max(target.armorBrokenTimer, 2.5);
+        }
+        this.damageEnemy(
+          s,
+          target,
+          dmg * chopMult,
+          isSkill ? 0.85 : 0.35,
+          isSkill ? '#facc15' : '#ef4444',
+          u.uid
+        );
+        break;
+      }
+
+      // 2) 枪兵 (Spear): STRAIGHT-LINE PIERCE! Escalates +15% DMG per pierced enemy!
+      case 'pierce_lance': {
+        if (playSfx) SoundFX.attack('lance');
+        const travelCells = 3.2;
+        s.effects.push({
+          kind: 'lance_beam',
           x: ux,
           y: uy,
-          radius: 1.25,
-          color: def.accentColor,
+          endX: ux + Math.cos(angle) * travelCells,
+          endY: uy + Math.sin(angle) * travelCells,
+          radius: 0.22,
+          color: '#ef4444',
           timer: 0,
           duration: 0.2,
           angle,
         });
-        for (const e of s.enemies) {
-          if (e.side !== side) continue;
-          if (Math.hypot(e.x - target.x, e.y - target.y) <= 0.95) {
-            this.damageEnemy(s, e, dmg, false, def.accentColor, u.uid);
-          }
-        }
-        break;
-      }
-
-      case 'pierce_lance': {
-        if (playSfx) SoundFX.attack('lance');
         s.projectiles.push({
           side,
           sourceUnitUid: u.uid,
+          startX: ux,
+          startY: uy,
           x: ux,
           y: uy,
           vx: Math.cos(angle) * def.projectileSpeed,
@@ -1779,8 +2049,12 @@ export class GameEngine {
           color: '#dc2626',
           damage: dmg,
           bossBonusMult: 1.0,
+          armorPen: 0.2,
           aoeRadius: 0,
-          pierceLeft: 4 + Math.floor(u.tier / 2),
+          hitRadiusBonus: 0.08,
+          pierceLeft: 5 + u.tier,
+          pierceEscalation: 0.15,
+          returning: false,
           hitIds: new Set(),
           slowFactor: 0,
           slowDur: 0,
@@ -1788,33 +2062,56 @@ export class GameEngine {
           executeRatio: 0,
           burnDps: 0,
           life: 0,
-          maxLife: 0.42,
+          maxLife: travelCells / def.projectileSpeed,
         });
         break;
       }
 
-      case 'cavalry_slash': {
+      // 3) 骑兵 (Cavalry): AREA-OF-EFFECT SWEEP! Splashes cluster around target!
+      case 'cavalry_aoe': {
         if (playSfx) SoundFX.attack('slash');
+        const splashR = (def.aoeRadiusCells || 1.28) + (u.tier - 1) * 0.06;
         s.effects.push({
           kind: 'slash',
           x: target.x,
           y: target.y,
-          radius: 0.95,
+          radius: splashR,
           color: '#38bdf8',
           timer: 0,
-          duration: 0.18,
+          duration: 0.24,
           angle,
         });
+        s.effects.push({
+          kind: 'ring',
+          x: target.x,
+          y: target.y,
+          radius: splashR,
+          color: '#7dd3fc',
+          timer: 0,
+          duration: 0.26,
+        });
         for (const e of s.enemies) {
-          if (e.side === side && Math.hypot(e.x - target.x, e.y - target.y) <= 1.05) {
-            this.damageEnemy(s, e, dmg, false, '#38bdf8', u.uid);
+          if (e.side === side && e.hp > 0 && Math.hypot(e.x - target.x, e.y - target.y) <= splashR) {
+            this.damageEnemy(s, e, dmg, 0, '#38bdf8', u.uid);
+            if (!e.isBoss) {
+              e.slowPower = Math.max(e.slowPower, def.slowFactor || 0.28);
+              e.slowTimer = Math.max(e.slowTimer, def.slowDuration || 0.35);
+            }
           }
         }
         break;
       }
 
-      case 'arrow': {
+      // 4) 弓兵 (Archer): HOMING SINGLE-TARGET + CONSECUTIVE FOCUS MARK STACKING!
+      case 'focus_arrow': {
         if (playSfx) SoundFX.attack('bow');
+        if (u.focusTargetId === target.id) {
+          u.focusStacks = Math.min(5, u.focusStacks + 1);
+        } else {
+          u.focusTargetId = target.id;
+          u.focusStacks = 1;
+        }
+        const focusMult = 1 + (u.focusStacks - 1) * 0.14;
         const p = this.spawnProj(
           s,
           side,
@@ -1824,18 +2121,46 @@ export class GameEngine {
           target,
           'arrow',
           def.accentColor,
-          dmg,
+          dmg * focusMult,
           def.projectileSpeed
         );
         p.bossBonusMult = 1.3;
+        p.armorPen = 0.2;
+
+        // Tier 3+ Marksman fires a rapid twin follow-up arrow at the same focused target!
+        if (u.tier >= 3) {
+          const perpX = -Math.sin(angle) * 0.14;
+          const perpY = Math.cos(angle) * 0.14;
+          const p2 = this.spawnProj(
+            s,
+            side,
+            u.uid,
+            ux + perpX,
+            uy + perpY,
+            target,
+            'arrow',
+            '#65a30d',
+            dmg * 0.55 * focusMult,
+            def.projectileSpeed * 0.92
+          );
+          p2.bossBonusMult = 1.3;
+          p2.armorPen = 0.2;
+        }
         break;
       }
 
-      case 'mortar_aoe': {
+      // 5) 神威炮 (Mortar): PARABOLIC SIEGE SHELL -> ARMOR-PIERCING BLAST + SCORCH ZONE!
+      case 'mortar_siege': {
         if (playSfx) SoundFX.attack('cannon');
+        const flightDur = Math.max(
+          0.26,
+          Math.hypot(target.x - ux, target.y - uy) / def.projectileSpeed
+        );
         s.projectiles.push({
           side,
           sourceUnitUid: u.uid,
+          startX: ux,
+          startY: uy,
           x: ux,
           y: uy,
           vx: 0,
@@ -1843,11 +2168,53 @@ export class GameEngine {
           tx: target.x,
           ty: target.y,
           kind: 'mortar',
-          color: '#d97706',
+          color: '#f97316',
           damage: dmg,
           bossBonusMult: 1.15,
-          aoeRadius: def.aoeRadiusCells || 1.35,
+          armorPen: 0.75,
+          aoeRadius: def.aoeRadiusCells || 1.45,
+          hitRadiusBonus: 0,
           pierceLeft: 1,
+          pierceEscalation: 0,
+          returning: false,
+          spawnZoneOnHit: 'fire_patch',
+          hitIds: new Set(),
+          slowFactor: 0,
+          slowDur: 0,
+          stunDur: 0,
+          executeRatio: 0,
+          burnDps: dmg * 0.24,
+          life: 0,
+          maxLife: flightDur,
+        });
+        break;
+      }
+
+      // HERO 1 — 赵云 (Zhao Yun): BOOMERANG SILVER DRAGON LANCE (Out + Return Double Pierce!)
+      case 'dragon_boomerang': {
+        if (playSfx) SoundFX.attack('lance');
+        const outDist = unitMaxRange + 0.55;
+        s.projectiles.push({
+          side,
+          sourceUnitUid: u.uid,
+          startX: ux,
+          startY: uy,
+          x: ux,
+          y: uy,
+          vx: Math.cos(angle) * def.projectileSpeed,
+          vy: Math.sin(angle) * def.projectileSpeed,
+          tx: ux + Math.cos(angle) * outDist,
+          ty: uy + Math.sin(angle) * outDist,
+          kind: 'boomerang_lance',
+          color: '#38bdf8',
+          damage: dmg * 0.78,
+          bossBonusMult: 1.15,
+          armorPen: 0.7,
+          aoeRadius: 0,
+          hitRadiusBonus: 0.2,
+          pierceLeft: 14,
+          pierceEscalation: 0.08,
+          returning: false,
           hitIds: new Set(),
           slowFactor: 0,
           slowDur: 0,
@@ -1855,49 +2222,37 @@ export class GameEngine {
           executeRatio: 0,
           burnDps: 0,
           life: 0,
-          maxLife: Math.max(0.22, Math.hypot(target.x - ux, target.y - uy) / def.projectileSpeed),
+          maxLife: (outDist / def.projectileSpeed) * 2,
         });
-        break;
-      }
 
-      case 'dragon_sweep': {
-        if (playSfx) SoundFX.attack('lance');
-        s.effects.push({
-          kind: 'slash',
-          x: ux,
-          y: uy,
-          radius: 1.75,
-          color: '#38bdf8',
-          timer: 0,
-          duration: 0.24,
-          angle,
-        });
-        for (const e of s.enemies) {
-          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.9) {
-            this.damageEnemy(s, e, dmg, true, '#38bdf8', u.uid);
-          }
-        }
         if (isSkill) {
-          const spearCount = hasSigWeapon ? 3 : 1;
+          const spearCount = hasSigWeapon ? 5 : 3;
           const allSideFoes = s.enemies.filter((e) => e.side === side && e.hp > 0);
           for (let k = 0; k < spearCount; k++) {
             const spTarget = allSideFoes[k % Math.max(1, allSideFoes.length)] || target;
-            const spAng = Math.atan2(spTarget.y - uy, spTarget.x - ux);
+            const spread = (k - (spearCount - 1) * 0.5) * 0.12;
+            const spAng = Math.atan2(spTarget.y - uy, spTarget.x - ux) + spread;
             s.projectiles.push({
               side,
               sourceUnitUid: u.uid,
+              startX: ux,
+              startY: uy,
               x: ux,
               y: uy,
-              vx: Math.cos(spAng) * 11.5,
-              vy: Math.sin(spAng) * 11.5,
+              vx: Math.cos(spAng) * 12.2,
+              vy: Math.sin(spAng) * 12.2,
               tx: spTarget.x,
               ty: spTarget.y,
               kind: 'dragon',
-              color: '#38bdf8',
-              damage: dmg * 1.65,
-              bossBonusMult: 1.2,
-              aoeRadius: 0.75,
-              pierceLeft: 8,
+              color: '#7dd3fc',
+              damage: dmg * 1.45,
+              bossBonusMult: 1.25,
+              armorPen: 0.85,
+              aoeRadius: 0,
+              hitRadiusBonus: 0.26,
+              pierceLeft: 10,
+              pierceEscalation: 0,
+              returning: false,
               hitIds: new Set(),
               slowFactor: 0,
               slowDur: 0,
@@ -1905,69 +2260,69 @@ export class GameEngine {
               executeRatio: 0,
               burnDps: 0,
               life: 0,
-              maxLife: 0.72,
+              maxLife: 0.75,
             });
           }
         }
         break;
       }
 
-      case 'jade_execute': {
+      // HERO 2 — 关羽 (Guan Yu): WIDE EMERALD CRESCENT BLADE WAVE + MERCILESS EXECUTE!
+      case 'crescent_execute': {
         if (playSfx) SoundFX.attack('slash');
-        const execThresh = hasSigWeapon ? 0.3 : 0.22;
+        const execThresh = hasSigWeapon ? 0.32 : 0.22;
         s.effects.push({
           kind: 'slash',
           x: ux,
           y: uy,
-          radius: 1.75,
+          radius: isSkill ? 1.95 : 1.5,
           color: '#10b981',
           timer: 0,
-          duration: 0.26,
+          duration: 0.28,
           angle,
         });
-        for (const e of s.enemies) {
-          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.85) {
-            if (!e.isBoss && e.hp / e.maxHp <= execThresh) {
-              this.damageEnemy(s, e, e.hp * 2.5, true, '#10b981', u.uid);
-            } else {
-              this.damageEnemy(s, e, dmg, false, '#10b981', u.uid);
-            }
-          }
-        }
-        if (isSkill) {
+
+        const waves = isSkill ? [-0.1, 0.1] : [0];
+        for (const offsetAng of waves) {
+          const wAng = angle + offsetAng;
           s.projectiles.push({
             side,
             sourceUnitUid: u.uid,
+            startX: ux,
+            startY: uy,
             x: ux,
             y: uy,
-            vx: Math.cos(angle) * 9.2,
-            vy: Math.sin(angle) * 9.2,
+            vx: Math.cos(wAng) * def.projectileSpeed,
+            vy: Math.sin(wAng) * def.projectileSpeed,
             tx: target.x,
             ty: target.y,
             kind: 'glaive',
-            color: '#10b981',
-            damage: dmg * 1.55,
-            bossBonusMult: 1.2,
-            aoeRadius: 0.75,
-            pierceLeft: 6,
+            color: isSkill ? '#34d399' : '#10b981',
+            damage: dmg * (isSkill ? 1.35 : 1.0),
+            bossBonusMult: target.hp / target.maxHp <= 0.42 ? 2.15 : 1.25,
+            armorPen: isSkill ? 0.75 : 0.5,
+            aoeRadius: 0,
+            hitRadiusBonus: isSkill ? 0.72 : 0.48,
+            pierceLeft: 8,
+            pierceEscalation: 0,
+            returning: false,
             hitIds: new Set(),
             slowFactor: 0,
             slowDur: 0,
-            stunDur: 0,
+            stunDur: isSkill ? 0.25 : 0,
             executeRatio: execThresh,
             burnDps: 0,
             life: 0,
-            maxLife: 0.62,
+            maxLife: 0.55,
           });
         }
         break;
       }
 
+      // HERO 3 — 张飞 (Zhang Fei): 360° SEISMIC WARCRY PULSE + ARMOR SHRED & KNOCKBACK STUN!
       case 'roar_quake': {
         const rad =
-          (def.aoeRadiusCells || 2.2) *
-          (1 + (u.combatLevel - 1) * 0.03) *
-          (isSkill ? (hasSigWeapon ? 1.4 : 1.2) : 1.0);
+          unitMaxRange * (isSkill ? (hasSigWeapon ? 1.28 : 1.15) : 1.0);
         if (playSfx) SoundFX.attack(isSkill ? 'cannon' : 'slash');
         s.effects.push({
           kind: 'ring',
@@ -1976,38 +2331,56 @@ export class GameEngine {
           radius: rad,
           color: isSkill ? '#f97316' : '#c2410c',
           timer: 0,
-          duration: 0.34,
+          duration: 0.36,
         });
+        if (isSkill) {
+          s.effects.push({
+            kind: 'ring',
+            x: ux,
+            y: uy,
+            radius: rad * 0.7,
+            color: '#facc15',
+            timer: 0,
+            duration: 0.28,
+          });
+        }
         for (const e of s.enemies) {
-          if (e.side !== side) continue;
+          if (e.side !== side || e.hp <= 0) continue;
           if (Math.hypot(e.x - ux, e.y - uy) <= rad) {
-            this.damageEnemy(s, e, dmg * (isSkill ? 1.45 : 1.0), isSkill, '#f97316', u.uid);
-            if (isSkill) {
-              e.stunTimer = Math.max(e.stunTimer, (def.stunDuration || 1.15) + (hasSigWeapon ? 0.45 : 0));
-              if (hasSigWeapon) e.armorBrokenTimer = 5.0;
+            e.armorBrokenTimer = Math.max(e.armorBrokenTimer, hasSigWeapon ? 4.5 : 1.8);
+            this.damageEnemy(s, e, dmg * (isSkill ? 1.5 : 1.0), 0.45, '#f97316', u.uid);
+            if (isSkill && e.hp > 0) {
+              e.stunTimer = Math.max(
+                e.stunTimer,
+                (def.stunDuration || 1.25) + (hasSigWeapon ? 0.45 : 0)
+              );
+              this.knockbackEnemyAlongLane(s, e, e.isBoss ? 0.35 : 0.72);
             }
           }
         }
         break;
       }
 
+      // HERO 4 — 诸葛亮 (Zhuge Liang): INSTANT CHAIN LIGHTNING + EIGHT-TRIGRAMS THUNDER ZONE!
       case 'chain_lightning': {
         if (playSfx) SoundFX.attack('thunder');
-        const maxJumps = (isSkill ? 5 : 3) + (hasSigWeapon ? 3 : 0);
+        const maxJumps = (isSkill ? 6 : 4) + (hasSigWeapon ? 3 : 0);
         const visited = new Set<number>();
         const pts: { x: number; y: number }[] = [{ x: ux, y: uy }];
         let cur: EnemyEntity | null = target;
-        let curDmg = dmg * (isSkill ? 1.35 : 1.0);
+        let curDmg = dmg * (isSkill ? 1.3 : 1.0);
 
         for (let j = 0; j < maxJumps && cur; j++) {
           visited.add(cur.id);
           pts.push({ x: cur.x, y: cur.y });
-          this.damageEnemy(s, cur, curDmg, true, '#eab308', u.uid);
-          if (hasSigWeapon && isSkill) cur.stunTimer = Math.max(cur.stunTimer, 0.35);
+          this.damageEnemy(s, cur, curDmg, 1.0, '#eab308', u.uid);
+          if (hasSigWeapon && isSkill && cur.hp > 0) {
+            cur.stunTimer = Math.max(cur.stunTimer, 0.4);
+          }
           curDmg *= 0.88;
 
           let nextEnemy: EnemyEntity | null = null;
-          let bestD = 2.8;
+          let bestD = 2.9;
           for (const cand of s.enemies) {
             if (cand.side !== side || visited.has(cand.id) || cand.hp <= 0) continue;
             const d = Math.hypot(cand.x - cur.x, cand.y - cur.y);
@@ -2027,12 +2400,29 @@ export class GameEngine {
           radius: 1,
           color: '#facc15',
           timer: 0,
-          duration: 0.24,
+          duration: 0.25,
         });
+
+        if (isSkill) {
+          s.zones.push({
+            side,
+            sourceUnitUid: u.uid,
+            kind: 'thunder_sigil',
+            x: target.x,
+            y: target.y,
+            radius: hasSigWeapon ? 1.7 : 1.45,
+            dps: dmg * 0.58,
+            slowFactor: 0,
+            tickTimer: 0.15,
+            timer: 0,
+            duration: 2.6,
+          });
+        }
         break;
       }
 
-      case 'lotus_blizzard': {
+      // HERO 5 — 甄姬 (Zhen Ji): FROST VORTEX POOL + DEEP-FREEZE BRITTLE VULNERABILITY!
+      case 'frost_vortex': {
         if (playSfx) SoundFX.attack('frost');
         const p = this.spawnProj(
           s,
@@ -2046,32 +2436,63 @@ export class GameEngine {
           dmg * (isSkill ? 1.4 : 1.0),
           def.projectileSpeed
         );
-        p.aoeRadius = def.aoeRadiusCells || 1.55;
-        p.slowFactor = def.slowFactor || 0.5;
+        p.armorPen = 0.65;
+        p.aoeRadius = (def.aoeRadiusCells || 1.5) * (isSkill ? 1.2 : 1.0);
+        p.slowFactor = def.slowFactor || 0.52;
         p.slowDur = def.slowDuration || 2.6;
-        if (isSkill) p.stunDur = hasSigWeapon ? 1.25 : def.stunDuration || 0.85;
+        p.spawnZoneOnHit = 'frost_zone';
+        if (isSkill) {
+          p.stunDur = hasSigWeapon ? 1.55 : def.stunDuration || 1.1;
+        }
         break;
       }
 
-      case 'phoenix_volley': {
+      // HERO 6 — 孙尚香 (Sun Shangxiang): MULTI-TARGET SPLIT VOLLEY + METEORIC FIRE RAIN!
+      case 'phoenix_multishot': {
         if (playSfx) SoundFX.attack('bow');
-        const maxArrows = (isSkill ? 4 : 2) + (hasSigWeapon ? 2 : 0);
-        const targets = s.enemies.filter((e) => e.side === side && e.hp > 0).slice(0, maxArrows);
-        if (targets.length === 0) targets.push(target);
-        for (const tEnemy of targets) {
+        const maxArrows = (isSkill ? 5 : 3) + (hasSigWeapon ? 2 : 0);
+        const inRangeFoes = s.enemies
+          .filter(
+            (e) =>
+              e.side === side &&
+              e.hp > 0 &&
+              Math.hypot(e.x - ux, e.y - uy) <= unitMaxRange + 0.35
+          )
+          .sort((a, b) => b.waypointIndex + b.segProgress - (a.waypointIndex + a.segProgress));
+
+        const pool = inRangeFoes.length > 0 ? inRangeFoes : [target];
+        for (let k = 0; k < maxArrows; k++) {
+          const tEnemy = pool[k % pool.length];
           const p = this.spawnProj(
             s,
             side,
             u.uid,
-            ux,
-            uy,
+            ux + (Math.random() - 0.5) * 0.25,
+            uy + (Math.random() - 0.5) * 0.25,
             tEnemy,
             'phoenix',
             '#ef4444',
-            dmg * (isSkill ? 1.25 : 0.95),
+            dmg * (isSkill ? 1.15 : 0.88),
             def.projectileSpeed
           );
-          p.burnDps = dmg * (hasSigWeapon ? 0.55 : 0.3);
+          p.armorPen = 0.45;
+          p.burnDps = dmg * (hasSigWeapon ? 0.42 : 0.24);
+        }
+
+        if (isSkill) {
+          s.zones.push({
+            side,
+            sourceUnitUid: u.uid,
+            kind: 'fire_patch',
+            x: target.x,
+            y: target.y,
+            radius: hasSigWeapon ? 1.75 : 1.48,
+            dps: dmg * 0.52,
+            slowFactor: 0,
+            tickTimer: 0.15,
+            timer: 0,
+            duration: 2.4,
+          });
         }
         break;
       }
@@ -2094,6 +2515,8 @@ export class GameEngine {
     const p: ProjectileEntity = {
       side,
       sourceUnitUid,
+      startX: ux,
+      startY: uy,
       x: ux,
       y: uy,
       vx: Math.cos(angle) * speed,
@@ -2105,8 +2528,12 @@ export class GameEngine {
       color,
       damage,
       bossBonusMult: 1.0,
+      armorPen: 0,
       aoeRadius: 0,
+      hitRadiusBonus: 0,
       pierceLeft: 1,
+      pierceEscalation: 0,
+      returning: false,
       hitIds: new Set(),
       slowFactor: 0,
       slowDur: 0,
@@ -2125,10 +2552,11 @@ export class GameEngine {
       const p = s.projectiles[i];
       p.life += dt;
 
+      // Parabolic Siege Mortar Shell
       if (p.kind === 'mortar') {
         const tRatio = Math.min(1, p.life / p.maxLife);
-        p.x += (p.tx - p.x) * Math.min(1, dt * 8);
-        p.y += (p.ty - p.y) * Math.min(1, dt * 8);
+        p.x = p.startX + (p.tx - p.startX) * tRatio;
+        p.y = p.startY + (p.ty - p.startY) * tRatio;
         if (tRatio >= 1) {
           s.effects.push({
             kind: 'explosion',
@@ -2137,19 +2565,50 @@ export class GameEngine {
             radius: p.aoeRadius,
             color: p.color,
             timer: 0,
-            duration: 0.32,
+            duration: 0.36,
           });
           for (const e of s.enemies) {
-            if (e.side !== p.side) continue;
+            if (e.side !== p.side || e.hp <= 0) continue;
             if (Math.hypot(e.x - p.tx, e.y - p.ty) <= p.aoeRadius + e.radius) {
-              this.damageEnemy(s, e, p.damage, true, p.color, p.sourceUnitUid);
+              this.damageEnemy(s, e, p.damage * (e.isBoss ? p.bossBonusMult : 1), p.armorPen, p.color, p.sourceUnitUid);
             }
+          }
+          if (p.spawnZoneOnHit === 'fire_patch') {
+            s.zones.push({
+              side: p.side,
+              sourceUnitUid: p.sourceUnitUid,
+              kind: 'fire_patch',
+              x: p.tx,
+              y: p.ty,
+              radius: p.aoeRadius * 0.85,
+              dps: p.burnDps || p.damage * 0.24,
+              slowFactor: 0,
+              tickTimer: 0.25,
+              timer: 0,
+              duration: 1.8,
+            });
           }
           s.projectiles.splice(i, 1);
         }
         continue;
       }
 
+      // Zhao Yun's Boomerang Silver Dragon Lance: reverses at apex & hits foes again on return!
+      if (p.kind === 'boomerang_lance' && !p.returning && p.life >= p.maxLife * 0.5) {
+        p.returning = true;
+        p.hitIds.clear();
+        const spd = Math.hypot(p.vx, p.vy);
+        const backAng = Math.atan2(p.startY - p.y, p.startX - p.x);
+        p.vx = Math.cos(backAng) * spd;
+        p.vy = Math.sin(backAng) * spd;
+      } else if (p.kind === 'boomerang_lance' && p.returning) {
+        const spd = Math.hypot(p.vx, p.vy);
+        const backAng = Math.atan2(p.startY - p.y, p.startX - p.x);
+        p.vx = Math.cos(backAng) * spd;
+        p.vy = Math.sin(backAng) * spd;
+      }
+
+      // Homing tracking for single-target arrows & Phoenix fire arrows
       if (p.targetId !== undefined && p.pierceLeft === 1) {
         const tgt = s.enemies.find((e) => e.id === p.targetId && e.hp > 0);
         if (tgt) {
@@ -2164,9 +2623,12 @@ export class GameEngine {
       p.y += p.vy * dt;
 
       let remove = p.life >= p.maxLife;
+      const hitReach = 0.28 + p.hitRadiusBonus;
+
       for (const e of s.enemies) {
         if (e.side !== p.side || e.hp <= 0 || p.hitIds.has(e.id)) continue;
-        if (Math.hypot(e.x - p.x, e.y - p.y) <= e.radius + 0.28) {
+        if (Math.hypot(e.x - p.x, e.y - p.y) <= e.radius + hitReach) {
+          const hitIndex = p.hitIds.size;
           p.hitIds.add(e.id);
 
           if (p.aoeRadius > 0 && p.kind === 'lotus') {
@@ -2177,15 +2639,30 @@ export class GameEngine {
               radius: p.aoeRadius,
               color: p.color,
               timer: 0,
-              duration: 0.3,
+              duration: 0.34,
             });
             for (const sub of s.enemies) {
-              if (sub.side === p.side && Math.hypot(sub.x - e.x, sub.y - e.y) <= p.aoeRadius) {
-                this.applyProjHit(s, p, sub);
+              if (sub.side === p.side && sub.hp > 0 && Math.hypot(sub.x - e.x, sub.y - e.y) <= p.aoeRadius) {
+                this.applyProjHit(s, p, sub, 0);
               }
             }
+            if (p.spawnZoneOnHit === 'frost_zone') {
+              s.zones.push({
+                side: p.side,
+                sourceUnitUid: p.sourceUnitUid,
+                kind: 'frost_zone',
+                x: e.x,
+                y: e.y,
+                radius: p.aoeRadius,
+                dps: p.damage * 0.32,
+                slowFactor: p.slowFactor || 0.52,
+                tickTimer: 0.25,
+                timer: 0,
+                duration: 2.4,
+              });
+            }
           } else {
-            this.applyProjHit(s, p, e);
+            this.applyProjHit(s, p, e, hitIndex);
           }
 
           p.pierceLeft -= 1;
@@ -2200,16 +2677,29 @@ export class GameEngine {
     }
   }
 
-  private applyProjHit(s: RunState, p: ProjectileEntity, e: EnemyEntity): void {
+  private applyProjHit(s: RunState, p: ProjectileEntity, e: EnemyEntity, hitIndex: number): void {
     const bossScale = e.isBoss || e.isMiniBoss ? p.bossBonusMult : 1.0;
+    const pierceScale = 1 + hitIndex * p.pierceEscalation;
     if (p.executeRatio > 0 && !e.isBoss && e.hp / e.maxHp <= p.executeRatio) {
-      this.damageEnemy(s, e, e.hp * 2.5, true, p.color, p.sourceUnitUid);
+      this.damageEnemy(s, e, e.hp * 2.5, 1.0, '#fde047', p.sourceUnitUid);
+      if (e.side === 'player') {
+        s.floatTexts.push({
+          x: e.x,
+          y: e.y - 0.4,
+          vy: -1.2,
+          text: '✦!',
+          color: '#fde047',
+          scale: 1.22,
+          timer: 0,
+          duration: 0.55,
+        });
+      }
     } else {
       this.damageEnemy(
         s,
         e,
-        p.damage * bossScale,
-        p.kind === 'dragon' || p.kind === 'phoenix',
+        p.damage * bossScale * pierceScale,
+        p.armorPen,
         p.color,
         p.sourceUnitUid
       );
@@ -2220,10 +2710,48 @@ export class GameEngine {
     }
     if (p.stunDur > 0) {
       e.stunTimer = Math.max(e.stunTimer, p.stunDur);
+      if (p.kind === 'lotus') {
+        e.brittleTimer = Math.max(e.brittleTimer, 3.5);
+      }
     }
     if (p.burnDps > 0) {
-      e.burnDps = Math.max(e.burnDps, p.burnDps);
-      e.burnTimer = 2.5;
+      // Sun Shangxiang's Phoenix arrows stack Scorch DoT!
+      e.burnDps = Math.min(p.burnDps * 4.5, e.burnDps + p.burnDps * 0.75);
+      e.burnTimer = 2.6;
+    }
+  }
+
+  private updateGroundZones(s: RunState, dt: number): void {
+    for (let i = s.zones.length - 1; i >= 0; i--) {
+      const z = s.zones[i];
+      z.timer += dt;
+      if (z.timer >= z.duration) {
+        s.zones.splice(i, 1);
+        continue;
+      }
+
+      // Continuous slow inside Zhen Ji's Frost Vortex
+      if (z.slowFactor > 0) {
+        for (const e of s.enemies) {
+          if (e.side === z.side && e.hp > 0 && Math.hypot(e.x - z.x, e.y - z.y) <= z.radius) {
+            e.slowPower = Math.max(e.slowPower, z.slowFactor);
+            e.slowTimer = Math.max(e.slowTimer, 0.35);
+          }
+        }
+      }
+
+      z.tickTimer -= dt;
+      if (z.tickTimer <= 0) {
+        z.tickTimer = 0.45;
+        const color =
+          z.kind === 'thunder_sigil' ? '#facc15' : z.kind === 'frost_zone' ? '#60a5fa' : '#fb923c';
+        const pen = z.kind === 'thunder_sigil' ? 1.0 : 0.65;
+        for (const e of s.enemies) {
+          if (e.side === z.side && e.hp > 0 && Math.hypot(e.x - z.x, e.y - z.y) <= z.radius) {
+            this.damageEnemy(s, e, z.dps * 0.45, pen, color, z.sourceUnitUid);
+          }
+        }
+      }
     }
   }
 
@@ -2231,7 +2759,7 @@ export class GameEngine {
     s: RunState,
     e: EnemyEntity,
     rawDmg: number,
-    armorPiercing: boolean,
+    armorPiercing: boolean | number,
     floatColor: string,
     attackerUid?: number
   ): void {
@@ -2242,9 +2770,14 @@ export class GameEngine {
     if (e.side === 'player' && (e.isBoss || e.isMiniBoss)) {
       scaled *= meta.bossDmgMult;
     }
+    if (e.brittleTimer > 0) {
+      scaled *= 1.25;
+    }
 
+    const penRatio =
+      typeof armorPiercing === 'number' ? armorPiercing : armorPiercing ? 0.75 : 0;
     const baseArmor = e.armorBrokenTimer > 0 ? 0 : e.armor;
-    const effArmor = armorPiercing ? baseArmor * 0.25 : baseArmor;
+    const effArmor = baseArmor * Math.max(0, 1 - penRatio);
     const finalDmg = Math.max(1, scaled * (1 - effArmor));
     e.hp -= finalDmg;
     e.hitFlash = 0.11;
@@ -2263,26 +2796,20 @@ export class GameEngine {
     }
 
     if (e.hp <= 0) {
-      // Attribute Kill XP to the Awakened General who landed the killing blow!
+      // Attribute Kill XP to the Awakened 2-Cell General who landed the killing blow!
       if (attackerUid !== undefined) {
         const killer = this.findBoardUnitByUid(s, attackerUid);
         if (killer) {
-          const killXp = e.isBoss ? 110 : e.isMiniBoss ? 55 : e.kind === 'shield' ? 19 : 14;
-          this.grantHeroCombatXp(
-            s,
-            killer.side,
-            killer.unit,
-            killer.col + 0.5,
-            killer.row + 0.5,
-            killXp
-          );
+          const killXp = e.isBoss ? 105 : e.isMiniBoss ? 50 : e.kind === 'shield' ? 16 : 11;
+          const ctr = this.getUnitBoardCenter(killer.unit, killer.col, killer.row);
+          this.grantHeroCombatXp(s, killer.side, killer.unit, ctr.x, ctr.y, killXp);
         }
       }
 
       if (e.side === 'player') {
         s.kills += 1;
         s.rations += e.rewardRations;
-        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 35 : e.isMiniBoss ? 20 : 2.2));
+        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 30 : e.isMiniBoss ? 16 : 1.35));
         SoundFX.enemyKill();
 
         if (e.isBoss || e.isMiniBoss) {
@@ -2330,6 +2857,7 @@ export class GameEngine {
 
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
       if (e.armorBrokenTimer > 0) e.armorBrokenTimer = Math.max(0, e.armorBrokenTimer - dt);
+      if (e.brittleTimer > 0) e.brittleTimer = Math.max(0, e.brittleTimer - dt);
       if (e.slowTimer > 0) {
         e.slowTimer = Math.max(0, e.slowTimer - dt);
         if (e.slowTimer <= 0) e.slowPower = 0;
@@ -2343,19 +2871,20 @@ export class GameEngine {
         }
       }
 
+      let lubuChargeMult = 1.0;
       if (e.bossType === 'zhangbao' && e.stunTimer <= 0) {
         e.bossSkillTimer -= dt;
         if (e.bossSkillTimer <= 0) {
-          e.bossSkillTimer = 5.2;
+          e.bossSkillTimer = 5.0;
           this.summonZhangBaoMinion(s, e);
           if (e.side === 'player') {
             this.showBanner(t().bannerZhangBaoSummon, 1.8);
           }
         }
       } else if (e.bossType === 'zhangjiao') {
-        if (!e.healChantUsed && e.hp / e.maxHp <= 0.38) {
+        if (!e.healChantUsed && e.hp / e.maxHp <= 0.42) {
           e.healChantUsed = true;
-          e.regenTimer = 3.4;
+          e.regenTimer = 3.8;
           if (e.side === 'player') {
             SoundFX.alarm();
             this.showBanner(t().bannerZhangJiaoHeal, 2.8);
@@ -2363,7 +2892,15 @@ export class GameEngine {
         }
         if (e.regenTimer > 0 && e.stunTimer <= 0) {
           e.regenTimer = Math.max(0, e.regenTimer - dt);
-          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.08 * dt);
+          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.085 * dt);
+        }
+      } else if (e.bossType === 'lubu' && e.stunTimer <= 0) {
+        e.bossSkillTimer -= dt;
+        if (e.bossSkillTimer <= 0) {
+          e.bossSkillTimer = 5.6;
+        }
+        if (e.bossSkillTimer < 1.35) {
+          lubuChargeMult = 1.68;
         }
       }
 
@@ -2381,9 +2918,9 @@ export class GameEngine {
         if (Math.hypot(e.x - bx, e.y - by) <= 0.52) {
           e.bashTimer -= dt;
           if (e.bashTimer <= 0) {
-            e.bashTimer = 0.62;
+            e.bashTimer = 0.6;
             const bashDmg =
-              e.bossType === 'lubu' ? 105 : e.isBoss ? 75 : e.isMiniBoss ? 44 : e.kind === 'shield' ? 26 : 16;
+              e.bossType === 'lubu' ? 120 : e.isBoss ? 84 : e.isMiniBoss ? 48 : e.kind === 'shield' ? 30 : 18;
             barricade.hp = Math.max(0, barricade.hp - bashDmg);
             barricade.shakeTimer = 0.16;
           }
@@ -2393,7 +2930,7 @@ export class GameEngine {
 
       const passiveSlow = e.side === 'player' ? playerRoadSlow : 0;
       const totalSlow = Math.min(0.72, Math.max(e.slowPower, passiveSlow));
-      const effSpeed = e.speed * (1 - totalSlow);
+      const effSpeed = e.speed * lubuChargeMult * (1 - totalSlow);
       const wps = lane.waypoints;
 
       if (e.waypointIndex >= wps.length - 1) {
@@ -2427,42 +2964,78 @@ export class GameEngine {
     }
   }
 
+  private knockbackEnemyAlongLane(s: RunState, e: EnemyEntity, distCells: number): void {
+    const lane = e.side === 'ai' ? s.stage.aiLane : s.stage.playerLane;
+    const wps = lane.waypoints;
+    let remaining = distCells;
+
+    while (remaining > 0 && e.waypointIndex >= 0) {
+      const nextIdx = Math.min(wps.length - 1, e.waypointIndex + 1);
+      const a = wps[e.waypointIndex];
+      const b = wps[nextIdx];
+      const segLen = Math.max(0.01, Math.hypot(b.col - a.col, b.row - a.row));
+      const curDistInSeg = e.segProgress * segLen;
+
+      if (curDistInSeg >= remaining) {
+        e.segProgress = (curDistInSeg - remaining) / segLen;
+        remaining = 0;
+      } else {
+        remaining -= curDistInSeg;
+        if (e.waypointIndex === 0) {
+          e.segProgress = 0;
+          break;
+        }
+        e.waypointIndex -= 1;
+        e.segProgress = 1;
+      }
+    }
+
+    const curA = wps[e.waypointIndex];
+    const curB = wps[Math.min(wps.length - 1, e.waypointIndex + 1)];
+    e.x = curA.col + 0.5 + (curB.col - curA.col) * e.segProgress;
+    e.y = curA.row + 0.5 + (curB.row - curA.row) * e.segProgress;
+  }
+
   private summonZhangBaoMinion(s: RunState, boss: EnemyEntity): void {
-    const minionHp = boss.maxHp * 0.12;
-    s.enemies.push({
-      id: this.nextEnemyId++,
-      side: boss.side,
-      kind: 'wolf',
-      bossType: 'none',
-      isBoss: false,
-      isMiniBoss: false,
-      waypointIndex: boss.waypointIndex,
-      segProgress: Math.min(0.95, boss.segProgress + 0.08),
-      x: boss.x,
-      y: boss.y,
-      hp: minionHp,
-      maxHp: minionHp,
-      speed: 1.38,
-      armor: 0,
-      armorBrokenTimer: 0,
-      rewardRations: 2,
-      hitFlash: 0,
-      slowTimer: 0,
-      slowPower: 0,
-      stunTimer: 0,
-      burnTimer: 0,
-      burnDps: 0,
-      bashTimer: 0,
-      bossSkillTimer: 99,
-      healChantUsed: false,
-      regenTimer: 0,
-      radius: 0.28,
-    });
+    const minionHp = boss.maxHp * 0.13;
+    const offsets = [0.06, 0.15];
+    for (const off of offsets) {
+      s.enemies.push({
+        id: this.nextEnemyId++,
+        side: boss.side,
+        kind: 'wolf',
+        bossType: 'none',
+        isBoss: false,
+        isMiniBoss: false,
+        waypointIndex: boss.waypointIndex,
+        segProgress: Math.min(0.95, boss.segProgress + off),
+        x: boss.x,
+        y: boss.y,
+        hp: minionHp,
+        maxHp: minionHp,
+        speed: 1.5,
+        armor: 0,
+        armorBrokenTimer: 0,
+        brittleTimer: 0,
+        rewardRations: 2,
+        hitFlash: 0,
+        slowTimer: 0,
+        slowPower: 0,
+        stunTimer: 0,
+        burnTimer: 0,
+        burnDps: 0,
+        bashTimer: 0,
+        bossSkillTimer: 99,
+        healChantUsed: false,
+        regenTimer: 0,
+        radius: 0.28,
+      });
+    }
     s.effects.push({
       kind: 'ring',
       x: boss.x,
       y: boss.y,
-      radius: 0.85,
+      radius: 0.9,
       color: '#eab308',
       timer: 0,
       duration: 0.35,
@@ -2489,14 +3062,11 @@ export class GameEngine {
         s.aiCollapsed = true;
         s.enemies = s.enemies.filter((en) => en.side !== 'ai');
         s.projectiles = s.projectiles.filter((pr) => pr.side !== 'ai');
-
-        if (s.mode === 'standard') {
-          this.finishRun(true, true);
-        } else {
-          s.rations += 45;
-          SoundFX.fanfare();
-          this.showBanner(t().bannerRivalFallen, 3.0);
-        }
+        s.zones = s.zones.filter((z) => z.side !== 'ai');
+        // Rival AI collapse grants mid-battle spoils, NOT an instant free clear — player must survive all waves!
+        s.rations += 30;
+        SoundFX.fanfare();
+        this.showBanner(t().bannerRivalFallen, 3.0);
       }
       return;
     }
@@ -2667,7 +3237,8 @@ export class GameEngine {
       if (cellHit && cellHit.row >= s.stage.dividerRow) {
         const u = s.board[cellHit.row][cellHit.col];
         if (u && getUnitCircleRange(u).canAttack) {
-          this.applyDivineTalismanToUnit(u, cellHit.col + 0.5, cellHit.row + 0.5);
+          const center = this.getUnitBoardCenter(u, cellHit.col, cellHit.row);
+          this.applyDivineTalismanToUnit(u, center.x, center.y);
           return;
         }
       }
@@ -2832,18 +3403,36 @@ export class GameEngine {
         return;
       }
 
-      if (
-        s.selectedSource &&
-        !(
-          s.selectedSource.type === src.type &&
-          s.selectedSource.benchIdx === src.benchIdx &&
-          s.selectedSource.col === src.col &&
-          s.selectedSource.row === src.row
-        )
-      ) {
-        if (this.tryMoveOrCombine(s.selectedSource, src)) {
-          s.selectedSource = null;
-          return;
+      if (s.selectedSource) {
+        const prevUnit = this.getUnitAt(s.selectedSource);
+        // Double-tap on an already-selected 2-Cell General: rotate 90° around tapped cell if perpendicular cell is free!
+        if (
+          prevUnit &&
+          prevUnit.uid === d.unit.uid &&
+          d.unit.cellSpan === 2 &&
+          src.type === 'board'
+        ) {
+          if (this.tryRotateTwoCellUnit(d.unit, src.col, src.row)) {
+            s.selectedSource = {
+              type: 'board',
+              benchIdx: -1,
+              col: d.unit.anchorCol,
+              row: d.unit.anchorRow,
+            };
+            return;
+          }
+        } else if (
+          !(
+            s.selectedSource.type === src.type &&
+            s.selectedSource.benchIdx === src.benchIdx &&
+            s.selectedSource.col === src.col &&
+            s.selectedSource.row === src.row
+          )
+        ) {
+          if (this.tryMoveOrCombine(s.selectedSource, src)) {
+            s.selectedSource = null;
+            return;
+          }
         }
       }
       s.selectedSource = src;
@@ -2896,19 +3485,60 @@ export class GameEngine {
     }
   }
 
+  private tryRotateTwoCellUnit(u: TileUnit, pivotCol: number, pivotRow: number): boolean {
+    const s = this.state;
+    if (!s || u.cellSpan !== 2) return false;
+    const isHoriz = u.anchorRow === u.secRow;
+    const perpDirs = isHoriz
+      ? [
+          [0, 1],
+          [0, -1],
+        ]
+      : [
+          [1, 0],
+          [-1, 0],
+        ];
+    for (const [dc, dr] of perpDirs) {
+      const nc = pivotCol + dc;
+      const nr = pivotRow + dr;
+      if (nc < 0 || nc >= s.stage.cols || nr < s.stage.dividerRow || nr >= s.stage.rows) continue;
+      if (s.cells[nr][nc] !== 'deploy') continue;
+      if (s.board[nr][nc] === null) {
+        this.removeBoardUnit(s, u);
+        this.placeBoardUnit(s, u, pivotCol, pivotRow, nc, nr);
+        u.mergeAnimTimer = 0.14;
+        SoundFX.tileClack(true);
+        return true;
+      }
+    }
+    return false;
+  }
+
   private getUnitAt(loc: SelectedSource): TileUnit | null {
     const s = this.state;
     if (!s) return null;
     return loc.type === 'bench' ? s.bench[loc.benchIdx] : s.board[loc.row]?.[loc.col] ?? null;
   }
 
-  private setUnitAt(loc: SelectedSource, unit: TileUnit | null): void {
-    const s = this.state;
-    if (!s) return;
+  private clearSourceUnit(s: RunState, loc: SelectedSource, u: TileUnit): void {
     if (loc.type === 'bench') {
-      s.bench[loc.benchIdx] = unit;
+      if (s.bench[loc.benchIdx]?.uid === u.uid) {
+        s.bench[loc.benchIdx] = null;
+      }
     } else {
-      s.board[loc.row][loc.col] = unit;
+      this.removeBoardUnit(s, u);
+    }
+  }
+
+  private placeSingleUnitAt(s: RunState, loc: SelectedSource, u: TileUnit): void {
+    if (loc.type === 'bench') {
+      u.anchorCol = -1;
+      u.anchorRow = -1;
+      u.secCol = -1;
+      u.secRow = -1;
+      s.bench[loc.benchIdx] = u;
+    } else {
+      this.placeBoardUnit(s, u, loc.col, loc.row);
     }
   }
 
@@ -2937,9 +3567,222 @@ export class GameEngine {
       return false;
     }
 
+    // Dragging from one cell of a 2-cell General onto its own second cell -> slide 1 cell forward or rotate!
+    if (dstUnit && dstUnit.uid === srcUnit.uid) {
+      if (srcUnit.cellSpan === 2 && src.type === 'board' && dst.type === 'board') {
+        const dc = dst.col - src.col;
+        const dr = dst.row - src.row;
+        const nc = dst.col + dc;
+        const nr = dst.row + dr;
+        if (
+          nc >= 0 &&
+          nc < s.stage.cols &&
+          nr >= s.stage.dividerRow &&
+          nr < s.stage.rows &&
+          s.cells[nr][nc] === 'deploy'
+        ) {
+          const stepOcc = s.board[nr][nc];
+          if (!stepOcc || stepOcc.cellSpan === 1) {
+            this.removeBoardUnit(s, srcUnit);
+            if (stepOcc) {
+              this.removeBoardUnit(s, stepOcc);
+              this.placeBoardUnit(s, stepOcc, src.col, src.row);
+            }
+            this.placeBoardUnit(s, srcUnit, dst.col, dst.row, nc, nr);
+            srcUnit.mergeAnimTimer = 0.15;
+            SoundFX.tileClack(true);
+            this.recalcSynergies();
+            return true;
+          }
+        }
+        return this.tryRotateTwoCellUnit(srcUnit, dst.col, dst.row);
+      }
+      return false;
+    }
+
+    // 1) Combine Check (2-Piece Hero Awakening OR Identical Tier Merge)
+    const combo = dstUnit ? checkTileCombine(srcUnit, dstUnit) : null;
+    if (combo && dstUnit) {
+      if (combo.mode === 'awaken') {
+        // Awakening fuses two 1x1 puzzle halves into a 2-CELL Awakened General!
+        if (dst.type === 'bench') {
+          const pair = this.findEmptyAdjacentDeployPair(s, 'player');
+          if (!pair) {
+            this.showBanner(t().bannerNeedTwoCellsForHero, 2.5);
+            return false;
+          }
+          this.clearSourceUnit(s, src, srcUnit);
+          this.clearSourceUnit(s, dst, dstUnit);
+
+          const created = this.makeTile(combo.resultId, combo.resultTier, 1);
+          this.placeBoardUnit(s, created, pair.c1, pair.r1, pair.c2, pair.r2);
+
+          s.merges += 1;
+          s.ultCharge = Math.min(100, s.ultCharge + 22);
+          s.screenShake = 0.35;
+          SoundFX.dragonUlt();
+          this.setSelectedInfoFromUnit(created);
+          const heroTxt = getUnitDisplayText(combo.resultId);
+          this.showBanner(t().bannerHeroAwakened(heroTxt.name), 2.6);
+          const center = this.getUnitBoardCenter(created, pair.c1, pair.r1);
+          this.spawnCombineFX(center.x, center.y, 'awaken', combo.resultId);
+          this.recalcSynergies();
+          return true;
+        }
+
+        // dst is on board!
+        const srcWasAdjBoard =
+          src.type === 'board' &&
+          Math.abs(src.col - dst.col) + Math.abs(src.row - dst.row) === 1 &&
+          s.cells[src.row][src.col] === 'deploy';
+
+        this.clearSourceUnit(s, src, srcUnit);
+        this.removeBoardUnit(s, dstUnit);
+
+        const partner = srcWasAdjBoard
+          ? { col: src.col, row: src.row }
+          : this.findAdjacentDeployPartner(s, 'player', dst.col, dst.row, true, true);
+
+        if (!partner) {
+          // Rollback cleanly if no adjacent deploy cell is available!
+          this.placeBoardUnit(s, dstUnit, dst.col, dst.row);
+          this.placeSingleUnitAt(s, src, srcUnit);
+          this.showBanner(t().bannerNeedTwoCellsForHero, 2.5);
+          return false;
+        }
+
+        const displaced = s.board[partner.row][partner.col];
+        if (displaced) {
+          this.removeBoardUnit(s, displaced);
+          this.placeSingleUnitAt(s, src, displaced);
+        }
+
+        const created = this.makeTile(combo.resultId, combo.resultTier, 1);
+        this.placeBoardUnit(s, created, dst.col, dst.row, partner.col, partner.row);
+
+        s.merges += 1;
+        s.ultCharge = Math.min(100, s.ultCharge + 22);
+        s.screenShake = 0.35;
+        SoundFX.dragonUlt();
+        this.setSelectedInfoFromUnit(created);
+        const heroTxt = getUnitDisplayText(combo.resultId);
+        this.showBanner(t().bannerHeroAwakened(heroTxt.name), 2.6);
+        const center = this.getUnitBoardCenter(created, dst.col, dst.row);
+        this.spawnCombineFX(center.x, center.y, 'awaken', combo.resultId);
+        this.recalcSynergies();
+        return true;
+      }
+
+      // combo.mode === 'merge'
+      const isHeroMerge = UNITS[combo.resultId].category === 'awakened';
+      const nextCombatLevel = isHeroMerge
+        ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(srcUnit.combatLevel, dstUnit.combatLevel) + 1)
+        : 1;
+
+      if (isHeroMerge) {
+        // Merging two identical same-tier 2-Cell Generals on the board!
+        const c1 = dstUnit.anchorCol;
+        const r1 = dstUnit.anchorRow;
+        const c2 = dstUnit.secCol;
+        const r2 = dstUnit.secRow;
+        this.removeBoardUnit(s, srcUnit);
+        this.removeBoardUnit(s, dstUnit);
+
+        const created = this.makeTile(combo.resultId, combo.resultTier, nextCombatLevel);
+        this.placeBoardUnit(s, created, c1, r1, c2, r2);
+
+        s.merges += 1;
+        s.ultCharge = Math.min(100, s.ultCharge + 10);
+        SoundFX.merge(combo.resultTier, true);
+        this.setSelectedInfoFromUnit(created);
+        const center = this.getUnitBoardCenter(created, c1, r1);
+        this.spawnCombineFX(center.x, center.y, 'merge', combo.resultId);
+        this.recalcSynergies();
+        return true;
+      }
+
+      // Standard 1x1 troop or duplicate 1x1 shard merge
+      this.clearSourceUnit(s, src, srcUnit);
+      this.clearSourceUnit(s, dst, dstUnit);
+      const created = this.makeTile(combo.resultId, combo.resultTier, 1);
+      this.placeSingleUnitAt(s, dst, created);
+
+      s.merges += 1;
+      s.ultCharge = Math.min(100, s.ultCharge + 6);
+      SoundFX.merge(combo.resultTier, false);
+      this.setSelectedInfoFromUnit(created);
+      if (dst.type === 'board') {
+        this.spawnCombineFX(dst.col + 0.5, dst.row + 0.5, 'merge', combo.resultId);
+      }
+      this.recalcSynergies();
+      return true;
+    }
+
+    // 2) Move / Swap a 2-CELL Awakened General
+    if (srcUnit.cellSpan === 2) {
+      if (dst.type === 'bench') {
+        this.showBanner(t().bannerHeroCannotBench, 2.2);
+        return false;
+      }
+
+      const oldCells = [
+        { col: srcUnit.anchorCol, row: srcUnit.anchorRow },
+        { col: srcUnit.secCol, row: srcUnit.secRow },
+      ];
+      const preferHoriz = srcUnit.anchorRow === srcUnit.secRow;
+
+      if (dstUnit && dstUnit.cellSpan === 2) {
+        const dstCells = [
+          { col: dstUnit.anchorCol, row: dstUnit.anchorRow },
+          { col: dstUnit.secCol, row: dstUnit.secRow },
+        ];
+        this.removeBoardUnit(s, srcUnit);
+        this.removeBoardUnit(s, dstUnit);
+        this.placeBoardUnit(s, srcUnit, dstCells[0].col, dstCells[0].row, dstCells[1].col, dstCells[1].row);
+        this.placeBoardUnit(s, dstUnit, oldCells[0].col, oldCells[0].row, oldCells[1].col, oldCells[1].row);
+        srcUnit.mergeAnimTimer = 0.16;
+        dstUnit.mergeAnimTimer = 0.16;
+        SoundFX.tileClack(true);
+        this.recalcSynergies();
+        return true;
+      }
+
+      this.removeBoardUnit(s, srcUnit);
+      const partner = this.findAdjacentDeployPartner(s, 'player', dst.col, dst.row, preferHoriz, true);
+      if (!partner) {
+        this.placeBoardUnit(s, srcUnit, oldCells[0].col, oldCells[0].row, oldCells[1].col, oldCells[1].row);
+        this.showBanner(t().bannerNeedTwoCellsForHero, 2.2);
+        return false;
+      }
+
+      const displaced: TileUnit[] = [];
+      const occ1 = s.board[dst.row][dst.col];
+      if (occ1) {
+        this.removeBoardUnit(s, occ1);
+        displaced.push(occ1);
+      }
+      const occ2 = s.board[partner.row][partner.col];
+      if (occ2) {
+        this.removeBoardUnit(s, occ2);
+        displaced.push(occ2);
+      }
+
+      this.placeBoardUnit(s, srcUnit, dst.col, dst.row, partner.col, partner.row);
+      const freeOld = oldCells.filter((pt) => s.board[pt.row][pt.col] === null);
+      for (let i = 0; i < displaced.length && i < freeOld.length; i++) {
+        this.placeBoardUnit(s, displaced[i], freeOld[i].col, freeOld[i].row);
+      }
+
+      srcUnit.mergeAnimTimer = 0.16;
+      SoundFX.tileClack(true);
+      this.recalcSynergies();
+      return true;
+    }
+
+    // 3) Move / Swap a 1x1 Unit (Troop or Puzzle Shard)
     if (!dstUnit) {
-      this.setUnitAt(dst, srcUnit);
-      this.setUnitAt(src, null);
+      this.clearSourceUnit(s, src, srcUnit);
+      this.placeSingleUnitAt(s, dst, srcUnit);
       srcUnit.mergeAnimTimer = 0.16;
       SoundFX.tileClack(true);
       if (dst.type === 'board' && !getUnitCircleRange(srcUnit).canAttack) {
@@ -2949,40 +3792,19 @@ export class GameEngine {
       return true;
     }
 
-    const combo = checkTileCombine(srcUnit, dstUnit);
-    if (combo) {
-      const nextCombatLevel =
-        combo.mode === 'merge' && UNITS[combo.resultId].category === 'awakened'
-          ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(srcUnit.combatLevel, dstUnit.combatLevel) + 1)
-          : 1;
-      const created = this.makeTile(combo.resultId, combo.resultTier, nextCombatLevel);
-      this.setUnitAt(dst, created);
-      this.setUnitAt(src, null);
-
-      s.merges += 1;
-      this.setSelectedInfoFromUnit(created);
-
-      if (combo.mode === 'awaken') {
-        s.ultCharge = Math.min(100, s.ultCharge + 22);
-        s.screenShake = 0.32;
-        SoundFX.dragonUlt();
-        const heroTxt = getUnitDisplayText(combo.resultId);
-        this.showBanner(t().bannerHeroAwakened(heroTxt.name), 2.6);
-      } else {
-        s.ultCharge = Math.min(100, s.ultCharge + 7);
-        SoundFX.merge(combo.resultTier, UNITS[combo.resultId].category === 'awakened');
+    if (dstUnit.cellSpan === 2) {
+      if (src.type === 'bench') {
+        this.showBanner(t().bannerHeroCannotBench, 2.2);
+        return false;
       }
-
-      if (dst.type === 'board') {
-        this.spawnCombineFX(dst.col + 0.5, dst.row + 0.5, combo.mode, combo.resultId);
-      }
-
-      this.recalcSynergies();
-      return true;
+      return this.tryMoveOrCombine(dst, src);
     }
 
-    this.setUnitAt(dst, srcUnit);
-    this.setUnitAt(src, dstUnit);
+    // Both srcUnit and dstUnit are 1x1 units -> clean swap!
+    this.clearSourceUnit(s, src, srcUnit);
+    this.clearSourceUnit(s, dst, dstUnit);
+    this.placeSingleUnitAt(s, dst, srcUnit);
+    this.placeSingleUnitAt(s, src, dstUnit);
     SoundFX.tileClack(false);
     this.recalcSynergies();
     return true;

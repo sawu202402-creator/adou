@@ -10,6 +10,7 @@ import { CellType, DuelLane, HeroKey, TileUnit } from '../types';
 import { Assets } from './AssetLoader';
 import {
   GameEngine,
+  GroundZone,
   LaneBarricade,
   ProjectileEntity,
   RunState,
@@ -43,8 +44,9 @@ export class BoardRenderer {
     // 1. Qinglu Shanshui & Xuan-paper backdrop
     this.drawBackdrop(ctx, s, viewW, viewH);
 
-    // 2. 8x10 Fortress Duel Board
+    // 2. 8x10 Fortress Duel Board + Persistent Ground Zones
     this.drawBoardFrameAndCells(ctx, engine, s);
+    this.drawGroundZones(ctx, engine, s.zones);
 
     // 3. Entry arrows & VIP Royal Heirs + Heart clusters
     this.drawLaneSpawnArrow(ctx, engine, s.stage.aiLane, '#b91c1c');
@@ -56,18 +58,17 @@ export class BoardRenderer {
     this.drawBarricade(ctx, engine, s.aiBarricade);
     this.drawBarricade(ctx, engine, s.playerBarricade);
 
-    // 5. Deployed Board War-Tiles
+    // 5. Deployed Board War-Tiles (1x1 Troops/Shards & 2-Cell Awakened Generals!)
     const activeUnit = this.getActiveHeldUnit(engine, s);
     for (let r = 0; r < s.stage.rows; r++) {
       for (let c = 0; c < s.stage.cols; c++) {
         const u = s.board[r][c];
-        if (!u) continue;
+        if (!u || !engine.isPrimaryBoardCell(u, c, r)) continue;
         if (
           engine.drag?.active &&
           engine.drag.movedEnough &&
           engine.drag.sourceType === 'board' &&
-          engine.drag.col === c &&
-          engine.drag.row === r
+          engine.drag.unit.uid === u.uid
         ) {
           continue;
         }
@@ -76,14 +77,17 @@ export class BoardRenderer {
         const y = L.boardY + r * L.cellSize;
         const isPlayerSide = r >= s.stage.dividerRow;
 
+        const isSelectedOnBoard =
+          s.selectedSource?.type === 'board' &&
+          ((s.selectedSource.col === c && s.selectedSource.row === r) ||
+            (u.cellSpan === 2 &&
+              s.selectedSource.col === u.secCol &&
+              s.selectedSource.row === u.secRow));
+
         let highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman' = 'none';
         if (isPlayerSide && s.talismanMode && getUnitCircleRange(u).canAttack) {
           highlight = 'talisman';
-        } else if (
-          s.selectedSource?.type === 'board' &&
-          s.selectedSource.col === c &&
-          s.selectedSource.row === r
-        ) {
+        } else if (isSelectedOnBoard) {
           highlight = 'selected';
         } else if (isPlayerSide && activeUnit && activeUnit.uid !== u.uid) {
           const combo = checkTileCombine(activeUnit, u);
@@ -99,16 +103,33 @@ export class BoardRenderer {
           }
         }
 
-        this.drawWarTile(
-          ctx,
-          u,
-          x + 2,
-          y + 2,
-          L.cellSize - 4,
-          highlight,
-          !isPlayerSide && s.aiCollapsed,
-          isPlayerSide
-        );
+        if (u.cellSpan === 2 && u.secCol >= 0 && u.secRow >= 0) {
+          const spanW = (u.secCol - u.anchorCol + 1) * L.cellSize - 4;
+          const spanH = (u.secRow - u.anchorRow + 1) * L.cellSize - 4;
+          this.drawDoubleWarTile(
+            ctx,
+            u,
+            x + 2,
+            y + 2,
+            spanW,
+            spanH,
+            L.cellSize,
+            highlight,
+            !isPlayerSide && s.aiCollapsed,
+            isPlayerSide
+          );
+        } else {
+          this.drawWarTile(
+            ctx,
+            u,
+            x + 2,
+            y + 2,
+            L.cellSize - 4,
+            highlight,
+            !isPlayerSide && s.aiCollapsed,
+            isPlayerSide
+          );
+        }
       }
     }
 
@@ -120,7 +141,7 @@ export class BoardRenderer {
     // 6. Central Great Wall Divider
     this.drawGreatWallDivider(ctx, engine, s);
 
-    // 7. Circular Attack Range Ring (drawn crisply above board & units!)
+    // 7. Circular Attack Range Ring & 2-Cell Footprint Preview (drawn crisply above board & units!)
     this.drawActiveCircleRangePreview(ctx, engine, s);
 
     // 8. Enemies, Projectiles, VFX & Floating Damage
@@ -132,23 +153,46 @@ export class BoardRenderer {
     // 9. Player War-Camp Tent & 5-Slot Bench Row
     this.drawCampBench(ctx, engine, s, activeUnit, readyPuzzles);
 
-    // 10. Floating Dragged Tile
+    // 10. Floating Dragged Tile (1x1 or 2-Cell Double Plaque!)
     if (engine.drag && engine.drag.active && engine.drag.movedEnough) {
-      const sz = L.cellSize * 1.06;
+      const du = engine.drag.unit;
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.48)';
       ctx.shadowBlur = 16;
       ctx.shadowOffsetY = 8;
-      this.drawWarTile(
-        ctx,
-        engine.drag.unit,
-        engine.drag.screenX - sz * 0.5,
-        engine.drag.screenY - sz * 0.55,
-        sz,
-        'selected',
-        false,
-        true
-      );
+      if (du.cellSpan === 2) {
+        const hoverCol = Math.floor((engine.drag.screenX - L.boardX) / L.cellSize);
+        const hoverRow = Math.floor((engine.drag.screenY - L.boardY) / L.cellSize);
+        const defaultHoriz = du.anchorRow === du.secRow;
+        const preview = engine.previewTwoCellPlacement(hoverCol, hoverRow, defaultHoriz, du.uid);
+        const isHoriz = preview ? preview.r1 === preview.r2 : defaultHoriz;
+        const w = (isHoriz ? 2 : 1) * L.cellSize * 1.02 - 4;
+        const h = (isHoriz ? 1 : 2) * L.cellSize * 1.02 - 4;
+        this.drawDoubleWarTile(
+          ctx,
+          du,
+          engine.drag.screenX - w * 0.5,
+          engine.drag.screenY - h * 0.55,
+          w,
+          h,
+          L.cellSize * 1.02,
+          'selected',
+          false,
+          true
+        );
+      } else {
+        const sz = L.cellSize * 1.06;
+        this.drawWarTile(
+          ctx,
+          du,
+          engine.drag.screenX - sz * 0.5,
+          engine.drag.screenY - sz * 0.55,
+          sz,
+          'selected',
+          false,
+          true
+        );
+      }
       ctx.restore();
     }
 
@@ -346,7 +390,106 @@ export class BoardRenderer {
     }
   }
 
-  // ==================== 3. CIRCULAR ATTACK RANGE RING PREVIEW ====================
+  // ==================== 2B. PERSISTENT GROUND ZONES (BAGUA THUNDER / FROST VORTEX / FIRE PATCH) ====================
+
+  private drawGroundZones(
+    ctx: CanvasRenderingContext2D,
+    engine: GameEngine,
+    zones: GroundZone[]
+  ): void {
+    if (zones.length === 0) return;
+    const L = engine.layout;
+    const cs = L.cellSize;
+
+    for (const z of zones) {
+      const px = L.boardX + z.x * cs;
+      const py = L.boardY + z.y * cs;
+      const radPx = z.radius * cs;
+      const fade = Math.min(1, z.timer / 0.45);
+
+      ctx.save();
+      ctx.globalAlpha = 0.85 * fade;
+
+      if (z.kind === 'thunder_sigil') {
+        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx);
+        g.addColorStop(0, 'rgba(250, 204, 21, 0.28)');
+        g.addColorStop(0.65, 'rgba(99, 102, 241, 0.2)');
+        g.addColorStop(1, 'rgba(99, 102, 241, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, radPx, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rotating Eight-Trigrams Octagon
+        ctx.translate(px, py);
+        ctx.rotate(this.animClock * 1.3);
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4;
+          const ox = Math.cos(a) * radPx * 0.78;
+          const oy = Math.sin(a) * radPx * 0.78;
+          if (i === 0) ctx.moveTo(ox, oy);
+          else ctx.lineTo(ox, oy);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(165, 180, 252, 0.75)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, radPx * 0.44, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (z.kind === 'frost_zone') {
+        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx);
+        g.addColorStop(0, 'rgba(186, 230, 253, 0.36)');
+        g.addColorStop(0.68, 'rgba(56, 189, 248, 0.22)');
+        g.addColorStop(1, 'rgba(14, 165, 233, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, radPx, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.translate(px, py);
+        ctx.rotate(-this.animClock * 1.1);
+        ctx.strokeStyle = 'rgba(186, 230, 253, 0.82)';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(a) * radPx * 0.72, Math.sin(a) * radPx * 0.72);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(0, 0, radPx * 0.82, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // 'fire_patch'
+        const pulse = 0.88 + 0.12 * Math.sin(this.animClock * 10);
+        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx * pulse);
+        g.addColorStop(0, 'rgba(254, 240, 138, 0.38)');
+        g.addColorStop(0.55, 'rgba(249, 115, 22, 0.28)');
+        g.addColorStop(1, 'rgba(220, 38, 38, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, radPx * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.72)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.arc(px, py, radPx * 0.78, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // ==================== 3. CIRCULAR ATTACK RANGE RING & 2-CELL FOOTPRINT PREVIEW ====================
 
   private drawActiveCircleRangePreview(
     ctx: CanvasRenderingContext2D,
@@ -356,36 +499,82 @@ export class BoardRenderer {
     const L = engine.layout;
     const cs = L.cellSize;
 
-    let uCol = -1;
-    let uRow = -1;
-    let unit: TileUnit | null = null;
+    let centerGridX = -1;
+    let centerGridY = -1;
+    let previewUnit: TileUnit | null = null;
     let rStart = s.stage.dividerRow;
     let rEnd = s.stage.rows;
+    let twoCellFootprint: { c1: number; r1: number; c2: number; r2: number } | null = null;
+    let blockedTwoCell = false;
 
     if (engine.drag?.active && engine.drag.movedEnough) {
-      if (engine.drag.unit.unitId === 'shovel') return;
+      const dragUnit = engine.drag.unit;
+      if (dragUnit.unitId === 'shovel') return;
       const col = Math.floor((engine.drag.screenX - L.boardX) / cs);
       const row = Math.floor((engine.drag.screenY - L.boardY) / cs);
       if (col >= 0 && col < s.stage.cols && row >= s.stage.dividerRow && row < s.stage.rows) {
-        uCol = col;
-        uRow = row;
-        unit = engine.drag.unit;
+        const hoveredBoardUnit = s.board[row][col];
+        const hoverCombo =
+          hoveredBoardUnit && hoveredBoardUnit.uid !== dragUnit.uid
+            ? checkTileCombine(dragUnit, hoveredBoardUnit)
+            : null;
+
+        if (dragUnit.cellSpan === 2) {
+          const preferHoriz = dragUnit.anchorRow === dragUnit.secRow;
+          twoCellFootprint = engine.previewTwoCellPlacement(col, row, preferHoriz, dragUnit.uid);
+          previewUnit = dragUnit;
+          if (twoCellFootprint) {
+            centerGridX = (twoCellFootprint.c1 + twoCellFootprint.c2) * 0.5 + 0.5;
+            centerGridY = (twoCellFootprint.r1 + twoCellFootprint.r2) * 0.5 + 0.5;
+          } else {
+            blockedTwoCell = true;
+            centerGridX = col + 0.5;
+            centerGridY = row + 0.5;
+          }
+        } else if (hoverCombo && hoverCombo.mode === 'awaken') {
+          // Previewing 1/2 + 2/2 fusion into a 2-Cell Awakened General right on the board!
+          twoCellFootprint = engine.previewTwoCellPlacement(col, row, true, dragUnit.uid);
+          previewUnit = {
+            ...dragUnit,
+            unitId: hoverCombo.resultId,
+            tier: hoverCombo.resultTier,
+            cellSpan: 2,
+          };
+          if (twoCellFootprint) {
+            centerGridX = (twoCellFootprint.c1 + twoCellFootprint.c2) * 0.5 + 0.5;
+            centerGridY = (twoCellFootprint.r1 + twoCellFootprint.r2) * 0.5 + 0.5;
+          } else {
+            blockedTwoCell = true;
+            centerGridX = col + 0.5;
+            centerGridY = row + 0.5;
+          }
+        } else {
+          previewUnit = dragUnit;
+          centerGridX = col + 0.5;
+          centerGridY = row + 0.5;
+        }
       }
     } else if (s.selectedSource?.type === 'board') {
-      uCol = s.selectedSource.col;
-      uRow = s.selectedSource.row;
-      unit = s.board[uRow]?.[uCol] ?? null;
-      if (uRow < s.stage.dividerRow) {
-        rStart = 0;
-        rEnd = s.stage.dividerRow;
+      const uCol = s.selectedSource.col;
+      const uRow = s.selectedSource.row;
+      const u = s.board[uRow]?.[uCol] ?? null;
+      if (u) {
+        previewUnit = u;
+        const center = engine.getUnitBoardCenter(u, uCol, uRow);
+        centerGridX = center.x;
+        centerGridY = center.y;
+        if (uRow < s.stage.dividerRow) {
+          rStart = 0;
+          rEnd = s.stage.dividerRow;
+        }
       }
     }
 
-    if (!unit || uCol < 0) return;
+    if (!previewUnit || centerGridX < 0) return;
 
-    const cx = L.boardX + (uCol + 0.5) * cs;
-    const cy = L.boardY + (uRow + 0.5) * cs;
-    const rangeInfo = getUnitCircleRange(unit);
+    const cx = L.boardX + centerGridX * cs;
+    const cy = L.boardY + centerGridY * cs;
+    const rangeInfo = getUnitCircleRange(previewUnit);
 
     ctx.save();
     // Clip circle to that player's/AI's half-board so the circle stays tidy inside the battlefield!
@@ -394,6 +583,31 @@ export class BoardRenderer {
     ctx.beginPath();
     ctx.rect(L.boardX, clipY, L.boardW, clipH);
     ctx.clip();
+
+    // Draw 2-Cell Drop-Target Footprint Highlight if dragging/awakening a 2-Cell General!
+    if (twoCellFootprint) {
+      const fx = L.boardX + twoCellFootprint.c1 * cs + 2;
+      const fy = L.boardY + twoCellFootprint.r1 * cs + 2;
+      const fw = (twoCellFootprint.c2 - twoCellFootprint.c1 + 1) * cs - 4;
+      const fh = (twoCellFootprint.r2 - twoCellFootprint.r1 + 1) * cs - 4;
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.24)';
+      this.roundRect(ctx, fx, fy, fw, fh, 7);
+      ctx.fill();
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 2.8;
+      this.roundRect(ctx, fx, fy, fw, fh, 7);
+      ctx.stroke();
+    } else if (blockedTwoCell) {
+      const bx = L.boardX + Math.floor(centerGridX) * cs + 2;
+      const by = L.boardY + Math.floor(centerGridY) * cs + 2;
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+      this.roundRect(ctx, bx, by, cs - 4, cs - 4, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = 2.6;
+      this.roundRect(ctx, bx, by, cs - 4, cs - 4, 6);
+      ctx.stroke();
+    }
 
     // Unfused Puzzle Piece -> show compact dashed amber ring indicating 0 attack range!
     if (!rangeInfo.canAttack) {
@@ -408,14 +622,17 @@ export class BoardRenderer {
     }
 
     // Check if circle reaches at least one road cell on this side
-    let hitsRoad = false;
-    for (let r = rStart; r < rEnd && !hitsRoad; r++) {
-      for (let c = 0; c < s.stage.cols; c++) {
-        if (s.cells[r][c] !== 'path') continue;
-        const d = Math.hypot(c - uCol, r - uRow);
-        if (d + 0.35 >= rangeInfo.minR && d - 0.35 <= rangeInfo.maxR) {
-          hitsRoad = true;
-          break;
+    let hitsRoad = !blockedTwoCell;
+    if (hitsRoad) {
+      hitsRoad = false;
+      for (let r = rStart; r < rEnd && !hitsRoad; r++) {
+        for (let c = 0; c < s.stage.cols; c++) {
+          if (s.cells[r][c] !== 'path') continue;
+          const d = Math.hypot(c + 0.5 - centerGridX, r + 0.5 - centerGridY);
+          if (d + 0.35 >= rangeInfo.minR && d - 0.35 <= rangeInfo.maxR) {
+            hitsRoad = true;
+            break;
+          }
         }
       }
     }
@@ -952,6 +1169,285 @@ export class BoardRenderer {
     ctx.restore();
   }
 
+  /**
+   * Renders a 2-Cell Awakened General (`2x1` Horizontal or `1x2` Vertical Imperial Jade-Gold Double Plaque)!
+   * Strictly non-Hanzi on canvas: Gongbi Hero Portrait + Geometric Faction Crest + Equipped Weapon + Lv.X + 2x + Tier + XP Bar.
+   */
+  public drawDoubleWarTile(
+    ctx: CanvasRenderingContext2D,
+    u: TileUnit,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    cellSize: number,
+    highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman',
+    dimmed: boolean,
+    isPlayerSide: boolean
+  ): void {
+    const def = UNITS[u.unitId];
+    const isHoriz = w >= h;
+
+    ctx.save();
+    if (dimmed) ctx.globalAlpha = 0.52;
+
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let scale = 1;
+    if (u.mergeAnimTimer > 0) {
+      scale = 1 + Math.sin((u.mergeAnimTimer / 0.25) * Math.PI) * 0.12;
+    } else if (u.levelUpAnimTimer > 0) {
+      scale = 1 + Math.sin((u.levelUpAnimTimer / 0.85) * Math.PI) * 0.1;
+    }
+    if (u.recoilTimer > 0) {
+      const kick = (u.recoilTimer / 0.14) * 3.5;
+      cx += Math.cos(u.recoilAngle) * kick;
+      cy += Math.sin(u.recoilAngle) * kick;
+    }
+
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    const tx = -w * 0.5;
+    const ty = -h * 0.5;
+    const rad = Math.max(6, cellSize * 0.14);
+    const lip = Math.max(3.5, cellSize * 0.085);
+    const faceH = h - lip;
+
+    // Selection / Talisman / Frenzy / Level-Up Outer Glow
+    if (highlight !== 'none' || u.frenzyTimer > 0 || u.levelUpAnimTimer > 0) {
+      const pulse = 0.65 + 0.35 * Math.sin(this.animClock * 7.5);
+      ctx.save();
+      ctx.strokeStyle =
+        highlight === 'awaken' || highlight === 'talisman' || u.levelUpAnimTimer > 0
+          ? `rgba(250, 204, 21, ${pulse})`
+          : highlight === 'merge'
+            ? `rgba(52, 211, 153, ${pulse})`
+            : u.frenzyTimer > 0
+              ? 'rgba(192, 132, 252, 0.92)'
+              : 'rgba(251, 191, 36, 0.95)';
+      ctx.lineWidth = highlight === 'awaken' || highlight === 'talisman' ? 3.4 : 2.6;
+      ctx.shadowColor = highlight === 'merge' ? '#34d399' : '#facc15';
+      ctx.shadowBlur = 12;
+      this.roundRect(ctx, tx - 2, ty - 2, w + 4, h + 4, rad + 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3D Carved Imperial Gold-Mahogany Lip
+    ctx.fillStyle = '#6b3f06';
+    this.roundRect(ctx, tx, ty + lip, w, faceH, rad);
+    ctx.fill();
+
+    // Imperial Gold-Leaf Face Gradient
+    const g = ctx.createLinearGradient(tx, ty, tx + w, ty + faceH);
+    g.addColorStop(0, '#fef3c7');
+    g.addColorStop(0.45, '#f6d365');
+    g.addColorStop(1, '#ca9a29');
+    ctx.fillStyle = g;
+    this.roundRect(ctx, tx, ty, w, faceH, rad);
+    ctx.fill();
+
+    const pad = Math.max(3, cellSize * 0.07);
+    const xpBarH = Math.max(3.6, cellSize * 0.085);
+    const innerW = w - pad * 2;
+    const innerH = faceH - pad * 2 - xpBarH - 2;
+
+    if (isHoriz) {
+      // === 2x1 HORIZONTAL DOUBLE PLAQUE ===
+      const portraitW = Math.min(innerH * 1.16, innerW * 0.54);
+      const px0 = tx + pad;
+      const py0 = ty + pad;
+
+      // Left Half: Gongbi Hero Portrait
+      ctx.save();
+      this.roundRect(ctx, px0, py0, portraitW, innerH, Math.max(4, rad - 2));
+      ctx.clip();
+      const sprite = Assets.get(def.spriteKey);
+      if (sprite) {
+        ctx.drawImage(sprite, px0, py0, portraitW, innerH);
+      }
+      ctx.restore();
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 1.6;
+      this.roundRect(ctx, px0, py0, portraitW, innerH, Math.max(4, rad - 2));
+      ctx.stroke();
+
+      // Right Half: Cinnabar-Brocade Command Seal Panel (Crest + Weapon + Lv.X + Tier)
+      const rx0 = px0 + portraitW + 3;
+      const rw = Math.max(12, tx + w - pad - rx0);
+      ctx.fillStyle = 'rgba(42, 24, 18, 0.86)';
+      this.roundRect(ctx, rx0, py0, rw, innerH, Math.max(4, rad - 2));
+      ctx.fill();
+      ctx.strokeStyle = def.accentColor;
+      ctx.lineWidth = 1.4;
+      this.roundRect(ctx, rx0, py0, rw, innerH, Math.max(4, rad - 2));
+      ctx.stroke();
+
+      // Interlocking Golden Puzzle Seam between the two fused cells!
+      const seamX = px0 + portraitW + 1.5;
+      const seamMidY = py0 + innerH * 0.5;
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(seamX, seamMidY, Math.max(3.5, cellSize * 0.08), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Faction Crest Medallion OR Equipped Divine Weapon in Center of Right Panel
+      const eqWeapon =
+        def.heroKey && isPlayerSide ? SaveManager.get().equippedWeapons[def.heroKey] : null;
+      const centerArtKey = eqWeapon || (def.heroKey ? `crest_${def.heroKey}` : '');
+      const centerImg = centerArtKey ? Assets.get(centerArtKey) : null;
+      const iconSz = Math.min(rw * 0.66, innerH * 0.62);
+      const icX = rx0 + rw * 0.5;
+      const icY = py0 + innerH * 0.44;
+      if (centerImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(icX, icY, iconSz * 0.5, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(centerImg, icX - iconSz * 0.5, icY - iconSz * 0.5, iconSz, iconSz);
+        ctx.restore();
+        ctx.strokeStyle = eqWeapon ? '#fde047' : def.accentColor;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(icX, icY, iconSz * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Lv.X Combat Level Pill at bottom of Right Panel
+      const lvText = `Lv.${u.combatLevel}`;
+      const lvFont = Math.max(8, Math.round(cellSize * 0.19));
+      ctx.font = `900 ${lvFont}px sans-serif`;
+      ctx.fillStyle = '#fde047';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(lvText, rx0 + rw * 0.5, py0 + innerH - 1.5);
+    } else {
+      // === 1x2 VERTICAL DOUBLE PLAQUE ===
+      const px0 = tx + pad;
+      const py0 = ty + pad;
+      const portraitH = Math.min(innerW * 1.12, innerH * 0.56);
+
+      // Top Half: Gongbi Hero Portrait
+      ctx.save();
+      this.roundRect(ctx, px0, py0, innerW, portraitH, Math.max(4, rad - 2));
+      ctx.clip();
+      const sprite = Assets.get(def.spriteKey);
+      if (sprite) {
+        ctx.drawImage(sprite, px0, py0, innerW, portraitH);
+      }
+      ctx.restore();
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 1.6;
+      this.roundRect(ctx, px0, py0, innerW, portraitH, Math.max(4, rad - 2));
+      ctx.stroke();
+
+      // Bottom Half: Cinnabar Command Seal Panel
+      const by0 = py0 + portraitH + 3;
+      const bh = Math.max(12, ty + faceH - xpBarH - pad - 2 - by0);
+      ctx.fillStyle = 'rgba(42, 24, 18, 0.86)';
+      this.roundRect(ctx, px0, by0, innerW, bh, Math.max(4, rad - 2));
+      ctx.fill();
+      ctx.strokeStyle = def.accentColor;
+      ctx.lineWidth = 1.4;
+      this.roundRect(ctx, px0, by0, innerW, bh, Math.max(4, rad - 2));
+      ctx.stroke();
+
+      // Interlocking Golden Puzzle Seam
+      const seamY = py0 + portraitH + 1.5;
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(0, seamY, Math.max(3.5, cellSize * 0.08), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const eqWeapon =
+        def.heroKey && isPlayerSide ? SaveManager.get().equippedWeapons[def.heroKey] : null;
+      const centerArtKey = eqWeapon || (def.heroKey ? `crest_${def.heroKey}` : '');
+      const centerImg = centerArtKey ? Assets.get(centerArtKey) : null;
+      const iconSz = Math.min(innerW * 0.62, bh * 0.62);
+      const icY = by0 + bh * 0.43;
+      if (centerImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, icY, iconSz * 0.5, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(centerImg, -iconSz * 0.5, icY - iconSz * 0.5, iconSz, iconSz);
+        ctx.restore();
+        ctx.strokeStyle = eqWeapon ? '#fde047' : def.accentColor;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(0, icY, iconSz * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      const lvText = `Lv.${u.combatLevel}`;
+      const lvFont = Math.max(8, Math.round(cellSize * 0.19));
+      ctx.font = `900 ${lvFont}px sans-serif`;
+      ctx.fillStyle = '#fde047';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(lvText, 0, by0 + bh - 1.5);
+    }
+
+    // Outer Plaque Frame
+    ctx.strokeStyle = '#784b08';
+    ctx.lineWidth = 1.7;
+    this.roundRect(ctx, tx, ty, w, faceH, rad);
+    ctx.stroke();
+
+    // Top-Left Non-Hanzi Totem Crest Badge
+    if (def.crestSymbol) {
+      const bR = Math.max(6.5, cellSize * 0.16);
+      const bx = tx + bR + 2.5;
+      const by = ty + bR + 2.5;
+      ctx.fillStyle = '#7c2d12';
+      ctx.beginPath();
+      ctx.arc(bx, by, bR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fde68a';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef3c7';
+      ctx.font = `700 ${Math.round(bR * 1.25)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.crestSymbol, bx, by + 0.5);
+    }
+
+    // Full-Width Bottom XP Progress Bar
+    const barX = tx + pad;
+    const barY = ty + faceH - xpBarH - 2;
+    const barW = w - pad * 2;
+    const xpRatio =
+      u.combatLevel >= MAX_HERO_COMBAT_LEVEL ? 1 : Math.min(1, u.xp / Math.max(1, u.maxXp));
+    ctx.fillStyle = 'rgba(18, 15, 12, 0.85)';
+    ctx.fillRect(barX, barY, barW, xpBarH);
+    ctx.fillStyle = u.combatLevel >= MAX_HERO_COMBAT_LEVEL ? '#f59e0b' : '#38bdf8';
+    ctx.fillRect(barX, barY, barW * xpRatio, xpBarH);
+
+    // Top-Right Rarity Tier Numeral (1..5)
+    const tierColors = ['#1c1917', '#15803d', '#1d4ed8', '#7e22ce', '#c2410c'];
+    const tierFont = Math.max(10, Math.round(cellSize * 0.24));
+    const numX = tx + w - Math.max(8, cellSize * 0.18);
+    const numY = ty + Math.max(9, cellSize * 0.2);
+    ctx.font = `900 ${tierFont}px Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.8;
+    ctx.strokeStyle = 'rgba(252, 249, 240, 0.96)';
+    ctx.strokeText(`${u.tier}`, numX, numY);
+    ctx.fillStyle = tierColors[Math.min(4, u.tier - 1)];
+    ctx.fillText(`${u.tier}`, numX, numY);
+
+    ctx.restore();
+  }
+
   // ==================== 8. BENCH, ENEMIES, BOSSES, PROJECTILES & VFX ====================
 
   private drawCampBench(
@@ -1038,8 +1534,9 @@ export class BoardRenderer {
       ctx.fill();
 
       if (e.isBoss || e.isMiniBoss) {
-        ctx.strokeStyle = e.regenTimer > 0 ? '#22c55e' : e.isBoss ? '#dc2626' : '#eab308';
-        ctx.lineWidth = 2.2;
+        const lubuDash = e.bossType === 'lubu' && e.bossSkillTimer < 1.35;
+        ctx.strokeStyle = e.regenTimer > 0 ? '#22c55e' : lubuDash ? '#f97316' : e.isBoss ? '#dc2626' : '#eab308';
+        ctx.lineWidth = lubuDash ? 3 : 2.2;
         ctx.beginPath();
         ctx.ellipse(px, py + drawSz * 0.3, drawSz * 0.36, drawSz * 0.15, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -1065,6 +1562,17 @@ export class BoardRenderer {
         ctx.beginPath();
         ctx.arc(px, py - drawSz * 0.15, drawSz * 0.38, 0, Math.PI * 2);
         ctx.stroke();
+      }
+      if (e.brittleTimer > 0) {
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(px, py - drawSz * 0.15, drawSz * 0.34, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#bae6fd';
+        ctx.font = '700 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('❖', px - drawSz * 0.3, py - drawSz * 0.45);
       }
       if (e.armorBrokenTimer > 0) {
         ctx.fillStyle = '#4ade80';
@@ -1109,15 +1617,74 @@ export class BoardRenderer {
       ctx.translate(px, py);
 
       if (p.kind === 'mortar') {
+        const totalD = Math.max(0.25, Math.hypot(p.tx - p.startX, p.ty - p.startY));
+        const curD = Math.hypot(p.x - p.startX, p.y - p.startY);
+        const prog = Math.min(1, curD / totalD);
+        const arcLift = Math.sin(prog * Math.PI) * cs * 0.88;
+
+        // Ground shadow
+        ctx.fillStyle = 'rgba(15, 14, 12, 0.32)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, cs * 0.13, cs * 0.07, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Parabolic iron cannonball + fuse spark
+        ctx.translate(0, -arcLift);
         ctx.fillStyle = '#1c1917';
         ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.13, 0, Math.PI * 2);
+        ctx.arc(0, 0, cs * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#f97316';
         ctx.beginPath();
-        ctx.arc(-2, -2, cs * 0.06, 0, Math.PI * 2);
+        ctx.arc(-2.5, -2.5, cs * 0.07, 0, Math.PI * 2);
         ctx.fill();
-      } else if (p.kind === 'dragon' || p.kind === 'glaive') {
+      } else if (p.kind === 'boomerang_lance') {
+        // Zhao Yun's Spinning Silver Dragon Boomerang Spear!
+        ctx.rotate(this.animClock * 18);
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = Math.max(2.5, cs * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(-cs * 0.38, 0);
+        ctx.lineTo(cs * 0.38, 0);
+        ctx.stroke();
+
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = Math.max(2, cs * 0.06);
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.32, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (p.kind === 'lance') {
+        // Spear Piercing Lance: long crimson-gold shaft + silver tip
+        ctx.rotate(ang);
+        ctx.strokeStyle = '#991b1b';
+        ctx.lineWidth = Math.max(2.4, cs * 0.075);
+        ctx.beginPath();
+        ctx.moveTo(-cs * 0.36, 0);
+        ctx.lineTo(cs * 0.22, 0);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.moveTo(cs * 0.38, 0);
+        ctx.lineTo(cs * 0.14, -cs * 0.09);
+        ctx.lineTo(cs * 0.14, cs * 0.09);
+        ctx.closePath();
+        ctx.fill();
+      } else if (p.kind === 'glaive') {
+        // Guan Yu Wide Emerald Crescent Wave
+        ctx.rotate(ang);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = cs * 0.17;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.48, -0.95, 0.95);
+        ctx.stroke();
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = cs * 0.06;
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.5, -0.8, 0.8);
+        ctx.stroke();
+      } else if (p.kind === 'dragon') {
         ctx.rotate(ang);
         ctx.strokeStyle = p.color;
         ctx.lineWidth = cs * 0.14;
@@ -1163,6 +1730,36 @@ export class BoardRenderer {
         if (chest) {
           ctx.drawImage(chest, px - sz * 0.5, py - sz * 0.5 - lift, sz, sz);
         }
+      } else if (fx.kind === 'heavy_chop') {
+        // Single-Target Heavy Blade Guillotine Strike!
+        ctx.translate(px, py);
+        ctx.rotate(fx.angle || 0);
+        const r = fx.radius * cs * (0.65 + tNorm * 0.35);
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = Math.max(3.5, cs * 0.13 * (1 - tNorm * 0.4));
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-r, -r * 0.65);
+        ctx.lineTo(r, r * 0.65);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = Math.max(2, cs * 0.06 * (1 - tNorm * 0.4));
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.7, r * 0.55);
+        ctx.lineTo(r * 0.7, -r * 0.55);
+        ctx.stroke();
+      } else if (fx.kind === 'lance_beam' && fx.endX !== undefined && fx.endY !== undefined) {
+        // Straight Piercing Spear Beam Trail
+        const ex = L.boardX + fx.endX * cs;
+        const ey = L.boardY + fx.endY * cs;
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = Math.max(2.6, cs * 0.09 * (1 - tNorm * 0.5));
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
       } else if (fx.kind === 'slash') {
         ctx.translate(px, py);
         ctx.rotate(fx.angle || 0);

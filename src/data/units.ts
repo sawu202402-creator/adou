@@ -50,12 +50,12 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     crest: '◈',
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
-    pattern: 'dragon_sweep',
-    awakenedDamage: 82,
-    interval: 0.7,
-    range: 2.45,
-    projSpeed: 11.8,
-    aoe: 1.7,
+    pattern: 'dragon_boomerang',
+    awakenedDamage: 68,
+    interval: 0.86,
+    range: 2.65,
+    projSpeed: 10.6,
+    aoe: 0.65,
     skillEveryN: 4,
   },
   guanyu: {
@@ -64,12 +64,12 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     crest: '☾',
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
-    pattern: 'jade_execute',
-    awakenedDamage: 112,
-    interval: 1.05,
-    range: 2.35,
-    projSpeed: 9.6,
-    aoe: 1.65,
+    pattern: 'crescent_execute',
+    awakenedDamage: 124,
+    interval: 1.25,
+    range: 2.5,
+    projSpeed: 8.4,
+    aoe: 1.05,
     skillEveryN: 3,
   },
   zhangfei: {
@@ -79,12 +79,12 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'roar_quake',
-    awakenedDamage: 84,
-    interval: 0.94,
-    range: 2.35,
+    awakenedDamage: 74,
+    interval: 1.04,
+    range: 2.45,
     projSpeed: 0,
-    aoe: 2.2,
-    stunDur: 1.15,
+    aoe: 2.35,
+    stunDur: 1.25,
     skillEveryN: 4,
   },
   zhuge: {
@@ -94,10 +94,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
     pattern: 'chain_lightning',
-    awakenedDamage: 74,
-    interval: 1.0,
-    range: 3.45,
+    awakenedDamage: 72,
+    interval: 1.05,
+    range: 3.55,
     projSpeed: 14.0,
+    aoe: 1.45,
     skillEveryN: 3,
   },
   zhenji: {
@@ -106,15 +107,15 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     crest: '✻',
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
-    pattern: 'lotus_blizzard',
-    awakenedDamage: 64,
-    interval: 0.92,
-    range: 3.35,
+    pattern: 'frost_vortex',
+    awakenedDamage: 56,
+    interval: 1.02,
+    range: 3.45,
     projSpeed: 9.2,
-    aoe: 1.55,
-    slow: 0.5,
+    aoe: 1.5,
+    slow: 0.52,
     slowDur: 2.6,
-    stunDur: 0.9,
+    stunDur: 1.1,
     skillEveryN: 4,
   },
   shangxiang: {
@@ -123,11 +124,12 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     crest: '✦',
     synergy: 'marksman',
     rangeShape: 'hero_global_4',
-    pattern: 'phoenix_volley',
-    awakenedDamage: 58,
-    interval: 0.64,
-    range: 4.3,
-    projSpeed: 12.8,
+    pattern: 'phoenix_multishot',
+    awakenedDamage: 52,
+    interval: 0.72,
+    range: 4.35,
+    projSpeed: 13.0,
+    aoe: 1.45,
     skillEveryN: 4,
   },
 };
@@ -138,6 +140,7 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
     shovel: {
       id: 'shovel',
       category: 'item',
+      cellSpan: 1,
       spriteKey: 'icon_shovel',
       accentColor: '#d97706',
       frameColor: '#92400e',
@@ -152,29 +155,31 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       projectileSpeed: 0,
     },
 
-    // 1. 刀兵: Highest base cleave damage, tight circular melee range (1.48R) — must hug the road!
+    // 1. 刀兵: STRICTLY SINGLE-TARGET! Massive heavy chop + armor shred every 4th hit!
     blade: {
       id: 'blade',
       category: 'troop',
+      cellSpan: 1,
       spriteKey: 'unit_blade',
       accentColor: '#9e2a2b',
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'vanguard',
       rangeShape: 'melee_1',
-      pattern: 'cleave',
-      baseDamage: 58,
-      attackInterval: 0.86,
+      pattern: 'single_chop',
+      baseDamage: 80,
+      attackInterval: 0.88,
       minRangeCells: 0,
       rangeCells: 1.48,
       projectileSpeed: 0,
-      aoeRadiusCells: 1.35,
+      skillEveryN: 4,
     },
 
-    // 2. 枪兵: Medium circular range (2.10R) + multi-target line-piercing lance!
+    // 2. 枪兵: STRAIGHT-LINE PIERCE! Pierces 5+ foes in a line (+15% dmg per pierced foe)!
     spear: {
       id: 'spear',
       category: 'troop',
+      cellSpan: 1,
       spriteKey: 'unit_spear',
       accentColor: '#b91c1c',
       frameColor: '#5c4b3c',
@@ -182,66 +187,72 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'spear_line_2',
       pattern: 'pierce_lance',
-      baseDamage: 35,
-      attackInterval: 0.82,
+      baseDamage: 34,
+      attackInterval: 0.86,
       minRangeCells: 0,
-      rangeCells: 2.1,
-      projectileSpeed: 11.2,
+      rangeCells: 2.18,
+      projectileSpeed: 12.0,
     },
 
-    // 3. 骑兵: Agile medium-wide circular range (2.38R), fast tempo wave clearer!
+    // 3. 骑兵: AREA-OF-EFFECT SWEEP! Wide halberd trample splashing enemy packs!
     lancer: {
       id: 'lancer',
       category: 'troop',
+      cellSpan: 1,
       spriteKey: 'unit_lancer',
       accentColor: '#2b5b6c',
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'vanguard',
       rangeShape: 'cavalry_2',
-      pattern: 'cavalry_slash',
-      baseDamage: 32,
-      attackInterval: 0.68,
+      pattern: 'cavalry_aoe',
+      baseDamage: 27,
+      attackInterval: 0.8,
       minRangeCells: 0,
-      rangeCells: 2.38,
-      projectileSpeed: 10.5,
+      rangeCells: 2.35,
+      projectileSpeed: 0,
+      aoeRadiusCells: 1.28,
+      slowFactor: 0.28,
+      slowDuration: 0.35,
     },
 
-    // 4. 弓兵: Wide sniper circle (3.42R) covering outer roads safely from the inner core!
+    // 4. 弓兵: LONG-RANGE SINGLE-TARGET FOCUS! Homing arrows stacking +14% consecutive hit mark!
     archer: {
       id: 'archer',
       category: 'troop',
+      cellSpan: 1,
       spriteKey: 'unit_archer',
       accentColor: '#386641',
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'marksman',
       rangeShape: 'archer_3',
-      pattern: 'arrow',
-      baseDamage: 25,
-      attackInterval: 0.58,
+      pattern: 'focus_arrow',
+      baseDamage: 24,
+      attackInterval: 0.56,
       minRangeCells: 0,
-      rangeCells: 3.42,
-      projectileSpeed: 12.2,
+      rangeCells: 3.45,
+      projectileSpeed: 13.2,
     },
 
-    // 5. 神威炮: Siege ring (1.15R inner blindspot .. 3.55R outer circle), heavy armor-piercing AoE!
+    // 5. 神威炮: PARABOLIC SIEGE AoE + BLINDSPOT! Ignores 75% armor & leaves burning embers!
     mortar: {
       id: 'mortar',
       category: 'troop',
+      cellSpan: 1,
       spriteKey: 'unit_mortar',
       accentColor: '#7f4f24',
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'mystic',
       rangeShape: 'mortar_ring_3',
-      pattern: 'mortar_aoe',
-      baseDamage: 50,
-      attackInterval: 1.4,
-      minRangeCells: 1.15,
-      rangeCells: 3.55,
-      projectileSpeed: 7.8,
-      aoeRadiusCells: 1.35,
+      pattern: 'mortar_siege',
+      baseDamage: 56,
+      attackInterval: 1.55,
+      minRangeCells: 1.2,
+      rangeCells: 3.6,
+      projectileSpeed: 7.4,
+      aoeRadiusCells: 1.45,
     },
   };
 
@@ -251,10 +262,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
     const s2: UnitId = `shard2_${h}`;
     const heroId: UnitId = `hero_${h}`;
 
-    // Hero Puzzle Piece I (Left Half 1/2 — CANNOT attack until fused with Piece II!)
+    // Hero Puzzle Piece I (Left Half 1/2 — 1 cell, CANNOT attack until fused with Piece II!)
     reg[s1] = {
       id: s1,
       category: 'shard1',
+      cellSpan: 1,
       heroKey: h,
       spriteKey: `soul_${h}`,
       accentColor: sp.accent,
@@ -270,10 +282,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       projectileSpeed: 0,
     };
 
-    // Hero Puzzle Piece II (Right Half 2/2 — CANNOT attack until fused with Piece I!)
+    // Hero Puzzle Piece II (Right Half 2/2 — 1 cell, CANNOT attack until fused with Piece I!)
     reg[s2] = {
       id: s2,
       category: 'shard2',
+      cellSpan: 1,
       heroKey: h,
       spriteKey: `crest_${h}`,
       accentColor: sp.accent,
@@ -289,10 +302,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       projectileSpeed: 0,
     };
 
-    // Awakened Legendary General (Piece I + Piece II -> Attacks & levels up via Combat XP!)
+    // Awakened Legendary General (Occupies 2 Adjacent Board Cells! Levels up via Combat XP!)
     reg[heroId] = {
       id: heroId,
       category: 'awakened',
+      cellSpan: 2,
       heroKey: h,
       spriteKey: `hero_${h}`,
       accentColor: sp.accent,
@@ -406,11 +420,13 @@ export function computeSynergies(boardUnits: (TileUnit | null)[]): {
   heroSkillFaster: boolean;
   critChance: number;
 } {
+  const seenUids = new Set<number>();
   const uniqueTypes = new Set<string>();
   const uniqueAwakenedHeroes = new Set<HeroKey>();
 
   for (const u of boardUnits) {
-    if (!u) continue;
+    if (!u || seenUids.has(u.uid)) continue;
+    seenUids.add(u.uid);
     const def = UNITS[u.unitId];
     if (def.category === 'shard1' || def.category === 'shard2' || def.category === 'item') continue;
     uniqueTypes.add(def.heroKey || def.id);

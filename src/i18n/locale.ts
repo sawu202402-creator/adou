@@ -98,6 +98,8 @@ interface Dict {
   bannerShovelRefund: (buns: number) => string;
   bannerTombRaiderBonus: (buns: number, gotShard: boolean) => string;
   bannerShardCannotAttack: string;
+  bannerNeedTwoCellsForHero: string;
+  bannerHeroCannotBench: string;
   bannerHeroLevelUp: (name: string, lvl: number) => string;
   bannerTalismanPick: string;
   bannerTalismanUpgraded: (name: string, tier: number) => string;
@@ -213,11 +215,12 @@ const EN_DICT: Dict = {
   equippedOn: (heroName) => `Equipped: ${heroName}`,
   unequippedLabel: 'Tap to Equip',
 
-  codexFusionTitle: '2-Piece Hero Puzzle: [Left Piece 1/2] + [Right Piece 2/2] = General (Cannot Attack Unfused!)',
-  codexTroopsTitle: 'Five Tactical Troops & Circular Attack Ranges',
+  codexFusionTitle:
+    '2-Cell Generals: [Puzzle 1/2] + [Puzzle 2/2] = 2-Grid General (Unique Signature Attacks!)',
+  codexTroopsTitle: 'Five Distinct Troops: Single · Pierce · AoE · Focus · Siege',
   codexSynergyTitle: 'Battlefield Formation Synergies',
   codexRuleTip:
-    'Hold or tap any unit to preview its circular attack ring! Unfused Hero Puzzle Pieces [1/2, 2/2] CANNOT attack — fuse both halves to summon a General who gains XP & levels up from attacks and kills!',
+    'Generals occupy 2 ADJACENT jade cells (2x1 or 1x2)! Every troop & General has its own attack style: Blade = Single-Target Armor Chop, Cavalry = AoE Sweep, Spear = Line Pierce, Archer = Focus Homing, Bombard = Siege Crater!',
 
   rivalTag: 'RIVAL',
   playerTag: 'YOU',
@@ -252,7 +255,9 @@ const EN_DICT: Dict = {
     gotShard
       ? `Tomb Raider! +${buns} Buns & Unearthed 1 Weapon Shard!`
       : `Tomb Raider! Unearthed +${buns} Bonus Buns!`,
-  bannerShardCannotAttack: 'Puzzle Piece cannot attack alone! Combine [1/2] + [2/2] to summon General!',
+  bannerShardCannotAttack: 'Puzzle Piece cannot attack alone! Combine [1/2] + [2/2] on 2 adjacent cells!',
+  bannerNeedTwoCellsForHero: 'Generals occupy 2 adjacent jade cells! Free an adjacent slot or dig with a Shovel!',
+  bannerHeroCannotBench: '2-Cell Generals cannot return to a 1-slot camp bench!',
   bannerHeroLevelUp: (name, lvl) => `✦ ${name} Leveled Up to Lv.${lvl}! (DMG & Range Up)`,
   bannerTalismanPick: 'Divine Talisman Ready: Tap any Troop or General to +1 Tier & Haste!',
   bannerTalismanUpgraded: (name, tier) => `Divine Talisman! ${name} Promoted to Tier ${tier}!`,
@@ -440,28 +445,28 @@ const EN_DICT: Dict = {
   troops: {
     blade: {
       name: 'Heavy Blade Guard',
-      role: '[Circle: 1.5R Melee] · Highest Cleave DMG',
-      desc: 'Highest base damage, small melee circle! Excavate outer road-side cells to reach foes.',
+      role: '[Single-Target · 1.5R] · Armor-Cracking Chop',
+      desc: 'Strictly SINGLE-TARGET! Huge single-hit chop ignoring 35% armor; every 4th hit deals 1.85x Guillotine Crit & breaks armor!',
     },
     spear: {
       name: 'Crimson Spearman',
-      role: '[Circle: 2.1R Medium] · Line-Piercing Lance',
-      desc: 'Thrusts piercing shockwaves hitting up to 4+ enemies in a straight line.',
+      role: '[Line Pierce · 2.2R] · +15% DMG/Pierce',
+      desc: 'STRAIGHT-LINE PIERCE! Thrusts a spear beam through 6+ foes in a row, dealing +15% escalating damage per enemy pierced!',
     },
     lancer: {
       name: 'Iron Cavalry',
-      role: '[Circle: 2.4R Agile] · Rapid Sweep',
-      desc: 'Balanced medium-wide circle with fast strikes — reliable wave clearer.',
+      role: '[AoE Sweep · 2.4R] · Cluster Trample',
+      desc: 'AREA-OF-EFFECT! Sweeps a wide halberd shockwave splashing all nearby enemies with brief stagger — best vs swarms, weak vs heavy armor!',
     },
     archer: {
       name: 'Horn-Bow Marksman',
-      role: '[Circle: 3.4R Sniper] · +30% Boss DMG',
-      desc: 'Wide sniper circle reaching outer roads safely from deep inner tiles!',
+      role: '[Focus Homing · 3.5R] · Stacking Boss Killer',
+      desc: 'SINGLE-TARGET RAPID LOCK! Homing arrows stack +14% Focus DMG (up to +70%) on the same foe & +30% vs Bosses! Lv.3+ fires twin shots.',
     },
     mortar: {
       name: 'Siege Bombard',
-      role: '[Circle: 1.2-3.6R Ring] · Armor-Piercing AoE',
-      desc: 'Inner blindspot ring, wide outer siege blast crushing armored shieldmen!',
+      role: '[1.2-3.6R Ring AoE] · Armor-Ignore & Scorch',
+      desc: 'PARABOLIC SIEGE BLAST! Inner blindspot, wide outer explosion ignoring 75% armor and leaving a burning ember zone!',
     },
   },
 
@@ -470,43 +475,43 @@ const EN_DICT: Dict = {
       shard1Name: 'Zhao Yun · Puzzle 1/2',
       shard2Name: 'Zhao Yun · Puzzle 2/2',
       heroName: 'Zhao Yun · White Dragon',
-      role: '◈ 2.5R Martial Circle · Levels Up via Hits & Kills',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP on every hit & kill to level up; Dragon Spear fires full-board spears.',
+      role: '◈ [2-Cell · 2.7R] · Boomerang Dragon Lance',
+      desc: 'Occupies 2 cells! Throws a Silver Dragon Spear that pierces out AND boomerangs back hitting foes twice; every 4th hit fires multi-lane spears!',
     },
     guanyu: {
       shard1Name: 'Guan Yu · Puzzle 1/2',
       shard2Name: 'Guan Yu · Puzzle 2/2',
       heroName: 'Guan Yu · Martial Saint',
-      role: '☾ 2.4R Martial Circle · Levels Up & Executes',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP from hits & kills, executing low-HP foes outright.',
+      role: '☾ [2-Cell · 2.5R] · Giant Crescent Wave & Execute',
+      desc: 'Occupies 2 cells! Cleaves a wide emerald crescent wave ignoring 50% armor & instantly executing non-Boss foes below 22% HP!',
     },
     zhangfei: {
       shard1Name: 'Zhang Fei · Puzzle 1/2',
       shard2Name: 'Zhang Fei · Puzzle 2/2',
       heroName: 'Zhang Fei · Warcry Titan',
-      role: '❖ 2.4R Martial Circle · Levels Up & Quake Stun',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP in combat and stuns surrounding waves & Bosses.',
+      role: '❖ [2-Cell · 2.5R] · 360° Quake & Knockback Stun',
+      desc: 'Occupies 2 cells! Unleashes a 360° seismic warcry hitting all foes in his circle; every 4th roar stuns & knocks enemies backward!',
     },
     zhuge: {
       shard1Name: 'Zhuge Liang · Puzzle 1/2',
       shard2Name: 'Zhuge Liang · Puzzle 2/2',
       heroName: 'Zhuge Liang · Storm Sage',
-      role: '☯ 3.5R Mystic Circle · Levels Up & Chain Thunder',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP from hits & kills, calling multi-jump lightning.',
+      role: '☯ [2-Cell · 3.6R] · Chain Thunder & Trigram Array',
+      desc: 'Occupies 2 cells! Instant armor-ignoring Chain Lightning jumping across foes; every 3rd cast drops a pulsing Eight-Trigrams Thunder Zone!',
     },
     zhenji: {
       shard1Name: 'Zhen Ji · Puzzle 1/2',
       shard2Name: 'Zhen Ji · Puzzle 2/2',
       heroName: 'Zhen Ji · Frost Consort',
-      role: '✻ 3.4R Mystic Circle · Levels Up & Blizzard',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP in battle while freezing whole lanes.',
+      role: '✻ [2-Cell · 3.5R] · Ice Vortex Pool & Brittle Freeze',
+      desc: 'Occupies 2 cells! Creates chilling Ice Vortex pools on the road (50% slow + DoT); every 4th cast freezes foes solid (+25% brittle DMG taken)!',
     },
     shangxiang: {
       shard1Name: 'Shangxiang · Puzzle 1/2',
       shard2Name: 'Shangxiang · Puzzle 2/2',
       heroName: 'Shangxiang · Sky Archer',
-      role: '✦ 4.3R Giant Circle · Levels Up & Flame Volley',
-      desc: 'Inert until 2 puzzle halves fuse! Gains XP rapidly from multi-arrow flame barrages.',
+      role: '✦ [2-Cell · 4.4R] · Split Multishot & Fire Rain',
+      desc: 'Occupies 2 cells! Locks onto 3-5 separate targets simultaneously with stacking Scorch Arrows; every 4th volley rains fire on the road!',
     },
   },
 };
@@ -543,11 +548,11 @@ const ZH_DICT: Dict = {
   equippedOn: (heroName) => `已装备：${heroName}`,
   unequippedLabel: '点击装备武将',
 
-  codexFusionTitle: '武将双拼图合成：【左拼图 1/2】＋【右拼图 2/2】＝ 真名将（单块拼图不可攻击！实战杀敌升级）',
-  codexTroopsTitle: '五大基础兵种 · 圆形攻击范围详解',
+  codexFusionTitle: '双格名将合成：【左拼图 1/2】＋【右拼图 2/2】＝ 占2格真名将（每位武将专属攻击机制！）',
+  codexTroopsTitle: '五大兵种各司其职：刀单体 · 骑范围 · 枪贯穿 · 弓叠伤 · 炮重轰',
   codexSynergyTitle: '军阵奇门羁绊（上阵自动激活）',
   codexRuleTip:
-    '按住或点击棋子可查看【圆形攻击范围框】！未合成的武将拼图不可攻击；合成为真武将后每次攻击和杀敌都会涨经验升级（攻击力、攻速、圆圈射程全面成长）！',
+    '真名将需占【相邻2格】白玉阵位（横2×1或竖1×2自动贴合）！五兵种定位截然不同：刀兵=单体破甲重劈、骑兵=范围横扫清群、枪兵=直线贯穿叠伤、弓兵=远程锁定叠伤、火炮=抛物重轰焦土！',
 
   rivalTag: '敌方守军',
   playerTag: '我方阿斗',
@@ -582,7 +587,9 @@ const ZH_DICT: Dict = {
     gotShard
       ? `摸金校尉触发！挖出 +${buns} 馒头，并惊喜出土 1 枚【神兵碎片】！`
       : `摸金校尉触发！额外挖出 +${buns} 馒头军粮！`,
-  bannerShardCannotAttack: '单块武将拼图无法攻击！请集齐【1/2 + 2/2】两块拼图合成真武将',
+  bannerShardCannotAttack: '单块武将拼图无法攻击！请集齐【1/2 + 2/2】在相邻2格合成真武将',
+  bannerNeedTwoCellsForHero: '真名将需占【相邻2格】白玉阵位！请先腾出相邻格或用金铲扩建',
+  bannerHeroCannotBench: '名将占2格阵位，无法收回单格备战营帐！',
   bannerHeroLevelUp: (name, lvl) => `✦【${name}】杀敌历练升至 Lv.${lvl}！伤害与射程提升！`,
   bannerTalismanPick: '【神兵符】已出鞘：点击任意士兵或武将，无条件升阶并全军狂暴！',
   bannerTalismanUpgraded: (name, tier) => `神兵符显灵！【${name}】跃升至 ${tier} 阶并攻速狂飙！`,
@@ -770,28 +777,28 @@ const ZH_DICT: Dict = {
   troops: {
     blade: {
       name: '玄铁刀兵',
-      role: '【圆圈射程：1.5格近战】· 极致重斩',
-      desc: '基础伤害断层最高！但圆圈很小仅够打贴身道路，需用金铲挖开外圈石格贴路部署。',
+      role: '【单体破甲 · 1.5格近战】· 断头重劈',
+      desc: '纯单体处决！仅劈斩单个目标但单次伤害极高且无视35%护甲；每第4刀触发1.85倍重劈并碎甲2.5秒，专克铁盾兵与首领！',
     },
     spear: {
       name: '红缨枪兵',
-      role: '【圆圈射程：2.1格中程】· 直线贯穿',
-      desc: '中等圆圈射程，刺出破阵枪芒直线贯穿 4 名以上敌军！最适合摆在直道口。',
+      role: '【直线贯穿 · 2.2格中程】· 越穿越痛',
+      desc: '直线贯穿刺击！刺出破阵枪芒沿直线穿透6名以上敌军，每多贯穿1个敌人伤害递增+15%，摆在直道口威力翻倍！',
     },
     lancer: {
       name: '铁浮屠骑',
-      role: '【圆圈射程：2.4格机动】· 高频快攻',
-      desc: '圆圈覆盖较广且攻速轻快，前中期清理小怪潮性价比极高。',
+      role: '【范围横扫 · 2.4格机动】· 踏阵清群',
+      desc: '纯范围群伤！挥舞铁戟在目标周围掀起大范围半月冲击波并附带微顿挫，清小怪与狼群极强，但砍重甲盾兵刮痧！',
     },
     archer: {
       name: '雕翎弓兵',
-      role: '【圆圈射程：3.4格大圆】· 克制首领',
-      desc: '超大圆形射程，缩在安全的内圈白格也能覆盖外围远路，对 Boss 额外 +30% 伤害！',
+      role: '【远程单体连珠 · 3.5格】· 锁定叠伤',
+      desc: '追踪必中单体点射！连续命中同一敌人叠加【追猎印记】（最高+70%伤害，对Boss再+30%）；3阶以上每次连发双箭！',
     },
     mortar: {
       name: '神威火炮',
-      role: '【圆环射程：1.2~3.6格】· 破甲重轰',
-      desc: '贴身小圈盲区、外围大圆重炮轰炸，范围爆炸无视盾兵厚甲！',
+      role: '【抛物重轰 · 1.2~3.6格环】· 破甲焦土',
+      desc: '近身盲区、远距抛物线重炮！大范围轰炸无视75%护甲，并在路面留下持续灼烧的烈焰焦土！',
     },
   },
 
@@ -800,43 +807,43 @@ const ZH_DICT: Dict = {
       shard1Name: '赵云·左拼图 [1/2]',
       shard2Name: '赵云·右拼图 [2/2]',
       heroName: '真·赵云',
-      role: '◈ 2.5格圆圈 · 攻击与杀敌获经验升级',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，攻击与杀敌不断升级；配【龙胆亮银枪】触发全场飞枪！',
+      role: '◈【占2格 · 回旋穿云枪】· 往返双段贯穿',
+      desc: '占相邻2格！掷出苍龙银枪沿直线穿透敌群后自动回旋飞回，往返造成双段贯穿伤害；每4击触发【七进七出】多路飞枪！',
     },
     guanyu: {
       shard1Name: '关羽·左拼图 [1/2]',
       shard2Name: '关羽·右拼图 [2/2]',
       heroName: '真·关羽',
-      role: '☾ 2.4格圆圈 · 杀敌升级 · 残血处决',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，攻击与斩杀敌军飞速升级，重刀秒杀残血敌军！',
+      role: '☾【占2格 · 青龙半月波】· 破甲斩杀',
+      desc: '占相邻2格！蓄力劈出宽幅翡翠刀波无视50%护甲，直接秒杀低于22%血量的敌军；每3刀释放巨型双月斩重创残血首领！',
     },
     zhangfei: {
       shard1Name: '张飞·左拼图 [1/2]',
       shard2Name: '张飞·右拼图 [2/2]',
       heroName: '真·张飞',
-      role: '❖ 2.4格圆圈 · 杀敌升级 · 怒吼群晕',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，激战升级扩大震地范围，怒吼震晕群怪与 Boss！',
+      role: '❖【占2格 · 全环震地吼】· 碎甲击退群晕',
+      desc: '占相邻2格！以双格为中心爆发360°咆哮音波同时震伤圈内所有敌人并破甲；每4吼触发【当阳断桥】群体眩晕并强制击退！',
     },
     zhuge: {
       shard1Name: '诸葛·左拼图 [1/2]',
       shard2Name: '诸葛·右拼图 [2/2]',
       heroName: '真·诸葛亮',
-      role: '☯ 3.5格大圆 · 杀敌升级 · 九天连环雷',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，落雷电杀敌群快速升级，电弧在敌阵连环跳跃！',
+      role: '☯【占2格 · 连环天雷】· 奇门八卦雷阵',
+      desc: '占相邻2格！瞬发必中紫金闪电在敌群间连环弹跳（无视护甲）；每3击在路面布下【八卦雷阵】持续电击踏入的敌军！',
     },
     zhenji: {
       shard1Name: '甄姬·左拼图 [1/2]',
       shard2Name: '甄姬·右拼图 [2/2]',
       heroName: '真·甄姬',
-      role: '✻ 3.4格大圆 · 杀敌升级 · 洛神冰封',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，寒岚控场杀敌升级，大范围减速冰封整条道路！',
+      role: '✻【占2格 · 洛水冰涡】· 冻土减速易伤',
+      desc: '占相邻2格！在道路凝结持续2.4秒的【寒冰漩涡】大幅减速并冻伤群敌；每4击触发【千里冰封】定身并附加+25%冰脆易伤！',
     },
     shangxiang: {
       shard1Name: '尚香·左拼图 [1/2]',
       shard2Name: '尚香·右拼图 [2/2]',
       heroName: '真·孙尚香',
-      role: '✦ 4.3格巨圆 · 杀敌升级 · 漫天凤羽箭',
-      desc: '单块拼图不可攻击！集齐两块拼图合成参战，超大圆圈齐射火雨，收割人头极快冲刺满级！',
+      role: '✦【占2格 · 多重锁定火矢】· 叠层流星火雨',
+      desc: '占相邻2格！超远射程同时锁定3~5个不同敌人齐射烈焰追踪箭（灼烧无限叠层）；每4击降下【丹凤火雨】铺满火海！',
     },
   },
 };

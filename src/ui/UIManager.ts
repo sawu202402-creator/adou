@@ -393,9 +393,10 @@ export class UIManager {
               <span class="mini-half">2/2</span>
             </div>
             <span class="eq-arrow">➔</span>
-            <div class="mini-war-tile awakened-tile">
+            <div class="mini-war-tile awakened-tile" style="width:68px">
               <img src="./assets/${heroDef.spriteKey}.png" alt="" />
               <span class="mini-crest gold">${heroDef.crestSymbol}</span>
+              <span class="mini-half">2×1</span>
               ${eqWeap ? `<img class="mini-eq-weap" src="./assets/${eqWeap}.png" alt="" />` : ''}
             </div>
           </div>

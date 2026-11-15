@@ -241,9 +241,9 @@ class SaveService {
   public getEffectiveBonuses() {
     const sk = this.data.skills;
     return {
-      maxHearts: 9 + Math.floor(sk.rank_up / 2),
+      maxHearts: 8 + Math.floor(sk.rank_up / 2),
       barricadeHpMult: 1 + sk.rank_up * 0.1,
-      startRations: 28 + sk.rank_up * 4 + sk.granary_art * 8,
+      startRations: 24 + (sk.rank_up - 1) * 4 + sk.granary_art * 7,
       passiveRationBonus: sk.granary_art * 0.45,
       damageMult: 1 + (sk.rank_up - 1) * 0.1 + (this.data.commanderLevel - 1) * 0.03,
       aspdMult: 1 + sk.haste_scroll * 0.12,
