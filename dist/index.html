@@ -8,6 +8,11 @@
     />
     <title>Dynasty Jade Guard | 千里护主录</title>
     <link rel="icon" type="image/png" href="./assets/vip_lord.png" />
+    <script>
+      if (location.hostname.endsWith('github.io') && !location.pathname.includes('/dist/')) {
+        location.replace('./dist/' + location.search + location.hash);
+      }
+    </script>
     <!-- CrazyGames SDK v3 (async non-blocking load, auto-falls back to local mock in offline/dev) -->
     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async></script>
     <script type="module" crossorigin src="./assets/index-DInUmtZG.js"></script>
