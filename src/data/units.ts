@@ -9,7 +9,7 @@ import {
   UnitId,
 } from '../types';
 
-export const TROOP_KEYS: TroopKey[] = ['blade', 'spear', 'lancer', 'archer', 'mortar'];
+export const TROOP_KEYS: TroopKey[] = ['blade', 'lancer', 'spear', 'archer', 'mortar'];
 export const HERO_KEYS: HeroKey[] = [
   'zhaoyun',
   'guanyu',
@@ -51,11 +51,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'dragon_boomerang',
-    awakenedDamage: 68,
-    interval: 0.86,
-    range: 2.65,
+    awakenedDamage: 52,
+    interval: 0.92,
+    range: 2.2,
     projSpeed: 10.6,
-    aoe: 0.65,
+    aoe: 0.62,
     skillEveryN: 4,
   },
   guanyu: {
@@ -65,11 +65,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'crescent_execute',
-    awakenedDamage: 124,
-    interval: 1.25,
-    range: 2.5,
+    awakenedDamage: 96,
+    interval: 1.32,
+    range: 2.05,
     projSpeed: 8.4,
-    aoe: 1.05,
+    aoe: 0.98,
     skillEveryN: 3,
   },
   zhangfei: {
@@ -79,12 +79,12 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'roar_quake',
-    awakenedDamage: 74,
-    interval: 1.04,
-    range: 2.45,
+    awakenedDamage: 58,
+    interval: 1.12,
+    range: 1.95,
     projSpeed: 0,
-    aoe: 2.35,
-    stunDur: 1.25,
+    aoe: 1.95,
+    stunDur: 1.1,
     skillEveryN: 4,
   },
   zhuge: {
@@ -94,11 +94,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
     pattern: 'chain_lightning',
-    awakenedDamage: 72,
-    interval: 1.05,
-    range: 3.55,
+    awakenedDamage: 54,
+    interval: 1.14,
+    range: 3.05,
     projSpeed: 14.0,
-    aoe: 1.45,
+    aoe: 1.32,
     skillEveryN: 3,
   },
   zhenji: {
@@ -108,14 +108,14 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
     pattern: 'frost_vortex',
-    awakenedDamage: 56,
-    interval: 1.02,
-    range: 3.45,
+    awakenedDamage: 42,
+    interval: 1.08,
+    range: 2.95,
     projSpeed: 9.2,
-    aoe: 1.5,
-    slow: 0.52,
-    slowDur: 2.6,
-    stunDur: 1.1,
+    aoe: 1.38,
+    slow: 0.48,
+    slowDur: 2.3,
+    stunDur: 0.95,
     skillEveryN: 4,
   },
   shangxiang: {
@@ -125,11 +125,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'marksman',
     rangeShape: 'hero_global_4',
     pattern: 'phoenix_multishot',
-    awakenedDamage: 52,
-    interval: 0.72,
-    range: 4.35,
+    awakenedDamage: 38,
+    interval: 0.78,
+    range: 3.45,
     projSpeed: 13.0,
-    aoe: 1.45,
+    aoe: 1.32,
     skillEveryN: 4,
   },
 };
@@ -155,7 +155,7 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       projectileSpeed: 0,
     },
 
-    // 1. 刀兵: STRICTLY SINGLE-TARGET! Massive heavy chop + armor shred every 4th hit!
+    // 1. 刀兵 (Base 1.15R): STRICTLY SINGLE-TARGET! Adjacent melee heavy chop + armor shred!
     blade: {
       id: 'blade',
       category: 'troop',
@@ -167,34 +167,15 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'melee_1',
       pattern: 'single_chop',
-      baseDamage: 80,
-      attackInterval: 0.88,
+      baseDamage: 54,
+      attackInterval: 0.92,
       minRangeCells: 0,
-      rangeCells: 1.48,
+      rangeCells: 1.15,
       projectileSpeed: 0,
       skillEveryN: 4,
     },
 
-    // 2. 枪兵: STRAIGHT-LINE PIERCE! Pierces 5+ foes in a line (+15% dmg per pierced foe)!
-    spear: {
-      id: 'spear',
-      category: 'troop',
-      cellSpan: 1,
-      spriteKey: 'unit_spear',
-      accentColor: '#b91c1c',
-      frameColor: '#5c4b3c',
-      crestSymbol: '',
-      synergy: 'vanguard',
-      rangeShape: 'spear_line_2',
-      pattern: 'pierce_lance',
-      baseDamage: 34,
-      attackInterval: 0.86,
-      minRangeCells: 0,
-      rangeCells: 2.18,
-      projectileSpeed: 12.0,
-    },
-
-    // 3. 骑兵: AREA-OF-EFFECT SWEEP! Wide halberd trample splashing enemy packs!
+    // 2. 骑兵 (Blade + 0.5 = 1.65R): SHORT-REACH AoE SWEEP! Splashes tight clusters!
     lancer: {
       id: 'lancer',
       category: 'troop',
@@ -206,17 +187,36 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'cavalry_2',
       pattern: 'cavalry_aoe',
-      baseDamage: 27,
-      attackInterval: 0.8,
+      baseDamage: 21,
+      attackInterval: 0.85,
       minRangeCells: 0,
-      rangeCells: 2.35,
+      rangeCells: 1.65,
       projectileSpeed: 0,
-      aoeRadiusCells: 1.28,
-      slowFactor: 0.28,
-      slowDuration: 0.35,
+      aoeRadiusCells: 0.82,
+      slowFactor: 0.25,
+      slowDuration: 0.3,
     },
 
-    // 4. 弓兵: LONG-RANGE SINGLE-TARGET FOCUS! Homing arrows stacking +14% consecutive hit mark!
+    // 3. 枪兵 (Lancer + 0.5 = 2.15R): STRAIGHT-LINE PIERCE! Pierces 5+ foes in a line!
+    spear: {
+      id: 'spear',
+      category: 'troop',
+      cellSpan: 1,
+      spriteKey: 'unit_spear',
+      accentColor: '#b91c1c',
+      frameColor: '#5c4b3c',
+      crestSymbol: '',
+      synergy: 'vanguard',
+      rangeShape: 'spear_line_2',
+      pattern: 'pierce_lance',
+      baseDamage: 25,
+      attackInterval: 0.9,
+      minRangeCells: 0,
+      rangeCells: 2.15,
+      projectileSpeed: 12.0,
+    },
+
+    // 4. 弓兵 (Spear + 1.0 = 3.15R): LONG-RANGE SINGLE-TARGET FOCUS! Homing arrows!
     archer: {
       id: 'archer',
       category: 'troop',
@@ -228,14 +228,14 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'marksman',
       rangeShape: 'archer_3',
       pattern: 'focus_arrow',
-      baseDamage: 24,
-      attackInterval: 0.56,
+      baseDamage: 18,
+      attackInterval: 0.6,
       minRangeCells: 0,
-      rangeCells: 3.45,
+      rangeCells: 3.15,
       projectileSpeed: 13.2,
     },
 
-    // 5. 神威炮: PARABOLIC SIEGE AoE + BLINDSPOT! Ignores 75% armor & leaves burning embers!
+    // 5. 神威炮 (Archer + 0.5 = 3.65R): PARABOLIC SIEGE AoE + 1.15R BLINDSPOT!
     mortar: {
       id: 'mortar',
       category: 'troop',
@@ -247,12 +247,12 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'mystic',
       rangeShape: 'mortar_ring_3',
       pattern: 'mortar_siege',
-      baseDamage: 56,
-      attackInterval: 1.55,
-      minRangeCells: 1.2,
-      rangeCells: 3.6,
+      baseDamage: 44,
+      attackInterval: 1.65,
+      minRangeCells: 1.15,
+      rangeCells: 3.65,
       projectileSpeed: 7.4,
-      aoeRadiusCells: 1.45,
+      aoeRadiusCells: 1.25,
     },
   };
 
@@ -347,25 +347,24 @@ export function getUnitCircleRange(unit: TileUnit): {
   if (def.category === 'shard1' || def.category === 'shard2' || def.category === 'item') {
     return { canAttack: false, minR: 0, maxR: 0 };
   }
-  const tierBonus = (unit.tier - 1) * 0.08;
-  const heroLvlBonus = def.category === 'awakened' ? (unit.combatLevel - 1) * 0.08 : 0;
+  const heroLvlBonus = def.category === 'awakened' ? (unit.combatLevel - 1) * 0.035 : 0;
   return {
     canAttack: true,
     minR: def.minRangeCells,
-    maxR: def.rangeCells + tierBonus + heroLvlBonus,
+    maxR: def.rangeCells + heroLvlBonus,
   };
 }
 
 export function getHeroXpForNextLevel(combatLevel: number): number {
-  return 35 + (combatLevel - 1) * 28;
+  return 45 + (combatLevel - 1) * 36;
 }
 
 export function getCombatLevelDamageMult(combatLevel: number): number {
-  return 1 + (combatLevel - 1) * 0.18;
+  return 1 + (combatLevel - 1) * 0.14;
 }
 
 export function getCombatLevelSpeedMult(combatLevel: number): number {
-  return 1 + (combatLevel - 1) * 0.055;
+  return 1 + (combatLevel - 1) * 0.045;
 }
 
 /**
@@ -405,11 +404,11 @@ export function checkTileCombine(
 }
 
 export function getTierDamageMultiplier(tier: number): number {
-  return Math.pow(1.85, tier - 1);
+  return Math.pow(1.68, tier - 1);
 }
 
 export function getTierSpeedMultiplier(tier: number): number {
-  return 1 + (tier - 1) * 0.13;
+  return 1 + (tier - 1) * 0.1;
 }
 
 export function computeSynergies(boardUnits: (TileUnit | null)[]): {

@@ -94,6 +94,7 @@ interface Dict {
   bannerBossIncoming: (name: string, trait: string) => string;
   bannerShovelPick: string;
   bannerBenchShovelPick: string;
+  bannerLockedStoneHint: string;
   bannerTileUnlocked: string;
   bannerShovelRefund: (buns: number) => string;
   bannerTombRaiderBonus: (buns: number, gotShard: boolean) => string;
@@ -134,6 +135,11 @@ interface Dict {
   btnMuteOff: string;
   btnLangSwitch: string;
   btnRetreat: string;
+
+  shovelModalTitle: string;
+  shovelModalSub: string;
+  btnWatchShovelAd: string;
+  btnCancelShovelAd: string;
 
   reviveTitle: string;
   reviveSub: (wave: number, kills: number) => string;
@@ -217,10 +223,10 @@ const EN_DICT: Dict = {
 
   codexFusionTitle:
     '2-Cell Generals: [Puzzle 1/2] + [Puzzle 2/2] = 2-Grid General (Unique Signature Attacks!)',
-  codexTroopsTitle: 'Five Distinct Troops: Single · Pierce · AoE · Focus · Siege',
+  codexTroopsTitle: 'Five Troops Range Ladder: Blade 1.15R ➔ Cav +0.5 ➔ Spear +0.5 ➔ Bow +1.0 ➔ Bombard +0.5',
   codexSynergyTitle: 'Battlefield Formation Synergies',
   codexRuleTip:
-    'Generals occupy 2 ADJACENT jade cells (2x1 or 1x2)! Every troop & General has its own attack style: Blade = Single-Target Armor Chop, Cavalry = AoE Sweep, Spear = Line Pierce, Archer = Focus Homing, Bombard = Siege Crater!',
+    'Generals occupy 2 ADJACENT jade cells! Strict troop range steps: Blade (1.15R Single) ➔ Cavalry (1.65R AoE, +0.5) ➔ Spear (2.15R Pierce, +0.5) ➔ Archer (3.15R Focus, +1.0) ➔ Bombard (3.65R Siege, +0.5)!',
 
   rivalTag: 'RIVAL',
   playerTag: 'YOU',
@@ -249,6 +255,7 @@ const EN_DICT: Dict = {
   bannerBossIncoming: (name, trait) => `BOSS: ${name} (${trait}) — Drops Weapon Shard!`,
   bannerShovelPick: 'Tap any dark stone cell in your half to dig it open!',
   bannerBenchShovelPick: 'Drag or tap a dark stone cell to excavate with your Bench Shovel!',
+  bannerLockedStoneHint: 'Sealed stone cell — drag a Bench Shovel onto it (or tap [Shovel] below) to excavate!',
   bannerTileUnlocked: 'New White Jade Pedestal Excavated!',
   bannerShovelRefund: (buns) => `All slots unlocked! Extra Shovel converted to +${buns} Buns`,
   bannerTombRaiderBonus: (buns, gotShard) =>
@@ -292,6 +299,12 @@ const EN_DICT: Dict = {
   btnMuteOff: 'Audio: Active',
   btnLangSwitch: 'Language: EN / 切换中文',
   btnRetreat: 'Return to Scroll',
+
+  shovelModalTitle: 'Request Golden Shovels',
+  shovelModalSub:
+    'Shovels appear randomly when conscripting in the 5 bench slots. Watch a short rewarded video now to immediately claim +2 Golden Shovels?',
+  btnWatchShovelAd: '🎬 Watch Ad · +2 Shovels',
+  btnCancelShovelAd: 'Not Now',
 
   reviveTitle: 'The Royal Heir Is in Peril!',
   reviveSub: (wave, kills) => `Fought to Wave ${wave} · Vanquished ${kills} Foes`,
@@ -445,28 +458,28 @@ const EN_DICT: Dict = {
   troops: {
     blade: {
       name: 'Heavy Blade Guard',
-      role: '[Single-Target · 1.5R] · Armor-Cracking Chop',
-      desc: 'Strictly SINGLE-TARGET! Huge single-hit chop ignoring 35% armor; every 4th hit deals 1.85x Guillotine Crit & breaks armor!',
-    },
-    spear: {
-      name: 'Crimson Spearman',
-      role: '[Line Pierce · 2.2R] · +15% DMG/Pierce',
-      desc: 'STRAIGHT-LINE PIERCE! Thrusts a spear beam through 6+ foes in a row, dealing +15% escalating damage per enemy pierced!',
+      role: '[Single-Target · 1.15R] · Armor-Cracking Chop',
+      desc: 'Base 1.15R adjacent melee! Strictly SINGLE-TARGET chop ignoring 35% armor; every 4th hit deals 1.85x Guillotine Crit & breaks armor!',
     },
     lancer: {
       name: 'Iron Cavalry',
-      role: '[AoE Sweep · 2.4R] · Cluster Trample',
-      desc: 'AREA-OF-EFFECT! Sweeps a wide halberd shockwave splashing all nearby enemies with brief stagger — best vs swarms, weak vs heavy armor!',
+      role: '[AoE Sweep · 1.65R (+0.5)] · Cluster Trample',
+      desc: 'Blade +0.5R (1.65R)! Short-reach halberd AoE splashing tightly packed swarms with brief stagger — weak vs heavy armor!',
+    },
+    spear: {
+      name: 'Crimson Spearman',
+      role: '[Line Pierce · 2.15R (+0.5)] · +15% DMG/Pierce',
+      desc: 'Cavalry +0.5R (2.15R)! Thrusts a straight spear beam through 6+ foes in a row, dealing +15% escalating damage per enemy pierced!',
     },
     archer: {
       name: 'Horn-Bow Marksman',
-      role: '[Focus Homing · 3.5R] · Stacking Boss Killer',
-      desc: 'SINGLE-TARGET RAPID LOCK! Homing arrows stack +14% Focus DMG (up to +70%) on the same foe & +30% vs Bosses! Lv.3+ fires twin shots.',
+      role: '[Focus Homing · 3.15R (+1.0)] · Boss Killer',
+      desc: 'Spear +1.0R (3.15R)! Homing single-target arrows stack +14% Focus DMG (up to +70%) & +30% vs Bosses! Lv.3+ fires twin shots.',
     },
     mortar: {
       name: 'Siege Bombard',
-      role: '[1.2-3.6R Ring AoE] · Armor-Ignore & Scorch',
-      desc: 'PARABOLIC SIEGE BLAST! Inner blindspot, wide outer explosion ignoring 75% armor and leaving a burning ember zone!',
+      role: '[1.15-3.65R (+0.5)] · Armor-Ignore & Scorch',
+      desc: 'Archer +0.5R (3.65R) with 1.15R blindspot! Parabolic explosion ignoring 75% armor and leaving a burning ember zone!',
     },
   },
 
@@ -475,42 +488,42 @@ const EN_DICT: Dict = {
       shard1Name: 'Zhao Yun · Puzzle 1/2',
       shard2Name: 'Zhao Yun · Puzzle 2/2',
       heroName: 'Zhao Yun · White Dragon',
-      role: '◈ [2-Cell · 2.7R] · Boomerang Dragon Lance',
+      role: '◈ [2-Cell · 2.2R] · Boomerang Dragon Lance',
       desc: 'Occupies 2 cells! Throws a Silver Dragon Spear that pierces out AND boomerangs back hitting foes twice; every 4th hit fires multi-lane spears!',
     },
     guanyu: {
       shard1Name: 'Guan Yu · Puzzle 1/2',
       shard2Name: 'Guan Yu · Puzzle 2/2',
       heroName: 'Guan Yu · Martial Saint',
-      role: '☾ [2-Cell · 2.5R] · Giant Crescent Wave & Execute',
+      role: '☾ [2-Cell · 2.1R] · Giant Crescent Wave & Execute',
       desc: 'Occupies 2 cells! Cleaves a wide emerald crescent wave ignoring 50% armor & instantly executing non-Boss foes below 22% HP!',
     },
     zhangfei: {
       shard1Name: 'Zhang Fei · Puzzle 1/2',
       shard2Name: 'Zhang Fei · Puzzle 2/2',
       heroName: 'Zhang Fei · Warcry Titan',
-      role: '❖ [2-Cell · 2.5R] · 360° Quake & Knockback Stun',
+      role: '❖ [2-Cell · 2.0R] · 360° Quake & Knockback Stun',
       desc: 'Occupies 2 cells! Unleashes a 360° seismic warcry hitting all foes in his circle; every 4th roar stuns & knocks enemies backward!',
     },
     zhuge: {
       shard1Name: 'Zhuge Liang · Puzzle 1/2',
       shard2Name: 'Zhuge Liang · Puzzle 2/2',
       heroName: 'Zhuge Liang · Storm Sage',
-      role: '☯ [2-Cell · 3.6R] · Chain Thunder & Trigram Array',
+      role: '☯ [2-Cell · 3.1R] · Chain Thunder & Trigram Array',
       desc: 'Occupies 2 cells! Instant armor-ignoring Chain Lightning jumping across foes; every 3rd cast drops a pulsing Eight-Trigrams Thunder Zone!',
     },
     zhenji: {
       shard1Name: 'Zhen Ji · Puzzle 1/2',
       shard2Name: 'Zhen Ji · Puzzle 2/2',
       heroName: 'Zhen Ji · Frost Consort',
-      role: '✻ [2-Cell · 3.5R] · Ice Vortex Pool & Brittle Freeze',
-      desc: 'Occupies 2 cells! Creates chilling Ice Vortex pools on the road (50% slow + DoT); every 4th cast freezes foes solid (+25% brittle DMG taken)!',
+      role: '✻ [2-Cell · 3.0R] · Ice Vortex Pool & Brittle Freeze',
+      desc: 'Occupies 2 cells! Creates chilling Ice Vortex pools on the road (48% slow + DoT); every 4th cast freezes foes solid (+25% brittle DMG taken)!',
     },
     shangxiang: {
       shard1Name: 'Shangxiang · Puzzle 1/2',
       shard2Name: 'Shangxiang · Puzzle 2/2',
       heroName: 'Shangxiang · Sky Archer',
-      role: '✦ [2-Cell · 4.4R] · Split Multishot & Fire Rain',
+      role: '✦ [2-Cell · 3.5R] · Split Multishot & Fire Rain',
       desc: 'Occupies 2 cells! Locks onto 3-5 separate targets simultaneously with stacking Scorch Arrows; every 4th volley rains fire on the road!',
     },
   },
@@ -549,10 +562,10 @@ const ZH_DICT: Dict = {
   unequippedLabel: '点击装备武将',
 
   codexFusionTitle: '双格名将合成：【左拼图 1/2】＋【右拼图 2/2】＝ 占2格真名将（每位武将专属攻击机制！）',
-  codexTroopsTitle: '五大兵种各司其职：刀单体 · 骑范围 · 枪贯穿 · 弓叠伤 · 炮重轰',
+  codexTroopsTitle: '五大兵种阶梯射程：刀1.15格 ➔ 骑+0.5 ➔ 枪+0.5 ➔ 弓+1.0 ➔ 炮+0.5',
   codexSynergyTitle: '军阵奇门羁绊（上阵自动激活）',
   codexRuleTip:
-    '真名将需占【相邻2格】白玉阵位（横2×1或竖1×2自动贴合）！五兵种定位截然不同：刀兵=单体破甲重劈、骑兵=范围横扫清群、枪兵=直线贯穿叠伤、弓兵=远程锁定叠伤、火炮=抛物重轰焦土！',
+    '真名将占【相邻2格】阵位！五兵种射程严格递增：刀兵(1.15格单体) ➔ 骑兵(1.65格范围,+0.5) ➔ 枪兵(2.15格贯穿,+0.5) ➔ 弓兵(3.15格叠伤,+1.0) ➔ 火炮(3.65格重轰,+0.5)！',
 
   rivalTag: '敌方守军',
   playerTag: '我方阿斗',
@@ -581,6 +594,7 @@ const ZH_DICT: Dict = {
   bannerBossIncoming: (name, trait) => `首领降临：【${name}】(${trait}) · 击杀必掉神兵碎片！`,
   bannerShovelPick: '请点击我方区域的深色石格开辟白玉阵位！',
   bannerBenchShovelPick: '拖动或点击深色石格，即可用备战格【金铲】挖开新阵位！',
+  bannerLockedStoneHint: '此处为封印石板，需拖入备战席【金铲】或点击下方【金铲】按钮开凿',
   bannerTileUnlocked: '金铲辟地 · 开启全新外圈白玉阵位！',
   bannerShovelRefund: (buns) => `深色石格已全部挖完，多余金铲折算 +${buns} 馒头！`,
   bannerTombRaiderBonus: (buns, gotShard) =>
@@ -624,6 +638,12 @@ const ZH_DICT: Dict = {
   btnMuteOff: '金鼓音效：开启',
   btnLangSwitch: '界面语言：中文 / Switch EN',
   btnRetreat: '班师回朝（返回画卷）',
+
+  shovelModalTitle: '传召洛阳金铲',
+  shovelModalSub:
+    '金铲会在征兵时随机刷在下方 5 个备战格中。是否立即观看激励视频，额外领取【洛阳金铲 ×2】用于开凿外圈石格？',
+  btnWatchShovelAd: '🎬 观看广告 · 领 2 把金铲',
+  btnCancelShovelAd: '暂不需要',
 
   reviveTitle: '鹿砦告破 · 阿斗危急！',
   reviveSub: (wave, kills) => `激战至第 ${wave} 波 · 斩敌 ${kills} 级`,
@@ -777,28 +797,28 @@ const ZH_DICT: Dict = {
   troops: {
     blade: {
       name: '玄铁刀兵',
-      role: '【单体破甲 · 1.5格近战】· 断头重劈',
-      desc: '纯单体处决！仅劈斩单个目标但单次伤害极高且无视35%护甲；每第4刀触发1.85倍重劈并碎甲2.5秒，专克铁盾兵与首领！',
-    },
-    spear: {
-      name: '红缨枪兵',
-      role: '【直线贯穿 · 2.2格中程】· 越穿越痛',
-      desc: '直线贯穿刺击！刺出破阵枪芒沿直线穿透6名以上敌军，每多贯穿1个敌人伤害递增+15%，摆在直道口威力翻倍！',
+      role: '【单体破甲 · 1.15格贴身】· 断头重劈',
+      desc: '基础1.15格贴路近战！纯单体高伤且无视35%护甲；每第4刀触发1.85倍断头重劈并碎甲2.5秒，专克铁盾兵与首领！',
     },
     lancer: {
       name: '铁浮屠骑',
-      role: '【范围横扫 · 2.4格机动】· 踏阵清群',
-      desc: '纯范围群伤！挥舞铁戟在目标周围掀起大范围半月冲击波并附带微顿挫，清小怪与狼群极强，但砍重甲盾兵刮痧！',
+      role: '【范围横扫 · 1.65格(刀+0.5)】· 踏阵清群',
+      desc: '射程比刀兵大0.5格(1.65格)！近中程半月挥砍横扫扎堆狼群与小兵并附带顿挫，但对重甲铁盾兵伤害乏力！',
+    },
+    spear: {
+      name: '红缨枪兵',
+      role: '【直线贯穿 · 2.15格(骑+0.5)】· 越穿越痛',
+      desc: '射程比骑兵再大0.5格(2.15格)！隔1格刺出破阵枪芒直线贯穿6名以上敌军，每多贯穿1人伤害递增+15%！',
     },
     archer: {
       name: '雕翎弓兵',
-      role: '【远程单体连珠 · 3.5格】· 锁定叠伤',
-      desc: '追踪必中单体点射！连续命中同一敌人叠加【追猎印记】（最高+70%伤害，对Boss再+30%）；3阶以上每次连发双箭！',
+      role: '【远程单体 · 3.15格(枪+1.0)】· 锁定叠伤',
+      desc: '射程比枪兵再大1格(3.15格)！远程追踪单点连续命中同一目标叠【追猎印记】(最高+70%，对Boss再+30%)；3阶连发双箭！',
     },
     mortar: {
       name: '神威火炮',
-      role: '【抛物重轰 · 1.2~3.6格环】· 破甲焦土',
-      desc: '近身盲区、远距抛物线重炮！大范围轰炸无视75%护甲，并在路面留下持续灼烧的烈焰焦土！',
+      role: '【抛物重轰 · 3.65格(弓+0.5)】· 破甲焦土',
+      desc: '射程比弓兵再大0.5格(1.15~3.65格环形盲区)！远距抛物重炮无视75%护甲，落地爆炸并留下烈焰焦土持续灼烧！',
     },
   },
 

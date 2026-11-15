@@ -20,13 +20,13 @@ export const STAGES: StageDef[] = [
       // === TOP HALF: AI RIVAL (rows 0..4) ===
       '##PPPP##',
       'PPPPPPPP',
-      'PLLDDDLP',
-      'PLLDDDLP',
+      'PLLDDLLP',
+      'PLLDDLLP',
       'VLLLLLL#',
       // === BOTTOM HALF: PLAYER (rows 5..9) ===
       '#LLLLLLV',
-      'PLDDDLLP',
-      'PLDDDLLP',
+      'PLLDDLLP',
+      'PLLDDLLP',
       'PPPPPPPP',
       '##PPPP##',
     ],
@@ -82,15 +82,15 @@ export const STAGES: StageDef[] = [
     layout: [
       // === TOP HALF: AI RIVAL ===
       '#PPPPPP#',
-      '#PDDDLP#',
-      '#PDDDLP#',
+      '#PLDDLP#',
+      '#PLDDLP#',
       'PPPLLLPP',
       'V#LLLL##',
       // === BOTTOM HALF: PLAYER ===
       '##LLLL#V',
       'PPLLLPPP',
-      '#PLDDDP#',
-      '#PLDDDP#',
+      '#PLDDLP#',
+      '#PLDDLP#',
       '#PPPPPP#',
     ],
     aiLane: {
@@ -149,15 +149,15 @@ export const STAGES: StageDef[] = [
     layout: [
       // === TOP HALF: AI RIVAL ===
       'PPPPPPP#',
-      '#LDDDLP#',
-      '#LDDDLP#',
+      '#LLDDLP#',
+      '#LLDDLP#',
       '#PPPPPP#',
       'VPLLLL##',
       // === BOTTOM HALF: PLAYER ===
       '##LLLLPV',
       '#PPPPPP#',
-      '#PLDDDL#',
-      '#PLDDDL#',
+      '#PLDDLL#',
+      '#PLDDLL#',
       '#PPPPPPP',
     ],
     aiLane: {

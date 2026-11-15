@@ -895,17 +895,51 @@ export class UIManager {
     };
   }
 
-  public async promptShovelAd(): Promise<void> {
+  public promptShovelAd(): void {
     const s = this.engine.state;
-    if (!s) return;
+    if (!s || s.wavePhase === 'ended') return;
     const dict = t();
-    const ok = await PlatformSDK.showRewardedAd('bonus_shovels', dict.adRewardShovels);
-    if (ok && this.engine.state) {
-      this.engine.state.shovels += 2;
-      this.engine.state.shovelMode = true;
-      this.engine.showBanner(dict.bannerShovelPick, 2.2);
-      this.syncHUD();
-    }
+
+    this.engine.modalPaused = true;
+    PlatformSDK.gameplayStop();
+
+    this.modalRoot.innerHTML = `
+      <div class="popup-backdrop">
+        <div class="popup-box">
+          <h2>${dict.shovelModalTitle}</h2>
+          <p class="popup-sub">${dict.shovelModalSub}</p>
+          <div class="popup-footer">
+            <button class="btn-guofeng btn-cinnabar" id="btn-confirm-shovel-ad">${dict.btnWatchShovelAd}</button>
+            <button class="btn-guofeng btn-stone" id="btn-cancel-shovel-ad">${dict.btnCancelShovelAd}</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closePopup = () => {
+      this.modalRoot.innerHTML = '';
+      if (this.engine.state && this.engine.state.wavePhase !== 'ended') {
+        this.engine.modalPaused = false;
+        PlatformSDK.gameplayStart();
+      }
+    };
+
+    const watchBtn = this.modalRoot.querySelector('#btn-confirm-shovel-ad') as HTMLButtonElement;
+    watchBtn.onclick = async () => {
+      watchBtn.disabled = true;
+      const ok = await PlatformSDK.showRewardedAd('bonus_shovels', dict.adRewardShovels);
+      closePopup();
+      if (ok && this.engine.state) {
+        this.engine.state.shovels += 2;
+        this.engine.state.shovelMode = true;
+        this.engine.showBanner(dict.bannerShovelPick, 2.2);
+        this.syncHUD();
+      }
+    };
+
+    (this.modalRoot.querySelector('#btn-cancel-shovel-ad') as HTMLButtonElement).onclick = () => {
+      closePopup();
+    };
   }
 
   public showReviveModal(canRevive: boolean): void {

@@ -241,19 +241,19 @@ class SaveService {
   public getEffectiveBonuses() {
     const sk = this.data.skills;
     return {
-      maxHearts: 8 + Math.floor(sk.rank_up / 2),
-      barricadeHpMult: 1 + sk.rank_up * 0.1,
-      startRations: 24 + (sk.rank_up - 1) * 4 + sk.granary_art * 7,
-      passiveRationBonus: sk.granary_art * 0.45,
-      damageMult: 1 + (sk.rank_up - 1) * 0.1 + (this.data.commanderLevel - 1) * 0.03,
-      aspdMult: 1 + sk.haste_scroll * 0.12,
+      maxHearts: 6 + Math.floor((sk.rank_up - 1) / 2),
+      barricadeHpMult: 1 + (sk.rank_up - 1) * 0.1,
+      startRations: 20 + (sk.rank_up - 1) * 3 + sk.granary_art * 5,
+      passiveRationBonus: sk.granary_art * 0.32,
+      damageMult: 1 + (sk.rank_up - 1) * 0.08 + (this.data.commanderLevel - 1) * 0.02,
+      aspdMult: 1 + sk.haste_scroll * 0.09,
       meteorLevel: sk.meteor_art,
       tombRaiderLevel: sk.tomb_raider,
-      bossDmgMult: 1 + sk.exorcist_seal * 0.25,
-      heroChanceBonus: sk.hero_decree * 0.045,
-      roadSlowRatio: sk.frost_inkstone > 0 ? Math.min(0.36, 0.1 + sk.frost_inkstone * 0.045) : 0,
+      bossDmgMult: 1 + sk.exorcist_seal * 0.18,
+      heroChanceBonus: sk.hero_decree * 0.035,
+      roadSlowRatio: sk.frost_inkstone > 0 ? Math.min(0.28, 0.08 + sk.frost_inkstone * 0.035) : 0,
       startShovels: 0,
-      benchShovelChanceBonus: sk.tomb_raider * 0.025,
+      benchShovelChanceBonus: sk.tomb_raider * 0.02,
     };
   }
 }

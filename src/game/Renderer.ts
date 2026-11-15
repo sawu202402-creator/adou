@@ -339,6 +339,16 @@ export class BoardRenderer {
       ctx.strokeStyle = 'rgba(255,255,255,0.1)';
       ctx.strokeRect(x + 4, y + 4, cs - 8, cs - 8);
 
+      // Subtle carved stone seal mark so sealed slabs look distinct from open ground
+      ctx.strokeStyle = 'rgba(35, 38, 34, 0.36)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(x + cs * 0.34, y + cs * 0.34);
+      ctx.lineTo(x + cs * 0.66, y + cs * 0.66);
+      ctx.moveTo(x + cs * 0.66, y + cs * 0.34);
+      ctx.lineTo(x + cs * 0.34, y + cs * 0.66);
+      ctx.stroke();
+
       if (digHighlight && isPlayerHalf) {
         const pulse = 0.55 + 0.4 * Math.sin(this.animClock * 6.5);
         ctx.save();
