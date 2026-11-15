@@ -288,6 +288,7 @@ export class BoardRenderer {
         const y = L.boardY + r * cs;
         this.drawSingleCell(
           ctx,
+          s,
           cell,
           x,
           y,
@@ -302,8 +303,18 @@ export class BoardRenderer {
     }
   }
 
+  private isRoadCellOnSameSide(s: RunState, col: number, row: number, isPlayerHalf: boolean): boolean {
+    if (col < 0 || col >= s.stage.cols) return false;
+    const rMin = isPlayerHalf ? s.stage.dividerRow : 0;
+    const rMax = isPlayerHalf ? s.stage.rows : s.stage.dividerRow;
+    if (row < rMin || row >= rMax) return false;
+    const ct = s.cells[row][col];
+    return ct === 'path' || ct === 'vip';
+  }
+
   private drawSingleCell(
     ctx: CanvasRenderingContext2D,
+    s: RunState,
     cell: CellType,
     x: number,
     y: number,
@@ -317,10 +328,6 @@ export class BoardRenderer {
     if (cell === 'wall') {
       ctx.fillStyle = (col + row) % 2 === 0 ? '#5c6159' : '#535850';
       ctx.fillRect(x, y, cs, cs);
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(x + 1, y + 1, cs - 2, 3);
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      ctx.fillRect(x + 1, y + cs - 4, cs - 2, 3);
       ctx.strokeStyle = '#2b2d29';
       ctx.lineWidth = 1.2;
       ctx.strokeRect(x + 0.5, y + 0.5, cs - 1, cs - 1);
@@ -328,78 +335,59 @@ export class BoardRenderer {
     }
 
     if (cell === 'path' || cell === 'vip') {
-      // Single continuous stone march road (distinct dark-edged slate road so the single lane pops immediately!)
-      ctx.fillStyle = (col + row) % 2 === 0 ? '#9c9789' : '#938e80';
+      // Continuous single-lane stone road with faint internal stone joints & crisp dark curb ONLY against non-road cells!
+      ctx.fillStyle = (col + row) % 2 === 0 ? '#c8cdc2' : '#c2c7bc';
       ctx.fillRect(x, y, cs, cs);
       if (frostRoad && cell === 'path') {
         ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
         ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
       }
-      ctx.strokeStyle = 'rgba(44, 41, 36, 0.42)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(55, 58, 52, 0.14)';
+      ctx.lineWidth = 0.8;
       ctx.strokeRect(x + 0.5, y + 0.5, cs - 1, cs - 1);
+
+      // Outer road curb along any side bordering a placement cell ('D' or 'L')
+      ctx.strokeStyle = '#1f221e';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      if (!this.isRoadCellOnSameSide(s, col, row - 1, isPlayerHalf)) {
+        ctx.moveTo(x, y + 1);
+        ctx.lineTo(x + cs, y + 1);
+      }
+      if (!this.isRoadCellOnSameSide(s, col, row + 1, isPlayerHalf)) {
+        ctx.moveTo(x, y + cs - 1);
+        ctx.lineTo(x + cs, y + cs - 1);
+      }
+      if (!this.isRoadCellOnSameSide(s, col - 1, row, isPlayerHalf)) {
+        ctx.moveTo(x + 1, y);
+        ctx.lineTo(x + 1, y + cs);
+      }
+      if (!this.isRoadCellOnSameSide(s, col + 1, row, isPlayerHalf)) {
+        ctx.moveTo(x + cs - 1, y);
+        ctx.lineTo(x + cs - 1, y + cs);
+      }
+      ctx.stroke();
       return;
     }
 
     if (cell === 'locked') {
-      // Shovel-unlockable unit placement pedestal (styled as a sealed sandstone placement grid cell, NOT an impassable wall!)
-      const lGrad = ctx.createLinearGradient(x, y, x, y + cs);
-      lGrad.addColorStop(0, '#dbd4c4');
-      lGrad.addColorStop(1, '#cbc2b0');
-      ctx.fillStyle = lGrad;
-      ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+      // Dark slate-grey sealed placement grid square (matching original game — requires Golden Shovel to turn into White 'D'!)
+      ctx.fillStyle = (col + row) % 2 === 0 ? '#6f736d' : '#686c66';
+      ctx.fillRect(x, y, cs, cs);
 
-      ctx.strokeStyle = '#99907d';
-      ctx.lineWidth = 1.2;
-      ctx.strokeRect(x + 1.5, y + 1.5, cs - 3, cs - 3);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+      ctx.fillRect(x + 1, y + 1, cs - 2, 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.fillRect(x + 1, y + cs - 3, cs - 2, 2);
 
-      // Matching corner pedestal brackets so players see every non-road cell is unit placement territory
-      ctx.strokeStyle = 'rgba(110, 100, 82, 0.45)';
-      ctx.lineWidth = 1;
-      const m = 5;
-      const len = Math.max(4, cs * 0.13);
-      ctx.beginPath();
-      ctx.moveTo(x + m, y + m + len);
-      ctx.lineTo(x + m, y + m);
-      ctx.lineTo(x + m + len, y + m);
-
-      ctx.moveTo(x + cs - m - len, y + m);
-      ctx.lineTo(x + cs - m, y + m);
-      ctx.lineTo(x + cs - m, y + m + len);
-
-      ctx.moveTo(x + m, y + cs - m - len);
-      ctx.lineTo(x + m, y + cs - m);
-      ctx.lineTo(x + m + len, y + cs - m);
-
-      ctx.moveTo(x + cs - m - len, y + cs - m);
-      ctx.lineTo(x + cs - m, y + cs - m);
-      ctx.lineTo(x + cs - m, y + cs - m - len);
-      ctx.stroke();
-
-      // Subtle central bronze seal emblem indicating Shovel excavation unlocks this pedestal
-      const cx = x + cs * 0.5;
-      const cy = y + cs * 0.5;
-      const sr = Math.max(4.5, cs * 0.14);
-      ctx.save();
-      ctx.fillStyle = 'rgba(120, 105, 80, 0.22)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, sr, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(105, 90, 68, 0.48)';
-      ctx.lineWidth = 1.1;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx - sr * 0.48, cy - sr * 0.48);
-      ctx.lineTo(cx + sr * 0.48, cy + sr * 0.48);
-      ctx.moveTo(cx + sr * 0.48, cy - sr * 0.48);
-      ctx.lineTo(cx - sr * 0.48, cy + sr * 0.48);
-      ctx.stroke();
-      ctx.restore();
+      ctx.strokeStyle = '#323531';
+      ctx.lineWidth = 1.3;
+      ctx.strokeRect(x + 0.65, y + 0.65, cs - 1.3, cs - 1.3);
 
       if (digHighlight && isPlayerHalf) {
         const pulse = 0.55 + 0.4 * Math.sin(this.animClock * 6.5);
         ctx.save();
-        ctx.strokeStyle = `rgba(217, 119, 6, ${pulse})`;
+        ctx.strokeStyle = `rgba(250, 204, 21, ${pulse})`;
         ctx.lineWidth = 2.5;
         ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
         const shImg = Assets.get('icon_shovel');

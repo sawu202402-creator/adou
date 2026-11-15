@@ -324,10 +324,10 @@ export class GameEngine {
 
   /**
    * Every summon of 5 bench items becomes progressively more expensive!
-   * Sequence: 10 -> 14 -> 19 -> 25 -> 32 -> 40 -> 49 -> 59 -> 70 -> 82...
+   * Sequence: 10 -> 12 -> 15 -> 19 -> 24 -> 30 -> 37 -> 45 -> 54 -> 64 -> 75...
    */
   public computeNextRecruitCost(count: number): number {
-    return 10 + count * 4 + Math.floor((count * (count - 1)) / 2);
+    return 10 + count * 2 + Math.floor((count * (count - 1)) / 2);
   }
 
   // ==================== RUN INITIALIZATION ====================
@@ -769,9 +769,9 @@ export class GameEngine {
     if (s.supplyAdCooldown > 0) s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
     if (s.exorciseCooldown > 0) s.exorciseCooldown = Math.max(0, s.exorciseCooldown - dt);
 
-    // Passive Granary Steamed Bun income (tight economy demanding Farm investment & smart merges!)
+    // Scarce Granary Steamed Bun trickle (money grows slowly so every summon & merge counts!)
     const meta = SaveManager.getEffectiveBonuses();
-    const rationsPerSec = 0.52 + (s.farmLevel - 1) * 0.42 + meta.passiveRationBonus;
+    const rationsPerSec = 0.15 + (s.farmLevel - 1) * 0.14 + meta.passiveRationBonus;
     s.passiveRationAcc += rationsPerSec * dt;
     if (s.passiveRationAcc >= 1) {
       const whole = Math.floor(s.passiveRationAcc);
@@ -865,7 +865,7 @@ export class GameEngine {
           if (s.maxWaves !== null && s.wave >= s.maxWaves) {
             this.finishRun(true, s.aiCollapsed);
           } else {
-            s.rations += 6 + s.farmLevel * 3;
+            s.rations += 3 + s.farmLevel;
             s.wavePhase = 'intermission';
             s.phaseTimer = 1.8;
           }
@@ -996,24 +996,26 @@ export class GameEngine {
     const lateSurge = w <= 2 ? 1.0 : 1 + Math.pow(w - 2, 1.28) * 0.2;
     const waveMult = Math.pow(1.38, w - 1) * lateSurge * stageMult;
     const spdScale = Math.min(1.62, 1 + (w - 1) * 0.04);
+    // Diminishing per-mob bun yield as wave size grows so money never snowballs!
+    const killBunTaper = 1 / (1 + Math.max(0, w - 2) * 0.12);
 
     let hp = 135 * waveMult;
     let speed = 1.04 * spdScale;
     let armor = Math.min(0.3, Math.max(0, (w - 2) * 0.035));
-    let reward = 1;
+    let reward = 0.42 * killBunTaper;
     let radius = 0.3;
 
     if (order.kind === 'wolf') {
       hp = 92 * waveMult;
       speed = 1.72 * spdScale;
       armor = 0;
-      reward = 1;
+      reward = 0.42 * killBunTaper;
       radius = 0.28;
     } else if (order.kind === 'shield') {
       hp = (order.isMiniBoss ? 560 : 340) * waveMult;
       speed = 0.78 * spdScale;
       armor = Math.min(0.72, 0.55 + Math.max(0, w - 2) * 0.022);
-      reward = order.isMiniBoss ? 12 : 2;
+      reward = order.isMiniBoss ? 5 : 0.72 * killBunTaper;
       radius = order.isMiniBoss ? 0.39 : 0.34;
     }
 
@@ -1021,19 +1023,19 @@ export class GameEngine {
       hp = 980 * waveMult;
       speed = 0.64 * spdScale;
       armor = 0.35;
-      reward = 18;
+      reward = 7;
       radius = 0.41;
     } else if (order.bossType === 'zhangjiao') {
       hp = 1850 * waveMult;
       speed = 0.62 * spdScale;
       armor = 0.38;
-      reward = 32;
+      reward = 12;
       radius = 0.44;
     } else if (order.bossType === 'lubu') {
       hp = 2250 * waveMult;
       speed = 0.66 * spdScale;
       armor = 0.54;
-      reward = 38;
+      reward = 14;
       radius = 0.46;
     }
 
@@ -1484,8 +1486,8 @@ export class GameEngine {
 
   public getFarmCost(): number {
     const s = this.state;
-    if (!s) return 24;
-    return 24 + (s.farmLevel - 1) * 20;
+    if (!s) return 26;
+    return 26 + (s.farmLevel - 1) * 24;
   }
 
   public upgradeFarm(): void {
@@ -2883,7 +2885,12 @@ export class GameEngine {
 
       if (e.side === 'player') {
         s.kills += 1;
-        s.rations += e.rewardRations;
+        s.passiveRationAcc += e.rewardRations;
+        if (s.passiveRationAcc >= 1) {
+          const whole = Math.floor(s.passiveRationAcc);
+          s.rations += whole;
+          s.passiveRationAcc -= whole;
+        }
         s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 24 : e.isMiniBoss ? 12 : 0.75));
         SoundFX.enemyKill();
 
@@ -3116,7 +3123,7 @@ export class GameEngine {
         armor: 0,
         armorBrokenTimer: 0,
         brittleTimer: 0,
-        rewardRations: 2,
+        rewardRations: 0,
         hitFlash: 0,
         slowTimer: 0,
         slowPower: 0,
@@ -3162,8 +3169,8 @@ export class GameEngine {
         s.enemies = s.enemies.filter((en) => en.side !== 'ai');
         s.projectiles = s.projectiles.filter((pr) => pr.side !== 'ai');
         s.zones = s.zones.filter((z) => z.side !== 'ai');
-        // Rival AI collapse grants mid-battle spoils, NOT an instant free clear — player must survive all waves!
-        s.rations += 30;
+        // Rival AI collapse grants a modest +8 bun trophy, NOT an instant clear or huge windfall!
+        s.rations += 8;
         SoundFX.fanfare();
         this.showBanner(t().bannerRivalFallen, 3.0);
       }

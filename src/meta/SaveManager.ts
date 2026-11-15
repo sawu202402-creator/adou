@@ -243,8 +243,8 @@ class SaveService {
     return {
       maxHearts: 6 + Math.floor((sk.rank_up - 1) / 2),
       barricadeHpMult: 1 + (sk.rank_up - 1) * 0.1,
-      startRations: 20 + (sk.rank_up - 1) * 3 + sk.granary_art * 5,
-      passiveRationBonus: sk.granary_art * 0.32,
+      startRations: 12 + Math.floor((sk.rank_up - 1) * 1.5) + sk.granary_art * 2,
+      passiveRationBonus: sk.granary_art * 0.08,
       damageMult: 1 + (sk.rank_up - 1) * 0.08 + (this.data.commanderLevel - 1) * 0.02,
       aspdMult: 1 + sk.haste_scroll * 0.09,
       meteorLevel: sk.meteor_art,
