@@ -2,6 +2,7 @@ import { SoundFX } from '../audio/SoundFX';
 import {
   checkTileCombine,
   computeSynergies,
+  doesCircleReachLane,
   getCombatLevelDamageMult,
   getCombatLevelSpeedMult,
   getHeroXpForNextLevel,
@@ -11,6 +12,7 @@ import {
   HERO_KEYS,
   MAX_HERO_COMBAT_LEVEL,
   MAX_TILE_TIER,
+  RANGE_HIT_PAD,
   TROOP_KEYS,
   UNITS,
 } from '../data/units';
@@ -282,6 +284,8 @@ export interface RunState {
     combatLevel: number;
     xp: number;
     maxXp: number;
+    boardCol?: number;
+    boardRow?: number;
   } | null;
 }
 
@@ -626,10 +630,11 @@ export class GameEngine {
     side: SideOwner
   ): { c1: number; r1: number; c2: number; r2: number } | null {
     const empties = this.getSideCells(side, 'deploy').filter((pt) => s.board[pt.row][pt.col] === null);
+    const lane = side === 'ai' ? s.stage.aiLane : s.stage.playerLane;
     // Prefer pairs closer to road!
     empties.sort((a, b) => {
-      const aRoad = this.cellHasRoadInMelee(s, side, a.col, a.row) ? 0 : 1;
-      const bRoad = this.cellHasRoadInMelee(s, side, b.col, b.row) ? 0 : 1;
+      const aRoad = doesCircleReachLane(lane, a.col + 0.5, a.row + 0.5, 0, 1.5) ? 0 : 1;
+      const bRoad = doesCircleReachLane(lane, b.col + 0.5, b.row + 0.5, 0, 1.5) ? 0 : 1;
       return aRoad - bRoad;
     });
 
@@ -676,7 +681,11 @@ export class GameEngine {
       : { c1: partner.col, r1: partner.row, c2: col, r2: row };
   }
 
-  private setSelectedInfoFromUnit(u: TileUnit | null): void {
+  private setSelectedInfoFromUnit(
+    u: TileUnit | null,
+    boardCol?: number,
+    boardRow?: number
+  ): void {
     if (!this.state) return;
     if (!u) {
       this.state.selectedUnitInfo = null;
@@ -689,6 +698,8 @@ export class GameEngine {
       combatLevel: u.combatLevel,
       xp: Math.floor(u.xp),
       maxXp: u.maxXp,
+      boardCol: boardCol ?? (u.anchorCol >= 0 ? u.anchorCol : undefined),
+      boardRow: boardRow ?? (u.anchorRow >= 0 ? u.anchorRow : undefined),
     };
   }
 
@@ -1243,17 +1254,45 @@ export class GameEngine {
       return;
     }
 
-    // 5) Conscript smartly onto empty deploy cell (avoid clogging board with >2 inert puzzle shards!)
+    // 5) Conscript smartly onto empty deploy cell (match troop range to lane distance!)
     if (emptyDeploys.length > 0) {
-      const slot = emptyDeploys[Math.floor(Math.random() * emptyDeploys.length)];
       const inertCount = occupied.filter((o) => !getUnitCircleRange(o.unit).canAttack).length;
       let unitId: UnitId =
         inertCount >= 2
           ? TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)]
           : this.rollUnitForSide('ai');
-      if (unitId === 'blade' && !this.cellHasRoadInMelee(s, 'ai', slot.col, slot.row)) {
-        unitId = 'archer';
+
+      let slot = emptyDeploys[Math.floor(Math.random() * emptyDeploys.length)];
+      const probeDef = UNITS[unitId];
+      if (probeDef.category === 'troop') {
+        const validSlots = emptyDeploys.filter((pt) =>
+          doesCircleReachLane(
+            s.stage.aiLane,
+            pt.col + 0.5,
+            pt.row + 0.5,
+            probeDef.minRangeCells,
+            probeDef.rangeCells
+          )
+        );
+        if (validSlots.length > 0) {
+          slot = validSlots[Math.floor(Math.random() * validSlots.length)];
+        } else {
+          // Pick the shortest-range troop that CAN reach the AI lane from `slot`
+          const reachingTroop = TROOP_KEYS.find((tk) =>
+            doesCircleReachLane(
+              s.stage.aiLane,
+              slot.col + 0.5,
+              slot.row + 0.5,
+              UNITS[tk].minRangeCells,
+              UNITS[tk].rangeCells
+            )
+          );
+          if (reachingTroop) {
+            unitId = reachingTroop;
+          }
+        }
       }
+
       this.placeBoardUnit(s, this.makeTile(unitId, 1), slot.col, slot.row);
       this.recalcSynergies();
       return;
@@ -1277,17 +1316,6 @@ export class GameEngine {
       this.placeBoardUnit(s, this.makeTile(replacementId, 1), victim.col, victim.row);
       this.recalcSynergies();
     }
-  }
-
-  private cellHasRoadInMelee(s: RunState, side: SideOwner, col: number, row: number): boolean {
-    const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
-    const rEnd = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
-    for (let r = Math.max(rStart, row - 1); r < Math.min(rEnd, row + 2); r++) {
-      for (let c = Math.max(0, col - 1); c < Math.min(s.stage.cols, col + 2); c++) {
-        if (s.cells[r][c] === 'path') return true;
-      }
-    }
-    return false;
   }
 
   // ==================== DRAFTING, 2-PIECE PUZZLE PAIRING & RANDOM BENCH SHOVELS ====================
@@ -2087,11 +2115,13 @@ export class GameEngine {
   ): EnemyEntity | null {
     let best: EnemyEntity | null = null;
     let bestProgress = -1;
+    const effMin = Math.max(0, minR - RANGE_HIT_PAD);
+    const effMax = maxR + RANGE_HIT_PAD;
 
     for (const e of s.enemies) {
       if (e.side !== side || e.hp <= 0) continue;
       const dist = Math.hypot(e.x - ux, e.y - uy);
-      if (dist >= minR && dist <= maxR + e.radius * 0.35) {
+      if (dist >= effMin && dist <= effMax) {
         const progress = e.waypointIndex + e.segProgress;
         if (progress > bestProgress) {
           bestProgress = progress;
@@ -2112,11 +2142,13 @@ export class GameEngine {
   ): EnemyEntity | null {
     let best: EnemyEntity | null = null;
     let bestScore = -1;
+    const effMin = Math.max(0, minR - RANGE_HIT_PAD);
+    const effMax = maxR + RANGE_HIT_PAD;
 
     for (const e of s.enemies) {
       if (e.side !== side || e.hp <= 0) continue;
       const dist = Math.hypot(e.x - ux, e.y - uy);
-      if (dist >= minR && dist <= maxR + e.radius * 0.35) {
+      if (dist >= effMin && dist <= effMax) {
         const score =
           (e.isBoss ? 1_000_000 : e.isMiniBoss ? 250_000 : 0) +
           e.hp +
@@ -2178,10 +2210,10 @@ export class GameEngine {
         break;
       }
 
-      // 2) 枪兵 (Spear): STRAIGHT-LINE PIERCE! Escalates +15% DMG per pierced enemy!
+      // 2) 枪兵 (Spear): STRAIGHT-LINE PIERCE! Strictly bounded to its circular range!
       case 'pierce_lance': {
         if (playSfx) SoundFX.attack('lance');
-        const travelCells = 3.2;
+        const travelCells = unitMaxRange + RANGE_HIT_PAD;
         s.effects.push({
           kind: 'lance_beam',
           x: ux,
@@ -2227,15 +2259,19 @@ export class GameEngine {
         break;
       }
 
-      // 3) 骑兵 (Cavalry): AREA-OF-EFFECT SWEEP! Splashes cluster around target!
+      // 3) 骑兵 (Cavalry): AREA-OF-EFFECT SWEEP! Splashes tight cluster strictly within its ring!
       case 'cavalry_aoe': {
         if (playSfx) SoundFX.attack('slash');
-        const splashR = (def.aoeRadiusCells || 1.28) + (u.tier - 1) * 0.06;
+        const splashR = (def.aoeRadiusCells || 0.72) + (u.tier - 1) * 0.04;
+        const distToTgt = Math.hypot(target.x - ux, target.y - uy);
+        const fxDist = Math.min(distToTgt, Math.max(0.55, unitMaxRange - splashR * 0.45));
+        const fxX = distToTgt > 0.01 ? ux + Math.cos(angle) * fxDist : target.x;
+        const fxY = distToTgt > 0.01 ? uy + Math.sin(angle) * fxDist : target.y;
         s.effects.push({
           kind: 'slash',
-          x: target.x,
-          y: target.y,
-          radius: splashR,
+          x: fxX,
+          y: fxY,
+          radius: splashR * 0.88,
           color: '#38bdf8',
           timer: 0,
           duration: 0.24,
@@ -2245,13 +2281,18 @@ export class GameEngine {
           kind: 'ring',
           x: target.x,
           y: target.y,
-          radius: splashR,
+          radius: splashR * 0.75,
           color: '#7dd3fc',
           timer: 0,
-          duration: 0.26,
+          duration: 0.24,
         });
         for (const e of s.enemies) {
-          if (e.side === side && e.hp > 0 && Math.hypot(e.x - target.x, e.y - target.y) <= splashR) {
+          if (
+            e.side === side &&
+            e.hp > 0 &&
+            Math.hypot(e.x - target.x, e.y - target.y) <= splashR &&
+            Math.hypot(e.x - ux, e.y - uy) <= unitMaxRange + 0.18
+          ) {
             this.damageEnemy(s, e, dmg, 0, '#38bdf8', u.uid);
             if (!e.isBoss) {
               e.slowPower = Math.max(e.slowPower, def.slowFactor || 0.28);
@@ -2353,7 +2394,7 @@ export class GameEngine {
       // HERO 1 — 赵云 (Zhao Yun): BOOMERANG SILVER DRAGON LANCE (Out + Return Double Pierce!)
       case 'dragon_boomerang': {
         if (playSfx) SoundFX.attack('lance');
-        const outDist = unitMaxRange + 0.55;
+        const outDist = unitMaxRange + 0.15;
         s.projectiles.push({
           side,
           sourceUnitUid: u.uid,
@@ -2473,7 +2514,7 @@ export class GameEngine {
             executeRatio: execThresh,
             burnDps: 0,
             life: 0,
-            maxLife: 0.55,
+            maxLife: (unitMaxRange + 0.25) / def.projectileSpeed,
           });
         }
         break;
@@ -2660,7 +2701,7 @@ export class GameEngine {
       // HERO 7 — 马超 (Ma Chao): XILIANG IRON-CAVALRY STAMPEDE LANCE (Line Charge + Knockback & Speed-Scaling!)
       case 'iron_stampede': {
         if (playSfx) SoundFX.attack('lance');
-        const travelCells = unitMaxRange + 0.9;
+        const travelCells = unitMaxRange + 0.18;
         const angles = isSkill && hasSigWeapon ? [angle - 0.14, angle, angle + 0.14] : isSkill ? [angle - 0.08, angle + 0.08] : [angle];
         for (const aAng of angles) {
           s.effects.push({
@@ -3805,10 +3846,10 @@ export class GameEngine {
       return;
     }
 
-    // 2) Read-only inspect AI Top Half unit
+    // 2) Read-only inspect AI Top Half unit (records boardCol/boardRow so its range ring previews!)
     if (cellHit && cellHit.row < s.stage.dividerRow) {
       const aiUnit = s.board[cellHit.row][cellHit.col];
-      this.setSelectedInfoFromUnit(aiUnit);
+      this.setSelectedInfoFromUnit(aiUnit, cellHit.col, cellHit.row);
       s.selectedSource = null;
       return;
     }

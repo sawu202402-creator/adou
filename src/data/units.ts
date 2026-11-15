@@ -1,5 +1,6 @@
 import {
   ActiveSynergyInfo,
+  DuelLane,
   HeroKey,
   RangeShape,
   SynergyTag,
@@ -10,6 +11,12 @@ import {
 } from '../types';
 
 export const TROOP_KEYS: TroopKey[] = ['blade', 'lancer', 'spear', 'archer', 'mortar'];
+
+/**
+ * Shared hit-detection margin (in cell units) used identically by BOTH
+ * Renderer circle validation AND GameEngine target acquisition!
+ */
+export const RANGE_HIT_PAD = 0.08;
 export const HERO_KEYS: HeroKey[] = [
   'zhaoyun',
   'guanyu',
@@ -59,7 +66,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'dragon_boomerang',
     awakenedDamage: 52,
     interval: 0.92,
-    range: 2.2,
+    range: 2.65,
     projSpeed: 10.6,
     aoe: 0.62,
     skillEveryN: 4,
@@ -73,7 +80,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'crescent_execute',
     awakenedDamage: 96,
     interval: 1.32,
-    range: 2.05,
+    range: 2.45,
     projSpeed: 8.4,
     aoe: 0.98,
     skillEveryN: 3,
@@ -87,9 +94,9 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'roar_quake',
     awakenedDamage: 58,
     interval: 1.12,
-    range: 1.95,
+    range: 2.35,
     projSpeed: 0,
-    aoe: 1.95,
+    aoe: 2.35,
     stunDur: 1.1,
     skillEveryN: 4,
   },
@@ -102,7 +109,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'chain_lightning',
     awakenedDamage: 54,
     interval: 1.14,
-    range: 3.05,
+    range: 3.35,
     projSpeed: 14.0,
     aoe: 1.32,
     skillEveryN: 3,
@@ -116,7 +123,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'frost_vortex',
     awakenedDamage: 42,
     interval: 1.08,
-    range: 2.95,
+    range: 3.25,
     projSpeed: 9.2,
     aoe: 1.38,
     slow: 0.48,
@@ -133,7 +140,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'phoenix_multishot',
     awakenedDamage: 38,
     interval: 0.78,
-    range: 3.45,
+    range: 3.85,
     projSpeed: 13.0,
     aoe: 1.32,
     skillEveryN: 4,
@@ -147,7 +154,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'iron_stampede',
     awakenedDamage: 50,
     interval: 0.86,
-    range: 2.45,
+    range: 2.8,
     projSpeed: 13.5,
     aoe: 0.75,
     slow: 0.36,
@@ -163,7 +170,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'sun_snipe',
     awakenedDamage: 112,
     interval: 1.36,
-    range: 4.15,
+    range: 4.35,
     projSpeed: 16.5,
     stunDur: 0.65,
     skillEveryN: 3,
@@ -177,7 +184,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'halberd_cleave',
     awakenedDamage: 88,
     interval: 1.18,
-    range: 2.15,
+    range: 2.5,
     projSpeed: 0,
     aoe: 1.35,
     skillEveryN: 3,
@@ -191,7 +198,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'inferno_burn',
     awakenedDamage: 46,
     interval: 1.08,
-    range: 3.15,
+    range: 3.4,
     projSpeed: 10.4,
     aoe: 1.22,
     skillEveryN: 3,
@@ -205,7 +212,7 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'moon_charm',
     awakenedDamage: 40,
     interval: 0.92,
-    range: 3.05,
+    range: 3.3,
     projSpeed: 11.2,
     slow: 0.38,
     slowDur: 2.0,
@@ -220,9 +227,9 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     pattern: 'imperial_decree',
     awakenedDamage: 44,
     interval: 1.0,
-    range: 3.25,
+    range: 3.5,
     projSpeed: 13.8,
-    aoe: 2.15,
+    aoe: 2.25,
     skillEveryN: 4,
   },
 };
@@ -248,7 +255,7 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       projectileSpeed: 0,
     },
 
-    // 1. 刀兵 (Base 1.15R): STRICTLY SINGLE-TARGET! Adjacent melee heavy chop + armor shred!
+    // 1. 刀兵 (Base 1.5R = 0.5 own half-cell + 1.0 full neighbor ring): STRICTLY SINGLE-TARGET!
     blade: {
       id: 'blade',
       category: 'troop',
@@ -263,12 +270,12 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       baseDamage: 54,
       attackInterval: 0.92,
       minRangeCells: 0,
-      rangeCells: 1.15,
+      rangeCells: 1.5,
       projectileSpeed: 0,
       skillEveryN: 4,
     },
 
-    // 2. 骑兵 (Blade + 0.5 = 1.65R): SHORT-REACH AoE SWEEP! Splashes tight clusters!
+    // 2. 骑兵 (Blade + 0.5 = 2.0R): SHORT-REACH AoE SWEEP! Splashes tight clusters within its ring!
     lancer: {
       id: 'lancer',
       category: 'troop',
@@ -283,14 +290,14 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       baseDamage: 21,
       attackInterval: 0.85,
       minRangeCells: 0,
-      rangeCells: 1.65,
+      rangeCells: 2.0,
       projectileSpeed: 0,
-      aoeRadiusCells: 0.82,
+      aoeRadiusCells: 0.72,
       slowFactor: 0.25,
       slowDuration: 0.3,
     },
 
-    // 3. 枪兵 (Lancer + 0.5 = 2.15R): STRAIGHT-LINE PIERCE! Pierces 5+ foes in a line!
+    // 3. 枪兵 (Lancer + 0.5 = 2.5R): STRAIGHT-LINE PIERCE! Pierces 5+ foes along its 2.5R reach!
     spear: {
       id: 'spear',
       category: 'troop',
@@ -305,11 +312,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       baseDamage: 25,
       attackInterval: 0.9,
       minRangeCells: 0,
-      rangeCells: 2.15,
+      rangeCells: 2.5,
       projectileSpeed: 12.0,
     },
 
-    // 4. 弓兵 (Spear + 1.0 = 3.15R): LONG-RANGE SINGLE-TARGET FOCUS! Homing arrows!
+    // 4. 弓兵 (Spear + 1.0 = 3.5R): LONG-RANGE SINGLE-TARGET FOCUS! Homing arrows!
     archer: {
       id: 'archer',
       category: 'troop',
@@ -324,11 +331,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       baseDamage: 18,
       attackInterval: 0.6,
       minRangeCells: 0,
-      rangeCells: 3.15,
+      rangeCells: 3.5,
       projectileSpeed: 13.2,
     },
 
-    // 5. 神威炮 (Archer + 0.5 = 3.65R): PARABOLIC SIEGE AoE + 1.15R BLINDSPOT!
+    // 5. 神威炮 (Archer + 0.5 = 4.0R): PARABOLIC SIEGE AoE (full 4.0R circle, no melee blindspot)!
     mortar: {
       id: 'mortar',
       category: 'troop',
@@ -342,10 +349,10 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       pattern: 'mortar_siege',
       baseDamage: 44,
       attackInterval: 1.65,
-      minRangeCells: 1.15,
-      rangeCells: 3.65,
+      minRangeCells: 0,
+      rangeCells: 4.0,
       projectileSpeed: 7.4,
-      aoeRadiusCells: 1.25,
+      aoeRadiusCells: 0.95,
     },
   };
 
@@ -427,9 +434,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
 export const UNITS: Record<UnitId, UnitDef> = buildUnitRegistry();
 
 /**
- * Circular Attack Range Evaluator (in board cell units):
+ * Circular Attack Range Evaluator (in board cell units, measured from unit/plaque center):
+ * - Own 1x1 tile occupies 0.5 cells from center, so:
+ *   刀兵 1.5R (1 ring) -> 骑兵 2.0R (+0.5) -> 枪兵 2.5R (+0.5) -> 弓兵 3.5R (+1.0) -> 炮台 4.0R (+0.5).
  * - Puzzle pieces ('shard1' / 'shard2') and tools ('item') have canAttack = false & maxR = 0.
- * - Troops gain slight range expansion with merge tier; Awakened Generals gain range with Combat Level!
+ * - Troops keep their exact class range across merge tiers; Awakened Generals gain slight range with Combat Level!
  */
 export function getUnitCircleRange(unit: TileUnit): {
   canAttack: boolean;
@@ -446,6 +455,69 @@ export function getUnitCircleRange(unit: TileUnit): {
     minR: def.minRangeCells,
     maxR: def.rangeCells + heroLvlBonus,
   };
+}
+
+export function pointToSegmentDist(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): number {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const lenSq = vx * vx + vy * vy;
+  if (lenSq <= 1e-6) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / lenSq));
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+
+/**
+ * Exact combat-identical check for whether a circular range centered at (ux, uy)
+ * can acquire enemies walking along `lane.waypoints`!
+ */
+export function doesCircleReachLane(
+  lane: DuelLane,
+  ux: number,
+  uy: number,
+  minR: number,
+  maxR: number
+): boolean {
+  const wps = lane.waypoints;
+  if (wps.length === 0 || maxR <= 0) return false;
+  const effMin = Math.max(0, minR - RANGE_HIT_PAD);
+  const effMax = maxR + RANGE_HIT_PAD;
+
+  if (wps.length === 1) {
+    const d = Math.hypot(wps[0].col + 0.5 - ux, wps[0].row + 0.5 - uy);
+    return d >= effMin && d <= effMax;
+  }
+
+  for (let i = 0; i < wps.length - 1; i++) {
+    const ax = wps[i].col + 0.5;
+    const ay = wps[i].row + 0.5;
+    const bx = wps[i + 1].col + 0.5;
+    const by = wps[i + 1].row + 0.5;
+    const minD = pointToSegmentDist(ux, uy, ax, ay, bx, by);
+    const maxD = Math.max(Math.hypot(ax - ux, ay - uy), Math.hypot(bx - ux, by - uy));
+    if (minD <= effMax && maxD >= effMin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isRoadCellInCircleRange(
+  col: number,
+  row: number,
+  ux: number,
+  uy: number,
+  minR: number,
+  maxR: number
+): boolean {
+  const d = Math.hypot(col + 0.5 - ux, row + 0.5 - uy);
+  return d >= Math.max(0, minR - RANGE_HIT_PAD) && d <= maxR + RANGE_HIT_PAD;
 }
 
 export function getHeroXpForNextLevel(combatLevel: number): number {

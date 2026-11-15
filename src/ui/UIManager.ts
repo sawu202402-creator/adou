@@ -351,12 +351,12 @@ export class UIManager {
   }
 
   private renderMiniRangeDiagram(unitId: TroopKey): string {
-    // Circular range ring gauge (scaled against max 4.0R)
+    // Circular range ring gauge (scaled against max 4.4R)
     const def = UNITS[unitId];
-    const maxScale = 4.0;
-    const outerPct = Math.min(96, Math.round((def.rangeCells / maxScale) * 92));
+    const maxScale = 4.4;
+    const outerPct = Math.min(96, Math.round((def.rangeCells / maxScale) * 94));
     const innerPct =
-      def.minRangeCells > 0 ? Math.round((def.minRangeCells / maxScale) * 92) : 0;
+      def.minRangeCells > 0 ? Math.round((def.minRangeCells / maxScale) * 94) : 0;
     return `
       <div class="mini-circle-gauge" title="${def.rangeCells.toFixed(1)}R">
         <span class="mc-ring" style="width:${outerPct}%;height:${outerPct}%"></span>

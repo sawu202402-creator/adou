@@ -1,7 +1,11 @@
 import {
   checkTileCombine,
+  doesCircleReachLane,
   getUnitCircleRange,
+  isRoadCellInCircleRange,
   MAX_HERO_COMBAT_LEVEL,
+  pointToSegmentDist,
+  RANGE_HIT_PAD,
   UNITS,
 } from '../data/units';
 import { t } from '../i18n/locale';
@@ -636,6 +640,57 @@ export class BoardRenderer {
           rEnd = s.stage.dividerRow;
         }
       }
+    } else if (
+      s.selectedSource?.type === 'bench' &&
+      s.bench[s.selectedSource.benchIdx] &&
+      getUnitCircleRange(s.bench[s.selectedSource.benchIdx]!).canAttack
+    ) {
+      // Bench troop selected (before dragging): indicate which open deploy cells can reach the road!
+      const benchUnit = s.bench[s.selectedSource.benchIdx]!;
+      const bRange = getUnitCircleRange(benchUnit);
+      ctx.save();
+      for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+        for (let c = 0; c < s.stage.cols; c++) {
+          if (s.cells[r][c] !== 'deploy' || s.board[r][c] !== null) continue;
+          const canReach = doesCircleReachLane(
+            s.stage.playerLane,
+            c + 0.5,
+            r + 0.5,
+            bRange.minR,
+            bRange.maxR
+          );
+          const x = L.boardX + c * cs + 3.5;
+          const y = L.boardY + r * cs + 3.5;
+          const sz = cs - 7;
+          ctx.strokeStyle = canReach
+            ? 'rgba(16, 185, 129, 0.72)'
+            : 'rgba(239, 68, 68, 0.42)';
+          ctx.lineWidth = canReach ? 1.8 : 1.3;
+          ctx.setLineDash(canReach ? [] : [4, 3]);
+          this.roundRect(ctx, x, y, sz, sz, 5);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+      return;
+    } else if (
+      !s.selectedSource &&
+      s.selectedUnitInfo?.boardCol !== undefined &&
+      s.selectedUnitInfo?.boardRow !== undefined
+    ) {
+      const uCol = s.selectedUnitInfo.boardCol;
+      const uRow = s.selectedUnitInfo.boardRow;
+      const u = s.board[uRow]?.[uCol] ?? null;
+      if (u && u.uid === s.selectedUnitInfo.uid) {
+        previewUnit = u;
+        const center = engine.getUnitBoardCenter(u, uCol, uRow);
+        centerGridX = center.x;
+        centerGridY = center.y;
+        if (uRow < s.stage.dividerRow) {
+          rStart = 0;
+          rEnd = s.stage.dividerRow;
+        }
+      }
     }
 
     if (!previewUnit || centerGridX < 0) return;
@@ -689,17 +744,77 @@ export class BoardRenderer {
       return;
     }
 
-    // Check if circle reaches at least one road cell on this side
-    let hitsRoad = !blockedTwoCell;
+    // Exact combat-identical check against this half-board's actual enemy lane!
+    const sideLane = rStart === 0 ? s.stage.aiLane : s.stage.playerLane;
+    const hitsRoad =
+      !blockedTwoCell &&
+      doesCircleReachLane(
+        sideLane,
+        centerGridX,
+        centerGridY,
+        rangeInfo.minR,
+        rangeInfo.maxR
+      );
+
+    // Highlight covered road tiles whose lane centerline falls inside combat firing reach!
     if (hitsRoad) {
-      hitsRoad = false;
-      for (let r = rStart; r < rEnd && !hitsRoad; r++) {
-        for (let c = 0; c < s.stage.cols; c++) {
-          if (s.cells[r][c] !== 'path') continue;
-          const d = Math.hypot(c + 0.5 - centerGridX, r + 0.5 - centerGridY);
-          if (d + 0.35 >= rangeInfo.minR && d - 0.35 <= rangeInfo.maxR) {
-            hitsRoad = true;
-            break;
+      const wps = sideLane.waypoints;
+      const effMin = Math.max(0, rangeInfo.minR - RANGE_HIT_PAD);
+      const effMax = rangeInfo.maxR + RANGE_HIT_PAD;
+      const litCells = new Set<string>();
+
+      for (let i = 0; i < wps.length; i++) {
+        const wp = wps[i];
+        let covered = isRoadCellInCircleRange(
+          wp.col,
+          wp.row,
+          centerGridX,
+          centerGridY,
+          rangeInfo.minR,
+          rangeInfo.maxR
+        );
+        if (!covered && i + 1 < wps.length) {
+          const nx = wps[i + 1];
+          const midX = (wp.col + nx.col) * 0.5 + 0.5;
+          const midY = (wp.row + nx.row) * 0.5 + 0.5;
+          const segD = pointToSegmentDist(
+            centerGridX,
+            centerGridY,
+            wp.col + 0.5,
+            wp.row + 0.5,
+            midX,
+            midY
+          );
+          if (segD >= effMin && segD <= effMax) covered = true;
+        }
+        if (!covered && i > 0) {
+          const pv = wps[i - 1];
+          const midX = (wp.col + pv.col) * 0.5 + 0.5;
+          const midY = (wp.row + pv.row) * 0.5 + 0.5;
+          const segD = pointToSegmentDist(
+            centerGridX,
+            centerGridY,
+            pv.col + 0.5,
+            pv.row + 0.5,
+            midX,
+            midY
+          );
+          if (segD >= effMin && segD <= effMax) covered = true;
+        }
+        if (covered) {
+          const key = `${wp.col},${wp.row}`;
+          if (!litCells.has(key)) {
+            litCells.add(key);
+            const rx = L.boardX + wp.col * cs + 2;
+            const ry = L.boardY + wp.row * cs + 2;
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
+            this.roundRect(ctx, rx, ry, cs - 4, cs - 4, 4);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)';
+            ctx.lineWidth = 1.3;
+            ctx.setLineDash([]);
+            this.roundRect(ctx, rx, ry, cs - 4, cs - 4, 4);
+            ctx.stroke();
           }
         }
       }
