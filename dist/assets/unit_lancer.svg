@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<!-- Cobalt charge aura -->
+    <circle cx="64" cy="66" r="45" fill="#bfdbfe" opacity="0.48"/>
+    <!-- Armored Warhorse Silhouette -->
+    <path d="M24 98 L28 64 C30 44, 46 30, 64 28 L68 18 L76 30 C88 34, 94 46, 90 58 L74 62 L66 54 L56 64 L62 98 Z"
+      fill="#3b82f6" stroke="#1c1917" stroke-width="4.5" stroke-linejoin="round"/>
+    <!-- Horse Chamfron Gold Plate & Eye -->
+    <path d="M64 28 L88 48 L78 56 L62 38 Z" fill="#fbbf24" stroke="#1c1917" stroke-width="3.5" stroke-linejoin="round"/>
+    <circle cx="66" cy="42" r="3.5" fill="#1c1917"/>
+    <!-- Diagonal Silver Cavalry Lance -->
+    <line x1="18" y1="110" x2="98" y2="30" stroke="#1c1917" stroke-width="9" stroke-linecap="round"/>
+    <line x1="18" y1="110" x2="98" y2="30" stroke="#93c5fd" stroke-width="4.5" stroke-linecap="round"/>
+    <!-- Crimson Tassel behind spearhead -->
+    <path d="M84 44 C72 34, 68 46, 78 56 C86 64, 96 54, 88 46 Z" fill="#ef4444" stroke="#1c1917" stroke-width="3.5"/>
+    <!-- Gleaming Spearhead -->
+    <polygon points="114,14 86,28 98,40" fill="#f8fafc" stroke="#1c1917" stroke-width="4" stroke-linejoin="round"/>
+</svg>

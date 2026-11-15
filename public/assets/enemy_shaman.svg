@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<!-- Horned Warlock Shaman -->
+    <path d="M36 48 C20 36, 18 18, 32 16 C30 28, 36 36, 46 40" fill="#d6d3d1" stroke="#1c1917" stroke-width="4"/>
+    <path d="M92 48 C108 36, 110 18, 96 16 C98 28, 92 36, 82 40" fill="#d6d3d1" stroke="#1c1917" stroke-width="4"/>
+    <circle cx="64" cy="66" r="30" fill="#581c87" stroke="#1c1917" stroke-width="4.5"/>
+    <circle cx="53" cy="64" r="5" fill="#4ade80"/>
+    <circle cx="75" cy="64" r="5" fill="#4ade80"/>
+    <!-- Green Totem Staff -->
+    <line x1="104" y1="108" x2="104" y2="34" stroke="#1c1917" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="104" cy="28" r="11" fill="#4ade80" stroke="#1c1917" stroke-width="4"/>
+</svg>

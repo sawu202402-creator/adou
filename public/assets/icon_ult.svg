@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<!-- Divine Dragon Seal Orb (NO TEXT) -->
+    <circle cx="64" cy="64" r="48" fill="#0ea5e9" stroke="#1c1917" stroke-width="5.5"/>
+    <circle cx="64" cy="64" r="38" fill="#0284c7" stroke="#bae6fd" stroke-width="3"/>
+    <!-- Golden Lightning & Dragon Crescent -->
+    <path d="M40 86 C28 58, 48 28, 78 32 C60 40, 52 62, 66 80 C78 92, 94 80, 92 64 C98 84, 76 106, 40 86 Z"
+      fill="#facc15" stroke="#1c1917" stroke-width="4" stroke-linejoin="round"/>
+    <polygon points="74,22 54,58 70,58 58,96 92,50 74,50" fill="#ffffff" stroke="#1c1917" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>

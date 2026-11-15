@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<!-- Crossed Spears Behind War Tent -->
+    <line x1="18" y1="108" x2="104" y2="20" stroke="#1c1917" stroke-width="6" stroke-linecap="round"/>
+    <line x1="110" y1="108" x2="24" y2="20" stroke="#1c1917" stroke-width="6" stroke-linecap="round"/>
+    <!-- Tent Body -->
+    <polygon points="20,108 32,58 96,58 108,108" fill="#d6d3d1" stroke="#1c1917" stroke-width="5" stroke-linejoin="round"/>
+    <!-- Curved Timber War Roof -->
+    <path d="M12 62 Q64 18 116 62 L102 68 Q64 38 26 68 Z" fill="#9a3412" stroke="#1c1917" stroke-width="5" stroke-linejoin="round"/>
+    <!-- Entrance & Gold Crest (NO TEXT) -->
+    <polygon points="48,108 64,68 80,108" fill="#292524" stroke="#1c1917" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="64" cy="52" r="8" fill="#facc15" stroke="#1c1917" stroke-width="3.5"/>
+</svg>

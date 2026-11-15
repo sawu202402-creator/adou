@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<!-- Handle Grip -->
+    <path d="M88 18 L110 40 L98 52 L76 30 Z" fill="#f59e0b" stroke="#1c1917" stroke-width="4.5" stroke-linejoin="round"/>
+    <!-- Shaft -->
+    <line x1="86" y1="42" x2="46" y2="82" stroke="#1c1917" stroke-width="12" stroke-linecap="round"/>
+    <line x1="86" y1="42" x2="46" y2="82" stroke="#b45309" stroke-width="6.5" stroke-linecap="round"/>
+    <!-- Golden Spade Head -->
+    <path d="M36 62 L66 92 C52 112, 26 116, 16 112 C12 102, 16 76, 36 62 Z"
+      fill="#facc15" stroke="#1c1917" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M36 74 L24 98" stroke="#fef08a" stroke-width="4.5" stroke-linecap="round"/>
+</svg>
