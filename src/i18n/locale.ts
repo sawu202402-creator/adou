@@ -1,4 +1,4 @@
-import { Lang, MetaUpgradeLevels, UnitId } from '../types';
+import { HeroKey, Lang, MetaUpgradeLevels, TroopKey, UnitId } from '../types';
 
 function detectDefaultLang(): Lang {
   try {
@@ -48,15 +48,15 @@ interface Dict {
   maxLevel: string;
   upgradeBtn: (cost: number) => string;
 
+  codexFusionTitle: string;
   codexTroopsTitle: string;
-  codexHeroesTitle: string;
   codexSynergyTitle: string;
   codexRuleTip: string;
 
+  rivalTag: string;
+  playerTag: string;
   waveLabel: (w: number, maxW: number | null) => string;
-  bossIncoming: string;
   bossName: string;
-  miniBossName: string;
 
   btnRecruit: string;
   btnReroll: string;
@@ -69,14 +69,14 @@ interface Dict {
   actDecree: string;
   actShovel: string;
   actFortify: string;
-  shovelPrompt: string;
-  recycleLabel: string;
 
   bannerWaveStart: (w: number) => string;
   bannerBoss: string;
   bannerShovelPick: string;
   bannerTileUnlocked: string;
   bannerHeroAwakened: (name: string) => string;
+  bannerRivalAwakened: (name: string) => string;
+  bannerRivalFallen: string;
   bannerUltCast: string;
   bannerFortified: string;
   bannerNeedRations: string;
@@ -111,6 +111,7 @@ interface Dict {
   btnSkipRevive: string;
 
   victoryTitle: string;
+  victoryRivalKoTitle: string;
   defeatTitle: string;
   settleSub: (wave: number, kills: number, merges: number) => string;
   btnMultClaim: string;
@@ -130,417 +131,475 @@ interface Dict {
 
   stages: Record<string, { name: string; subtitle: string }>;
   upgrades: Record<keyof MetaUpgradeLevels, { name: string; desc: string; val: (lvl: number) => string }>;
-  units: Record<UnitId, UnitText>;
+  troops: Record<TroopKey, UnitText>;
+  heroes: Record<
+    HeroKey,
+    {
+      soulName: string;
+      weapName: string;
+      heroName: string;
+      role: string;
+      desc: string;
+    }
+  >;
 }
 
 const EN_DICT: Dict = {
-  gameTitle: 'Dynasty Tile Guard',
-  gameSubtitle: 'Merge War-Tiles · Command Iconic Heroes · Protect the Baby Heir!',
-  tabStages: '🗺️ Battlefields',
-  tabCodex: '📖 Hero Codex',
-  tabUpgrades: '⚡ Citadel Tech',
-  modeStandard: '🛡️ 10-Wave Siege',
-  modeEndless: '♾️ Endless Horde',
-  stageCleared: '✅ Cleared',
-  stageDifficulty: (n) => `Difficulty ★${n}`,
+  gameTitle: 'Dynasty Jade Guard',
+  gameSubtitle: 'Rival Duel Siege · Fuse Soul + Divine Weapon · Guard the Royal Heir',
+  tabStages: 'Passes',
+  tabCodex: 'Hero Fusion',
+  tabUpgrades: 'Imperial Tech',
+  modeStandard: '10-Wave Duel',
+  modeEndless: 'Endless Siege',
+  stageCleared: 'Cleared',
+  stageDifficulty: (n) => `Rank ${'I'.repeat(n)}`,
   endlessBest: (w) => `Best Wave ${w}`,
-  endlessReady: 'Survival Mode',
-  btnPlayStandard: '▶ Defend Pass (10 Waves)',
-  btnPlayEndless: '▶ Enter Endless Siege',
+  endlessReady: 'Survival Duel',
+  btnPlayStandard: 'Enter Pass Duel (10 Waves)',
+  btnPlayEndless: 'Enter Endless Siege',
   hubFooterTip:
-    '💡 Drag identical tiles to MERGE (1→2→3→4★) · Use Golden Shovels to unlock dark stone slots · Zero-text universal crests!',
+    'Top Half: Live Rival Warlord · Bottom Half: Your Guard · Drag matching [General Soul] + [Divine Weapon] tiles to AWAKEN True Heroes!',
   commanderRank: (lvl, bonusPct, xp, nextXp) =>
-    `🎖️ Warlord Lv.${lvl} (All Unit DMG +${bonusPct}% · XP ${xp}/${nextXp})`,
-  maxLevel: 'MAXED',
-  upgradeBtn: (cost) => `🪙 ${cost} Upgrade`,
+    `Grand Marshal Lv.${lvl}  ·  All Unit Might +${bonusPct}%  ·  XP ${xp}/${nextXp}`,
+  maxLevel: 'MAX',
+  upgradeBtn: (cost) => `${cost} Gold`,
 
-  codexTroopsTitle: '⚔️ Vanguard & Ranged Troop Tiles (Universal Weapon Crests)',
-  codexHeroesTitle: '👑 Legendary Dynasty Heroes (Gilded Aura Tiles)',
-  codexSynergyTitle: '☯️ Automatic Formation Synergies',
+  codexFusionTitle: 'Two-Tile Hero Awakening: [General Soul] + [Divine Weapon] = True General',
+  codexTroopsTitle: 'Five Imperial Soldier Crests (Merge Same Tier 1→2→3→4)',
+  codexSynergyTitle: 'Battlefield Formation Synergies',
   codexRuleTip:
-    'Recruit tiles into your 5-slot Barracks Tent, drag onto White Jade slots, and merge matching tiles of the same Tier! Upgrade Royal Decree in battle to summon more Legendary Heroes.',
+    'Matching color frames & corner crests pair together! Drag any General Soul tile onto its matching Divine Weapon tile to awaken a Gilded Legendary General.',
 
-  waveLabel: (w, maxW) => (maxW ? `Wave ${w}/${maxW}` : `Wave ${w} ∞`),
-  bossIncoming: '⚠️ DEMON WARLORD APPROACHING!',
-  bossName: '👹 Demon Warlord',
-  miniBossName: '🐏 Siege Ram',
+  rivalTag: 'RIVAL',
+  playerTag: 'YOU',
+  waveLabel: (w, maxW) => (maxW ? `Wave ${w} / ${maxW}` : `Endless Wave ${w}`),
+  bossName: 'Warlord Lu Bu',
 
-  btnRecruit: 'Recruit',
+  btnRecruit: 'Conscript',
   btnReroll: 'Refresh',
-  btnHeroScrollFree: '🎁 Free Hero',
-  btnHeroScrollAd: '🎬 Hero Summon',
-  btnSupplyAd: '🎬 +65 🍙',
-  ultReady: 'READY!',
+  btnHeroScrollFree: 'Free Tally',
+  btnHeroScrollAd: 'Tiger Tally',
+  btnSupplyAd: '+65 Rations',
+  ultReady: 'UNLEASH',
 
   actFarm: 'Granary',
-  actDecree: 'Promote',
-  actShovel: 'Shovel',
-  actFortify: 'Guard',
-  shovelPrompt: 'Tap any DARK STONE cell to unlock!',
-  recycleLabel: 'Sell +🍙',
+  actDecree: 'Decree',
+  actShovel: 'Excavate',
+  actFortify: 'Fortify',
 
-  bannerWaveStart: (w) => `⚔️ Wave ${w} Assault!`,
-  bannerBoss: '👹 Demon Warlord Lu Bu Enters!',
-  bannerShovelPick: '🪏 Tap a Dark Stone Tile to Excavate!',
-  bannerTileUnlocked: '✨ New Jade Deploy Slot Unlocked!',
-  bannerHeroAwakened: (name) => `🌟 ${name} Joined the Guard!`,
-  bannerUltCast: '🐉 Silver Dragon Crescent Storm!',
-  bannerFortified: '🛡️ Barricades Rebuilt & Heir Healed!',
-  bannerNeedRations: '🍙 Need More Rice Rations!',
-  bannerMaxLevel: '✨ Already at Max Level!',
+  bannerWaveStart: (w) => `Wave ${w} — Drums of War!`,
+  bannerBoss: 'Demon Warlord Lu Bu Approaches Both Gates!',
+  bannerShovelPick: 'Select a dark basalt stone slot in your half to excavate',
+  bannerTileUnlocked: 'White Jade Deploy Pedestal Unlocked!',
+  bannerHeroAwakened: (name) => `Awakened: ${name}!`,
+  bannerRivalAwakened: (name) => `Rival Awakened ${name}!`,
+  bannerRivalFallen: 'Rival Defense Collapsed!',
+  bannerUltCast: 'Azure Dragon Sweeps the Pass!',
+  bannerFortified: 'Barricade Restored & Royal Heir Healed',
+  bannerNeedRations: 'Insufficient Rations',
+  bannerMaxLevel: 'Maximum Rank Reached',
 
   synergyNames: {
-    vanguard: 'Vanguard Pact',
-    marksman: 'Volley Formation',
-    mystic: 'Mystic Wisdom',
-    dragon_guard: 'Dragon Guardians',
+    vanguard: 'Vanguard Phalanx',
+    marksman: 'Volley Watch',
+    mystic: 'Grand Strategy',
+    dragon_guard: 'Sworn Generals',
   },
   synergyDescs: {
-    vanguard: '2 / 4 Melee & Cavalry types: All DMG +16% / +35%',
-    marksman: '2 / 4 Bow & Crossbow types: Attack Speed +18% / +38%',
-    mystic: '2 / 4 Cannon, Frost & Sage types: Skill & AoE DMG +25% / +55%',
-    dragon_guard: '3+ Unique Heroes on board: Hero Skill Rate +35% & Global Crit +15%',
+    vanguard: '2 / 4 Melee & Cavalry types: Global DMG +16% / +36%',
+    marksman: '2 / 3 Bow & Crossbow types: Attack Speed +18% / +38%',
+    mystic: '2 / 3 Cannon, Frost & Sage types: Skill & AoE DMG +25% / +55%',
+    dragon_guard: '2 / 3 Awakened Generals: Faster Skills & +14% / +22% Crit',
   },
 
-  pauseTitle: '⏸ Battle Paused',
-  btnResume: '▶ Resume Battle',
-  btnMuteOn: '🔇 Sound: Muted',
-  btnMuteOff: '🔊 Sound: On',
-  btnLangSwitch: '🌐 Language: English (切中文)',
-  btnRetreat: '🏠 Retreat to Hub',
+  pauseTitle: 'War Council Paused',
+  btnResume: 'Resume Battle',
+  btnMuteOn: 'Audio: Muted',
+  btnMuteOff: 'Audio: Active',
+  btnLangSwitch: 'Language: EN / 切换中文',
+  btnRetreat: 'Return to Scroll',
 
-  reviveTitle: '🚨 The Baby Heir Is in Danger!',
-  reviveSub: (wave, kills) => `Held until Wave ${wave} · Defeated ${kills} Invaders`,
-  revivePerk1: '🐉 Full-Map Dragon Wipe',
-  revivePerk2: '❤️ Restore +6 Royal Hearts',
-  revivePerk3: '🛡️ Rebuild All Barricades',
-  btnReviveAd: '🎬 Dragon Rescue Revive',
-  btnSkipRevive: 'Settle Rewards',
+  reviveTitle: 'The Royal Cradle Is Breached!',
+  reviveSub: (wave, kills) => `Fought to Wave ${wave} · Vanquished ${kills} Raiders`,
+  revivePerk1: 'Full-Lane Dragon Clear',
+  revivePerk2: '+6 Royal Hearts',
+  revivePerk3: 'Rebuild Barricade',
+  btnReviveAd: 'Watch Ad · Dragon Rescue',
+  btnSkipRevive: 'Conclude Battle',
 
-  victoryTitle: '🏆 Heir Protected · Victory!',
-  defeatTitle: '🎖️ Siege Concluded',
-  settleSub: (wave, kills, merges) => `Wave ${wave} · ${kills} Defeated · ${merges} Merges`,
-  btnMultClaim: '🎬 Bonus Claim',
-  btnNormalClaim: 'Claim Rewards',
+  victoryTitle: 'Pass Defended · Grand Victory!',
+  victoryRivalKoTitle: 'Rival Outlasted · Duel Victory!',
+  defeatTitle: 'Campaign Concluded',
+  settleSub: (wave, kills, merges) => `Wave ${wave} · ${kills} Slain · ${merges} Syntheses`,
+  btnMultClaim: 'Bonus Claim',
+  btnNormalClaim: 'Standard Claim',
 
-  mockAdBadge: (placement) => `Dev Preview · Simulated Rewarded Video (${placement})`,
-  mockAdCalling: '🐉 Summoning Imperial Reinforcements...',
-  mockAdReward: (title) => `Unlocking: <strong>${title}</strong>`,
-  mockAdTimer: (sec) => `Game auto-paused & muted · ${sec}s remaining`,
+  mockAdBadge: (placement) => `Preview · Simulated Rewarded Video (${placement})`,
+  mockAdCalling: 'Summoning Imperial Tiger Tally...',
+  mockAdReward: (title) => `Granting: <strong>${title}</strong>`,
+  mockAdTimer: (sec) => `Game paused & muted · ${sec}s remaining`,
   mockAdCancel: 'Cancel',
 
   adRewardRevive: 'Dragon Rescue + Full Barricade Rebuild',
-  adRewardSupply: '+65 Rice Rations + 1 Golden Shovel',
+  adRewardSupply: '+65 Rations + 1 Golden Shovel',
   adRewardShovels: '+2 Golden Shovels',
-  adRewardHero: 'Guaranteed Legendary Hero Tile',
-  adRewardSettle: (m) => `x${m} Battle Rewards Multiplier`,
+  adRewardHero: 'Matching Hero Partner Tile (Instant Fusion!)',
+  adRewardSettle: (m) => `x${m} Campaign Spoils`,
 
   stages: {
     hulao: {
-      name: 'Hulao Twin Gate',
-      subtitle: 'Classic twin-flank pass! Guard both Royal Cradles from pincer siege waves.',
+      name: 'Hulao Twin Pass',
+      subtitle: 'Outlast the rival warlord across the Great Wall parapet as twin legions storm the gates.',
     },
     changban: {
-      name: 'Changban Dragon Bridge',
-      subtitle: 'Winding river crossing! Hold the central jade island to shred bridge raiders.',
+      name: 'Changban Steep Bridge',
+      subtitle: 'Hold the jade island amidst misty rapids while your rival defends the northern bank.',
     },
     chibi: {
-      name: 'Chibi Chained Fleet',
-      subtitle: 'Twin warship gangplanks converging on the Imperial Flagship Cradle!',
+      name: 'Chibi Chained Armada',
+      subtitle: 'Command the southern flagship deck in a fierce survival race against the northern fleet.',
     },
   },
 
   upgrades: {
     hearts: {
-      name: 'Royal Guard Escort',
-      desc: 'Increases Young Lord starting Hearts & Barricade durability',
-      val: (lvl) => `❤️ ${10 + lvl * 2} Hearts`,
+      name: 'Imperial Guard',
+      desc: 'Raises starting Royal Hearts and spike barricade durability',
+      val: (lvl) => `${10 + lvl * 2} Hearts`,
     },
     granary: {
-      name: 'Imperial Granary',
-      desc: 'Start battles with extra Rice Rations & faster passive income',
-      val: (lvl) => `🍙 ${28 + lvl * 10} Start`,
+      name: 'State Granary',
+      desc: 'Increases starting Rations and passive grain harvest',
+      val: (lvl) => `${30 + lvl * 10} Start`,
     },
     might: {
-      name: 'Forged Steel',
-      desc: 'Permanently boosts all Troop & Hero damage',
-      val: (lvl) => `+${lvl * 8}% DMG`,
+      name: 'Wootz Forging',
+      desc: 'Permanently increases all Soldier and General damage',
+      val: (lvl) => `+${lvl * 8}% Might`,
     },
     decree: {
-      name: 'Noble Prestige',
-      desc: 'Boosts base Legendary Hero draft chance in Barracks',
-      val: (lvl) => `+${lvl * 3.5}% Hero Rate`,
+      name: 'Tiger Tally',
+      desc: 'Boosts Soul & Divine Weapon appearance rate when conscripting',
+      val: (lvl) => `+${lvl * 4}% Hero Rate`,
     },
     shovels: {
-      name: 'Pioneer Shovels',
-      desc: 'Begin every battle with extra free Golden Shovels',
-      val: (lvl) => `🪏 ${1 + Math.floor((lvl + 1) / 2)} Start`,
+      name: 'Gilt Shovels',
+      desc: 'Begin battles with extra ceremonial Golden Shovels',
+      val: (lvl) => `${1 + Math.floor((lvl + 1) / 2)} Shovels`,
     },
   },
 
-  units: {
+  troops: {
     blade: {
-      name: 'Dao Vanguard',
-      role: 'Crimson Broadsword · AoE Slash',
-      desc: 'Sweeps a wide crimson blade arc hitting nearby enemies with fast cleaves.',
+      name: 'Dao Heavy Guard',
+      role: 'Curved Broadsword · Sweeping Arc',
+      desc: 'Cleaves adjacent enemies with wide crimson ink-blade arcs.',
     },
     archer: {
-      name: 'Jade Marksman',
-      role: 'Emerald War-Bow · Rapid Volley',
-      desc: 'Long-range rapid archer with high attack speed and sharp single-target DPS.',
+      name: 'Horn-Bow Marksman',
+      role: 'Recurve War-Bow · Rapid Volley',
+      desc: 'Long-range rapid archer excelling against swift raiders.',
     },
     lancer: {
-      name: 'Heavy Lancer',
-      role: 'Cobalt Warhorse · Piercing Line',
-      desc: 'Hurls a shockwave cavalry lance that pierces straight through multiple foes.',
+      name: 'Iron Cavalry',
+      role: 'Armored Steed · Line Pierce',
+      desc: 'Drives a shockwave lance straight through multiple foes in a line.',
     },
     mortar: {
       name: 'Dragon Bombard',
-      role: 'Violet Cannon · Explosive AoE',
-      desc: 'Shells enemy clusters with heavy splash explosions that crush armored shields.',
+      role: 'Bronze Cannon · Armor-Piercing AoE',
+      desc: 'Shells enemy clusters with explosive fireballs that shatter heavy shields.',
     },
     frostbow: {
-      name: 'Frost Sentinel',
-      role: 'Cyan Crossbow · Chilling Slow',
-      desc: 'Fires ice-crystal bolts that slow enemy movement by up to 45%.',
+      name: 'Zhuge Frostbow',
+      role: 'Repeating Crossbow · Chilling Bolts',
+      desc: 'Chills enemy movement speed by 42%, buying time for your generals.',
     },
+  },
+
+  heroes: {
     zhaoyun: {
-      name: 'Zhao Yun · Silver Dragon',
-      role: 'Silver Dragon Helm · Sweeping Dash',
-      desc: 'Unleashes piercing azure dragon arcs; every 4th strike launches a full-lane Dragon Surge!',
+      soulName: 'Soul · Silver Lancer',
+      weapName: 'Spear · Dragon Gall',
+      heroName: 'Zhao Yun · Azure Dragon',
+      role: '◈ Silver-Cyan Pair · Piercing Dragon Surge',
+      desc: 'Fuse Silver Lancer + Dragon Spear! Sweeps wide arcs and launches a full-lane Azure Dragon every 4th strike.',
     },
     guanyu: {
-      name: 'Guan Yu · Jade War God',
-      role: 'Crimson Face & Green Glaive · Execute',
-      desc: 'Devastating crescent cleaves; instantly executes non-boss enemies below 20% HP!',
+      soulName: 'Soul · Crimson Saint',
+      weapName: 'Glaive · Green Dragon',
+      heroName: 'Guan Yu · Martial God',
+      role: '☾ Jade-Green Pair · Instant Execute',
+      desc: 'Fuse Crimson Saint + Crescent Glaive! Executes wounded foes (<22% HP) outright and hurls emerald dragon waves.',
     },
     zhangfei: {
-      name: 'Zhang Fei · Roar Berserker',
-      role: 'Lion Mane & Serpent Pike · AoE Stun',
-      desc: 'Every 4th attack slams a Warcry Quake around him, stunning nearby foes!',
-    },
-    zhenji: {
-      name: 'Zhen Ji · Frost Empress',
-      role: 'Ice Lotus Crown · Blizzard Freeze',
-      desc: 'Casts Frozen Lotus vortexes that chill groups and freeze enemies solid!',
+      soulName: 'Soul · Fierce Tiger',
+      weapName: 'Pike · Coiled Serpent',
+      heroName: 'Zhang Fei · Warcry Titan',
+      role: '❖ Flame-Iron Pair · Quake Stun',
+      desc: 'Fuse Fierce Tiger + Serpent Pike! Unleashes fiery warcry tremors that stun all surrounding invaders.',
     },
     zhuge: {
-      name: 'Zhuge Liang · Storm Sage',
-      role: 'Star Crown & Feather Fan · Chain Bolt',
-      desc: 'Calls down golden-blue Chain Lightning bouncing across up to 6 enemies!',
+      soulName: 'Soul · Star Strategist',
+      weapName: 'Fan · Eight Trigrams',
+      heroName: 'Zhuge Liang · Storm Sage',
+      role: '☯ Gold-Indigo Pair · Chain Thunder',
+      desc: 'Fuse Star Strategist + Feather Fan! Summons celestial lightning jumping across up to 6 enemies.',
+    },
+    zhenji: {
+      soulName: 'Soul · River Consort',
+      weapName: 'Flute · Frost Lotus',
+      heroName: 'Zhen Ji · Ice Empress',
+      role: '✻ Sapphire Pair · Lotus Blizzard',
+      desc: 'Fuse River Consort + Frost Flute! Blankets the road in freezing lotus storms that immobilize waves.',
     },
     shangxiang: {
-      name: 'Shangxiang · Phoenix Bow',
-      role: 'Twin Red Plumes · Fire Arrow Rain',
-      desc: 'Fires multi-arrow blazing volleys that ignite enemies over time!',
+      soulName: 'Soul · Plumed Maiden',
+      weapName: 'Bow · Vermilion Phoenix',
+      heroName: 'Shangxiang · Fire Phoenix',
+      role: '✦ Crimson-Gold Pair · Blazing Barrage',
+      desc: 'Fuse Plumed Maiden + Phoenix Bow! Fires multi-arrow flame volleys across the entire half-board.',
     },
   },
 };
 
 const ZH_DICT: Dict = {
-  gameTitle: '少主护卫战 · 全球纹章版',
-  gameSubtitle: '零汉字高辨识纹章棋子 · 名将脸谱合成 · 誓死护卫襁褓少主！',
-  tabStages: '🗺️ 战役选关',
-  tabCodex: '📖 兵种武将图鉴',
-  tabUpgrades: '⚡ 主公科技',
-  modeStandard: '🛡️ 10波守关',
-  modeEndless: '♾️ 无尽尸潮/敌潮',
-  stageCleared: '✅ 已通关',
-  stageDifficulty: (n) => `难度 ★${n}`,
+  gameTitle: '千里护主录 · 国风双阵对决',
+  gameSubtitle: '上下双阵同波竞速 · 将魂神兵二合一觉醒 · 无字纹章全球通识',
+  tabStages: '烽火雄关',
+  tabCodex: '名将合璧谱',
+  tabUpgrades: '中军武库',
+  modeStandard: '十波竞速对决',
+  modeEndless: '无尽死守模式',
+  stageCleared: '已破关',
+  stageDifficulty: (n) => `险度 ${'★'.repeat(n)}`,
   endlessBest: (w) => `最高 ${w} 波`,
-  endlessReady: '极限生存',
-  btnPlayStandard: '▶ 出征护主 (10波)',
-  btnPlayEndless: '▶ 挑战无尽敌潮',
+  endlessReady: '极限竞速',
+  btnPlayStandard: '擂鼓出阵（十波对决）',
+  btnPlayEndless: '死守雄关（无尽敌潮）',
   hubFooterTip:
-    '💡 拖拽相同同阶棋子二合一升阶 (1→2→3→4★) · 金铲子可挖开深色石格 · 棋盘纯图标零汉字全球通用！',
+    '上方为 AI 对手实时布阵，下方为我军防线 · 拖拽同色系【名将将魂】+【本命神兵】两牌合璧，即可觉醒无双真名将！',
   commanderRank: (lvl, bonusPct, xp, nextXp) =>
-    `🎖️ 统帅等级 Lv.${lvl}（全军伤害 +${bonusPct}% · 经验 ${xp}/${nextXp}）`,
-  maxLevel: '已满级',
-  upgradeBtn: (cost) => `🪙 ${cost} 升级`,
+    `中军统帅 Lv.${lvl}  ·  全军战力加成 +${bonusPct}%  ·  历练 ${xp}/${nextXp}`,
+  maxLevel: '已臻化境',
+  upgradeBtn: (cost) => `${cost} 金铢精研`,
 
-  codexTroopsTitle: '⚔️ 五大基础兵种（去汉字冷兵器纹章，一眼辨识）',
-  codexHeroesTitle: '👑 六大传奇名将（鎏金边框 + 鲜明头饰脸谱）',
-  codexSynergyTitle: '☯️ 自动阵营羁绊（上阵即生效）',
+  codexFusionTitle: '名将双牌合璧谱：【将魂牌】＋【本命神兵牌】＝ 觉醒无双真名将',
+  codexTroopsTitle: '五营精锐兵种（同阶二合一升阶 1→2→3→4）',
+  codexSynergyTitle: '军阵奇门羁绊（上阵自动激活）',
   codexRuleTip:
-    '点击「征兵」在下方 5 格兵营刷出棋子，拖拽至白色玉石格部署，同兵种同阶即可二合一升阶！局内升级「升职诏书」可大幅提高传奇名将刷新率。',
+    '无需任何汉字！每尊名将拥有专属配色边框与角标徽记：将左半璧【将魂头像牌】与右半璧【专属神兵牌】拖拽重叠，即刻合璧化为鎏金真名将！',
 
-  waveLabel: (w, maxW) => (maxW ? `第 ${w}/${maxW} 波` : `无尽第 ${w} 波`),
-  bossIncoming: '⚠️ 魔神吕布率精锐来袭！',
-  bossName: '👹 魔神吕布',
-  miniBossName: '🐏 攻城冲车',
+  rivalTag: '敌阵对手',
+  playerTag: '我方大营',
+  waveLabel: (w, maxW) => (maxW ? `第 ${w} / ${maxW} 波` : `无尽第 ${w} 波`),
+  bossName: '魔神·吕布',
 
-  btnRecruit: '征兵',
-  btnReroll: '换一批',
-  btnHeroScrollFree: '🎁 免费名将',
-  btnHeroScrollAd: '🎬 必出名将',
-  btnSupplyAd: '🎬 +65 粮草',
-  ultReady: '可释放!',
+  btnRecruit: '征召兵马',
+  btnReroll: '换防重募',
+  btnHeroScrollFree: '赐虎符(免)',
+  btnHeroScrollAd: '招贤虎符',
+  btnSupplyAd: '+65 军粮',
+  ultReady: '苍龙破!',
 
   actFarm: '屯田',
-  actDecree: '升职',
+  actDecree: '招贤',
   actShovel: '金铲',
-  actFortify: '护主',
-  shovelPrompt: '请点击任意深色石块格挖开空位！',
-  recycleLabel: '回收 +🍙',
+  actFortify: '固防',
 
-  bannerWaveStart: (w) => `⚔️ 第 ${w} 波敌军压境！`,
-  bannerBoss: '👹 魔神吕布驾临战场！',
-  bannerShovelPick: '🪏 点击棋盘上的深色石格即可扩建部署位！',
-  bannerTileUnlocked: '✨ 成功开辟新的白玉部署格！',
-  bannerHeroAwakened: (name) => `🌟 传奇名将【${name}】入阵！`,
-  bannerUltCast: '🐉 神兵现世 · 银龙横扫千军！',
-  bannerFortified: '🛡️ 拒马重筑 & 少主恢复体力！',
-  bannerNeedRations: '🍙 粮草不足，请稍候或升级屯田！',
-  bannerMaxLevel: '✨ 该项已达本局最高等级！',
+  bannerWaveStart: (w) => `第 ${w} 波敌军擂鼓攻关！`,
+  bannerBoss: '温侯吕布魔影亲临，双阵同受考验！',
+  bannerShovelPick: '请点击下方我军区域的深色青石格开辟玉台',
+  bannerTileUnlocked: '已辟出全新羊脂白玉阵位！',
+  bannerHeroAwakened: (name) => `神兵认主 · 【${name}】真身觉醒！`,
+  bannerRivalAwakened: (name) => `上方对手合璧觉醒了【${name}】！`,
+  bannerRivalFallen: '上方对手防线告破！',
+  bannerUltCast: '龙胆亮银 · 苍龙横扫千军！',
+  bannerFortified: '鹿砦重筑，幼主安泰！',
+  bannerNeedRations: '军粮不足，可静待屯田产出',
+  bannerMaxLevel: '此策已升至满阶',
 
   synergyNames: {
-    vanguard: '锋矢近卫',
-    marksman: '神射齐发',
-    mystic: '奇门天机',
-    dragon_guard: '护主龙将',
+    vanguard: '锋矢铁卫',
+    marksman: '神臂齐射',
+    mystic: '奇门遁甲',
+    dragon_guard: '五虎群英',
   },
   synergyDescs: {
-    vanguard: '上阵 2 / 4 种近战骑兵系：全军伤害 +16% / +35%',
-    marksman: '上阵 2 / 4 种弓弩远程系：全军攻速 +18% / +38%',
-    mystic: '上阵 2 / 4 种火炮冰法系：技能与范围伤害 +25% / +55%',
-    dragon_guard: '同时在场 3 名以上不同名将：名将大招频率 +35% 且暴击 +15%',
+    vanguard: '上阵 2 / 4 种刀骑猛将系：全军伤害 +16% / +36%',
+    marksman: '上阵 2 / 3 种弓弩远程系：全军攻速 +18% / +38%',
+    mystic: '上阵 2 / 3 种火炮奇谋系：技能与范围伤害 +25% / +55%',
+    dragon_guard: '觉醒 2 / 3 尊以上真名将：大招加速且暴击 +14% / +22%',
   },
 
-  pauseTitle: '⏸ 战局已暂停',
-  btnResume: '▶ 继续战斗',
-  btnMuteOn: '🔇 音效：已静音',
-  btnMuteOff: '🔊 音效：开启中',
-  btnLangSwitch: '🌐 语言：中文 (Switch EN)',
-  btnRetreat: '🏠 撤回主城大厅',
+  pauseTitle: '军帐议事（已暂停）',
+  btnResume: '继续督战',
+  btnMuteOn: '金鼓音效：关闭',
+  btnMuteOff: '金鼓音效：开启',
+  btnLangSwitch: '界面语言：中文 / Switch EN',
+  btnRetreat: '班师回朝（返回画卷）',
 
-  reviveTitle: '🚨 少主危在旦夕！',
-  reviveSub: (wave, kills) => `鏖战至第 ${wave} 波 · 已歼敌 ${kills} 名`,
-  revivePerk1: '🐉 银龙全屏清场',
-  revivePerk2: '❤️ 少主恢复 6 颗红心',
-  revivePerk3: '🛡️ 全路拒马满血重筑',
-  btnReviveAd: '🎬 单骑救主复活',
-  btnSkipRevive: '直接结算',
+  reviveTitle: '鹿砦失守 · 幼主危急！',
+  reviveSub: (wave, kills) => `血战至第 ${wave} 波 · 斩敌 ${kills} 级`,
+  revivePerk1: '苍龙清扫我方全路',
+  revivePerk2: '恢复 6 颗护主丹心',
+  revivePerk3: '满耐久重筑铁刺鹿砦',
+  btnReviveAd: '单骑救主（激励救援）',
+  btnSkipRevive: '收兵论功结算',
 
-  victoryTitle: '🏆 护主大捷 · 凯旋！',
-  defeatTitle: '🎖️ 战役结算',
-  settleSub: (wave, kills, merges) => `坚守第 ${wave} 波 · 歼敌 ${kills} · 合成 ${merges} 次`,
-  btnMultClaim: '🎬 翻倍领取',
-  btnNormalClaim: '普通领取',
+  victoryTitle: '雄关屹立 · 护主大捷！',
+  victoryRivalKoTitle: '对手溃败 · 竞速完胜！',
+  defeatTitle: '沙场论功结算',
+  settleSub: (wave, kills, merges) => `第 ${wave} 波 · 斩敌 ${kills} · 合璧升阶 ${merges} 次`,
+  btnMultClaim: '虎符翻倍领赏',
+  btnNormalClaim: '常规领赏',
 
-  mockAdBadge: (placement) => `开发调试 · 模拟激励视频 (${placement})`,
-  mockAdCalling: '🐉 正在传召虎符援军...',
-  mockAdReward: (title) => `即将解锁：<strong>${title}</strong>`,
-  mockAdTimer: (sec) => `游戏已自动静音并暂停 · 剩余 ${sec} 秒`,
-  mockAdCancel: '放弃奖励',
+  mockAdBadge: (placement) => `开发预览 · 模拟激励视频 (${placement})`,
+  mockAdCalling: '八百里加急传召虎符援军...',
+  mockAdReward: (title) => `即将赐予：<strong>${title}</strong>`,
+  mockAdTimer: (sec) => `战局已静音暂停 · 尚余 ${sec} 秒`,
+  mockAdCancel: '婉拒赏赐',
 
-  adRewardRevive: '单骑救主清场 + 拒马全满修复',
-  adRewardSupply: '+65 粮草补给 + 赠送 1 把金铲子',
-  adRewardShovels: '紧急空投 +2 把金铲子',
-  adRewardHero: '必出一名随机传奇名将棋子',
-  adRewardSettle: (m) => `结算奖励 x${m} 倍暴击领取`,
+  adRewardRevive: '单骑救主清场 + 鹿砦重筑',
+  adRewardSupply: '+65 军粮笼包 + 赐 1 把金铲',
+  adRewardShovels: '赐 2 把开山金铲',
+  adRewardHero: '定向赐予配对将魂/神兵牌（即刻合璧名将！）',
+  adRewardSettle: (m) => `战功赏金 x${m} 倍奉还`,
 
   stages: {
     hulao: {
-      name: '虎牢双关',
-      subtitle: '致敬经典双路雄关！左右双路包抄，合理布阵守护两侧襁褓少主。',
+      name: '虎牢雄关',
+      subtitle: '长城城垛横贯南北！上方 AI 对手与我方同守双关，比拼布阵合璧之术。',
     },
     changban: {
-      name: '长坂龙桥',
-      subtitle: '湍流S型栈桥要道！抢占河心白玉台，交叉火力阻断追兵。',
+      name: '长坂古桥',
+      subtitle: '青绿山水湍流栈桥！与北岸对手同波竞速，扼守白玉河洲力护幼主。',
     },
     chibi: {
-      name: '赤壁连环寨',
-      subtitle: '双舷铁索甲板合围中军旗舰，善用范围火炮与名将控制锁死敌潮！',
+      name: '赤壁水寨',
+      subtitle: '铁索连舟烽火对垒！南北战船甲板镜像迎敌，善用名将绝技横扫敌潮。',
     },
   },
 
   upgrades: {
     hearts: {
-      name: '御林铁卫',
-      desc: '永久提升少主初始红心上限与拒马耐久',
-      val: (lvl) => `❤️ ${10 + lvl * 2} 颗心`,
+      name: '羽林宿卫',
+      desc: '永久提升我方幼主初始红心与铁刺鹿砦耐久',
+      val: (lvl) => `${10 + lvl * 2} 颗丹心`,
     },
     granary: {
-      name: '开局粮仓',
-      desc: '每局自带更多初始粮草并加快基础产粮',
-      val: (lvl) => `🍙 ${28 + lvl * 10} 开局`,
+      name: '常平丰仓',
+      desc: '开局自带更多蒸笼军粮并加快每秒产粮效率',
+      val: (lvl) => `开局 ${30 + lvl * 10} 粮`,
     },
     might: {
-      name: '百炼神兵',
-      desc: '永久提升所有兵种与名将棋子基础伤害',
-      val: (lvl) => `+${lvl * 8}% 伤害`,
+      name: '百炼玄铁',
+      desc: '永久提升所有兵种与觉醒名将的基础杀伤',
+      val: (lvl) => `战力 +${lvl * 8}%`,
     },
     decree: {
-      name: '名望虎符',
-      desc: '永久提升征兵刷新出传奇名将的基础概率',
-      val: (lvl) => `+${lvl * 3.5}% 名将率`,
+      name: '求贤金印',
+      desc: '永久提高征兵刷出名将【将魂/神兵】的概率',
+      val: (lvl) => `名将率 +${lvl * 4}%`,
     },
     shovels: {
-      name: '开疆金铲',
-      desc: '每局开战额外附赠免费金铲子用于扩建格子',
-      val: (lvl) => `🪏 开局 ${1 + Math.floor((lvl + 1) / 2)} 把`,
+      name: '摸金玉铲',
+      desc: '每局出阵额外获赠免费开山金铲扩建玉台',
+      val: (lvl) => `开局 ${1 + Math.floor((lvl + 1) / 2)} 把`,
     },
   },
 
-  units: {
+  troops: {
     blade: {
-      name: '环首刀卫',
-      role: '赤红战刀 · 近程横扫',
-      desc: '挥舞赤红弧光刀气，同时斩击周围路径上的多名敌军。',
+      name: '玄铁刀卫',
+      role: '赤穗环首刀 · 近身群斩',
+      desc: '挥动沉重环首大刀横扫近身敌军，前期稳固防线利器。',
     },
     archer: {
-      name: '翠竹神弓',
-      role: '翡翠长弓 · 高频点射',
-      desc: '超远射程急速连射，擅长精准收割残血与高速斥候。',
+      name: '雕翎弓手',
+      role: '角弓狼牙箭 · 疾速点射',
+      desc: '远射程高频攒射，精准狙杀疾风狼骑斥候。',
     },
     lancer: {
-      name: '玄甲铁骑',
-      role: '苍蓝战马 · 直线贯穿',
-      desc: '刺出破空骑枪冲击波，直线贯穿路径上一整排敌军并附带击退。',
+      name: '铁浮屠骑',
+      role: '重甲战马 · 破阵贯穿',
+      desc: '红缨铁枪刺出劲气，直线贯穿整列来犯敌卒。',
     },
     mortar: {
-      name: '紫金神炮',
-      role: '紫金火炮 · 范围轰炸',
-      desc: '发射高爆轰天雷，大范围溅射爆炸，克制重甲盾卫集群。',
+      name: '神威龙炮',
+      role: '铜铸龙口炮 · 破甲轰炸',
+      desc: '轰出赤焰震天雷，大范围溅射并对重盾铁卫造成额外重创。',
     },
     frostbow: {
-      name: '玄冰连弩',
-      role: '寒冰劲弩 · 减速控制',
-      desc: '发射寒霜冰晶箭，大幅降低敌军移速，为全队创造输出空间。',
+      name: '诸葛寒弩',
+      role: '玄冰连弩 · 迟滞敌军',
+      desc: '劲射寒铁冰矢，令敌军步履维艰，配合名将收割。',
     },
+  },
+
+  heroes: {
     zhaoyun: {
-      name: '赵云 · 银龙枪神',
-      role: '银翼龙盔 · 苍龙破阵',
-      desc: '挥洒大范围银蓝枪芒；每第 4 击召唤贯穿整条战线的苍龙虚影！',
+      soulName: '将魂·白马银枪',
+      weapName: '神兵·龙胆亮银枪',
+      heroName: '真·赵云（苍龙枪神）',
+      role: '◈ 苍蓝配对 · 七进七出苍龙破',
+      desc: '【银甲将魂】+【龙胆银枪】合璧觉醒！大范围银枪横扫，每4击召唤苍龙虚影贯穿全路！',
     },
     guanyu: {
-      name: '关羽 · 青龙武圣',
-      role: '丹凤红脸 · 偃月斩杀',
-      desc: '霸道翡翠刀气横劈；对低于 20% 血量的非首领敌军直接触发一刀斩杀！',
+      soulName: '将魂·美髯丹凤',
+      weapName: '神兵·青龙偃月刀',
+      heroName: '真·关羽（威震华夏）',
+      role: '☾ 翡翠配对 · 青龙残血立斩',
+      desc: '【红脸将魂】+【青龙大刀】合璧觉醒！霸道青龙刀气对低于22%血量敌卒直接一刀斩杀！',
     },
     zhangfei: {
-      name: '张飞 · 咆哮猛将',
-      role: '狂狮黑髯 · 震地眩晕',
-      desc: '丈八蛇矛重击周围；每第 4 击爆发当阳怒吼，震晕范围内全部敌军！',
-    },
-    zhenji: {
-      name: '甄姬 · 洛水冰姬',
-      role: '冰莲凤冠 · 极寒冰封',
-      desc: '召唤洛水冰莲风暴，群体减速并周期性将路径敌军彻底冰封！',
+      soulName: '将魂·燕颔虎须',
+      weapName: '神兵·丈八点钢矛',
+      heroName: '真·张飞（当阳怒吼）',
+      role: '❖ 赤焰配对 · 虎啸震地眩晕',
+      desc: '【猛张飞将魂】+【丈八蛇矛】合璧觉醒！烈焰矛影横扫，周期爆发当阳怒吼震晕群敌！',
     },
     zhuge: {
-      name: '诸葛亮 · 卧龙天师',
-      role: '星冠羽扇 · 八卦连环雷',
-      desc: '挥动白羽扇引动九天神雷，闪电链在最多 6 名敌军之间弹跳轰击！',
+      soulName: '将魂·纶巾卧龙',
+      weapName: '神兵·八卦白羽扇',
+      heroName: '真·诸葛亮（奇门天雷）',
+      role: '☯ 紫金配对 · 九天八卦落雷',
+      desc: '【卧龙将魂】+【八卦羽扇】合璧觉醒！挥扇引动紫金神雷，在多达6名敌军间连环弹跳！',
+    },
+    zhenji: {
+      soulName: '将魂·洛水仙妃',
+      weapName: '神兵·寒玉冰莲笛',
+      heroName: '真·甄姬（洛神凝冰）',
+      role: '✻ 冰蓝配对 · 冰莲千里雪封',
+      desc: '【洛神将魂】+【冰莲玉笛】合璧觉醒！吹奏洛水寒岚群体减速，并将路径敌潮彻底冰封！',
     },
     shangxiang: {
-      name: '孙尚香 · 凤羽弓姬',
-      role: '双红凤翎 · 烈焰箭雨',
-      desc: '同时齐射多支烈焰凤羽箭，覆盖超远距离并持续灼烧敌军！',
+      soulName: '将魂·枭姬凤翎',
+      weapName: '神兵·丹凤烈焰弓',
+      heroName: '真·孙尚香（火凤燎原）',
+      role: '✦ 朱红配对 · 漫天凤羽火雨',
+      desc: '【凤翎将魂】+【烈焰宝弓】合璧觉醒！展翅齐射漫天火凤羽箭，超远覆盖并持续灼烧！',
     },
   },
 };
 
 export function t(): Dict {
   return currentLang === 'zh' ? ZH_DICT : EN_DICT;
+}
+
+export function getUnitDisplayText(unitId: UnitId): UnitText {
+  const dict = t();
+  if (unitId in dict.troops) {
+    return dict.troops[unitId as TroopKey];
+  }
+  const [prefix, hKey] = unitId.split('_') as ['soul' | 'weap' | 'hero', HeroKey];
+  const h = dict.heroes[hKey];
+  if (prefix === 'soul') {
+    return { name: h.soulName, role: h.role, desc: h.desc };
+  }
+  if (prefix === 'weap') {
+    return { name: h.weapName, role: h.role, desc: h.desc };
+  }
+  return { name: h.heroName, role: h.role, desc: h.desc };
 }

@@ -1,8 +1,8 @@
 import { SoundFX } from '../audio/SoundFX';
 import { STAGES } from '../data/stages';
-import { HERO_IDS, TROOP_IDS, UNITS } from '../data/units';
+import { HERO_KEYS, TROOP_KEYS, UNITS } from '../data/units';
 import { GameEngine } from '../game/GameEngine';
-import { getLang, t } from '../i18n/locale';
+import { getLang, getUnitDisplayText, t } from '../i18n/locale';
 import { SaveManager, UPGRADE_TRACKS } from '../meta/SaveManager';
 import { PlatformSDK } from '../platform/PlatformSDK';
 import { GameMode, MetaUpgradeLevels, RunSummary, StageDef } from '../types';
@@ -38,7 +38,7 @@ export class UIManager {
 
     const dict = t();
     const save = SaveManager.get();
-    const langLabel = getLang() === 'en' ? '🌐 EN / 中文' : '🌐 中文 / EN';
+    const langLabel = getLang() === 'en' ? 'EN / 中文' : '中文 / EN';
 
     const tabContent =
       this.hubTab === 'stages'
@@ -48,10 +48,13 @@ export class UIManager {
           : this.renderUpgradesTab();
 
     this.modalRoot.innerHTML = `
-      <div class="hub-screen">
+      <div class="hub-screen" style="background-image: url('./assets/hub_scroll_bg.jpg')">
+        <div class="hub-bg-veil"></div>
         <header class="hub-header">
           <div class="brand-block">
-            <img src="./assets/vip_lord.svg" alt="" class="brand-logo" />
+            <div class="brand-seal">
+              <img src="./assets/vip_lord.png" alt="" class="brand-logo" />
+            </div>
             <div>
               <h1>${dict.gameTitle}</h1>
               <p class="brand-sub">${dict.gameSubtitle}</p>
@@ -65,9 +68,9 @@ export class UIManager {
           </div>
 
           <div class="commander-bar">
-            <span class="rank-pill">🎖️ Lv.${save.commanderLevel}</span>
-            <span class="gold-pill">🪙 ${save.gold}</span>
-            <button class="btn-ink btn-mini btn-beige" id="btn-hub-lang">${langLabel}</button>
+            <span class="rank-pill">Lv.${save.commanderLevel}</span>
+            <span class="gold-pill">◈ ${save.gold}</span>
+            <button class="btn-guofeng btn-mini btn-jade" id="btn-hub-lang">${langLabel}</button>
           </div>
         </header>
 
@@ -126,7 +129,7 @@ export class UIManager {
   private renderStagesTab(): string {
     const dict = t();
     const save = SaveManager.get();
-    const stageBadges = ['🏯', '🌉', '⛵'];
+    const stagePreviewSprites = ['hero_zhaoyun', 'hero_guanyu', 'hero_zhuge'];
 
     const cards = STAGES.map((st, idx) => {
       const info = dict.stages[st.id];
@@ -144,12 +147,14 @@ export class UIManager {
       return `
         <div class="stage-card">
           <div class="stage-card-top">
-            <span class="stage-icon">${stageBadges[idx] || '🏯'}</span>
-            <span class="stage-tag">${badge}</span>
+            <div class="stage-emblem-frame">
+              <img src="./assets/${stagePreviewSprites[idx] || 'hero_zhaoyun'}.png" alt="" />
+            </div>
+            <span class="stage-tag ${cleared ? 'cleared' : ''}">${badge}</span>
           </div>
           <h3>${info.name}</h3>
           <p>${info.subtitle}</p>
-          <button class="btn-ink ${this.selectedMode === 'standard' ? 'btn-amber' : 'btn-violet'} stage-go-btn" data-stage-go="${st.id}">
+          <button class="btn-guofeng ${this.selectedMode === 'standard' ? 'btn-cinnabar' : 'btn-gilt'} stage-go-btn" data-stage-go="${st.id}">
             ${this.selectedMode === 'standard' ? dict.btnPlayStandard : dict.btnPlayEndless}
           </button>
         </div>
@@ -170,32 +175,50 @@ export class UIManager {
   private renderCodexTab(): string {
     const dict = t();
 
-    const troopCards = TROOP_IDS.map((id) => {
-      const def = UNITS[id];
-      const txt = dict.units[id];
+    // 6 Two-Tile Hero Awakening Equations: [Soul ◐] + [Weapon ◑] -> [Awakened Hero ★]
+    const fusionCards = HERO_KEYS.map((hKey) => {
+      const soulDef = UNITS[`soul_${hKey}`];
+      const weapDef = UNITS[`weap_${hKey}`];
+      const heroDef = UNITS[`hero_${hKey}`];
+      const hTxt = dict.heroes[hKey];
+
       return `
-        <div class="codex-card">
-          <div class="codex-tile troop-tile">
-            <img src="./assets/${def.spriteKey}.svg" alt="" />
-            <span class="codex-tier">1</span>
+        <div class="codex-card fusion-card">
+          <div class="fusion-equation">
+            <div class="mini-war-tile part-tile" style="border-color:${soulDef.accentColor}">
+              <img src="./assets/${soulDef.spriteKey}.png" alt="" />
+              <span class="mini-crest" style="background:${soulDef.frameColor}">${soulDef.crestSymbol}</span>
+              <span class="mini-half">◐</span>
+            </div>
+            <span class="eq-op">+</span>
+            <div class="mini-war-tile part-tile" style="border-color:${weapDef.accentColor}">
+              <img src="./assets/${weapDef.spriteKey}.png" alt="" />
+              <span class="mini-crest" style="background:${weapDef.frameColor}">${weapDef.crestSymbol}</span>
+              <span class="mini-half">◑</span>
+            </div>
+            <span class="eq-arrow">➔</span>
+            <div class="mini-war-tile awakened-tile">
+              <img src="./assets/${heroDef.spriteKey}.png" alt="" />
+              <span class="mini-crest gold">${heroDef.crestSymbol}</span>
+            </div>
           </div>
           <div class="codex-info">
-            <div class="codex-name">${txt.name}</div>
-            <div class="codex-role">${txt.role}</div>
-            <div class="codex-desc">${txt.desc}</div>
+            <div class="codex-name">${hTxt.heroName}</div>
+            <div class="codex-role">${hTxt.soulName} + ${hTxt.weapName}</div>
+            <div class="codex-desc">${hTxt.desc}</div>
           </div>
         </div>
       `;
     }).join('');
 
-    const heroCards = HERO_IDS.map((id) => {
+    const troopCards = TROOP_KEYS.map((id) => {
       const def = UNITS[id];
-      const txt = dict.units[id];
+      const txt = dict.troops[id];
       return `
-        <div class="codex-card hero-card">
-          <div class="codex-tile hero-tile">
-            <img src="./assets/${def.spriteKey}.svg" alt="" />
-            <span class="codex-tier hero">2</span>
+        <div class="codex-card">
+          <div class="mini-war-tile troop-tile">
+            <img src="./assets/${def.spriteKey}.png" alt="" />
+            <span class="mini-tier">1</span>
           </div>
           <div class="codex-info">
             <div class="codex-name">${txt.name}</div>
@@ -212,12 +235,12 @@ export class UIManager {
       'mystic',
       'dragon_guard',
     ];
-    const synIcons = { vanguard: '⚔️', marksman: '🏹', mystic: '☯️', dragon_guard: '🐉' };
+    const synSymbols = { vanguard: '◈', marksman: '✦', mystic: '☯', dragon_guard: '❖' };
     const synHtml = synKeys
       .map(
         (k) => `
         <div class="syn-card">
-          <strong>${synIcons[k]} ${dict.synergyNames[k]}</strong>
+          <strong>${synSymbols[k]} ${dict.synergyNames[k]}</strong>
           <span>${dict.synergyDescs[k]}</span>
         </div>
       `
@@ -227,8 +250,8 @@ export class UIManager {
     return `
       <div class="codex-wrap">
         <div class="codex-tip-box">${dict.codexRuleTip}</div>
-        <h3 class="codex-sec-title">${dict.codexHeroesTitle}</h3>
-        <div class="codex-grid">${heroCards}</div>
+        <h3 class="codex-sec-title">${dict.codexFusionTitle}</h3>
+        <div class="codex-grid fusion-grid">${fusionCards}</div>
         <h3 class="codex-sec-title">${dict.codexTroopsTitle}</h3>
         <div class="codex-grid">${troopCards}</div>
         <h3 class="codex-sec-title">${dict.codexSynergyTitle}</h3>
@@ -242,6 +265,13 @@ export class UIManager {
     const save = SaveManager.get();
     const nextXp = SaveManager.xpForNextLevel(save.commanderLevel);
     const bonusPct = (save.commanderLevel - 1) * 3 + save.upgrades.might * 8;
+    const upgSprites: Record<keyof MetaUpgradeLevels, string> = {
+      hearts: './assets/vip_lord.png',
+      granary: './assets/icon_rice.png',
+      might: './assets/unit_blade.png',
+      decree: './assets/weap_zhuge.png',
+      shovels: './assets/icon_shovel.png',
+    };
 
     const list = UPGRADE_TRACKS.map((spec) => {
       const lvl = save.upgrades[spec.key];
@@ -253,14 +283,16 @@ export class UIManager {
       return `
         <div class="upgrade-card">
           <div class="upg-left">
-            <span class="upg-icon">${spec.icon}</span>
+            <div class="upg-icon-box">
+              <img src="${upgSprites[spec.key]}" alt="" />
+            </div>
             <div>
               <div class="upg-title">${metaTxt.name} <small>Lv.${lvl}/${spec.maxLevel}</small></div>
               <div class="upg-desc">${metaTxt.desc}</div>
               <div class="upg-val">${metaTxt.val(lvl)}</div>
             </div>
           </div>
-          <button class="btn-ink btn-mini ${isMax ? 'btn-gray' : canBuy ? 'btn-amber' : 'btn-disabled'}"
+          <button class="btn-guofeng btn-mini ${isMax ? 'btn-stone' : canBuy ? 'btn-gilt' : 'btn-disabled'}"
             data-upg="${spec.key}" ${!canBuy ? 'disabled' : ''}>
             ${isMax ? dict.maxLevel : dict.upgradeBtn(cost)}
           </button>
@@ -294,14 +326,10 @@ export class UIManager {
     hud.innerHTML = `
       <div class="hud-top">
         <div class="hud-left">
-          <button class="hud-pause-btn" id="btn-pause" title="Pause (Esc)">⏸</button>
-          <div class="rice-pill">
-            <img src="./assets/icon_rice.svg" alt="" class="rice-icon" />
+          <button class="hud-pause-btn" id="btn-pause" title="Pause (Esc)">❚❚</button>
+          <div class="ink-brush-pill">
+            <img src="./assets/icon_rice.png" alt="" class="rice-icon" />
             <span id="hud-rations">28</span>
-          </div>
-          <div class="heart-pill">
-            <span>❤️</span>
-            <span id="hud-hearts">10</span>
           </div>
         </div>
 
@@ -324,15 +352,15 @@ export class UIManager {
 
       <div class="hud-bottom-dock">
         <div class="recruit-row">
-          <button class="ult-orb-btn" id="btn-ult" title="Dragon Crescent Ultimate">
-            <img src="./assets/icon_ult.svg" alt="" />
+          <button class="ult-orb-btn" id="btn-ult" title="Azure Dragon Sweep (Q)">
+            <img src="./assets/hero_zhaoyun.png" alt="" />
             <span class="ult-pct" id="hud-ult-pct">35%</span>
           </button>
 
           <button class="recruit-main-btn" id="btn-recruit">
             <span class="rec-title" id="hud-rec-label">${dict.btnRecruit}</span>
             <span class="rec-cost">
-              <img src="./assets/icon_rice.svg" alt="" />
+              <img src="./assets/icon_rice.png" alt="" />
               <strong id="hud-rec-cost">12</strong>
             </span>
           </button>
@@ -342,23 +370,23 @@ export class UIManager {
 
         <div class="tactical-row">
           <button class="tac-btn" id="btn-tac-farm">
-            <img src="./assets/icon_farm.svg" alt="" />
+            <img src="./assets/icon_rice.png" alt="" />
             <div class="tac-meta">
               <span class="tac-name">${dict.actFarm} <em id="hud-farm-lv">Lv.1</em></span>
-              <span class="tac-sub" id="hud-farm-cost">🍙18</span>
+              <span class="tac-sub" id="hud-farm-cost">18</span>
             </div>
           </button>
 
           <button class="tac-btn" id="btn-tac-decree">
-            <img src="./assets/icon_decree.svg" alt="" />
+            <img src="./assets/weap_zhuge.png" alt="" />
             <div class="tac-meta">
-              <span class="tac-name">${dict.actDecree} <em id="hud-decree-lv">Lv.1</em></span>
-              <span class="tac-sub" id="hud-decree-cost">🍙24</span>
+              <span class="tac-name">${dict.actDecree} <em id="hud-decree-lv">22%</em></span>
+              <span class="tac-sub" id="hud-decree-cost">24</span>
             </div>
           </button>
 
           <button class="tac-btn" id="btn-tac-shovel">
-            <img src="./assets/icon_shovel.svg" alt="" />
+            <img src="./assets/icon_shovel.png" alt="" />
             <div class="tac-meta">
               <span class="tac-name">${dict.actShovel}</span>
               <span class="tac-sub" id="hud-shovel-cnt">x1</span>
@@ -366,10 +394,10 @@ export class UIManager {
           </button>
 
           <button class="tac-btn" id="btn-tac-fortify">
-            <img src="./assets/icon_fortify.svg" alt="" />
+            <img src="./assets/vip_lord.png" alt="" />
             <div class="tac-meta">
               <span class="tac-name">${dict.actFortify}</span>
-              <span class="tac-sub" id="hud-fortify-cost">🍙26</span>
+              <span class="tac-sub" id="hud-fortify-cost">26</span>
             </div>
           </button>
         </div>
@@ -415,7 +443,7 @@ export class UIManager {
     const dict = t();
     const save = SaveManager.get();
 
-    // 1st career Hero Scroll is completely FREE!
+    // 1st career Tiger Tally is completely FREE!
     if (!save.freeHeroScrollUsed) {
       save.freeHeroScrollUsed = true;
       SaveManager.save();
@@ -424,7 +452,7 @@ export class UIManager {
       return;
     }
 
-    // 1x per run Guaranteed Hero Summon via Rewarded Ad
+    // 1x per run Matching Hero Partner Summon via Rewarded Ad
     if (!s.heroScrollAdUsed) {
       const ok = await PlatformSDK.showRewardedAd('hero_scroll_summon', dict.adRewardHero);
       if (ok && this.engine.state) {
@@ -435,7 +463,7 @@ export class UIManager {
       return;
     }
 
-    // Otherwise Ration + Shovel Supply Drop
+    // Otherwise Ration + Golden Shovel Supply Drop
     if (s.supplyAdCooldown <= 0) {
       const ok = await PlatformSDK.showRewardedAd('free_rations_supply', dict.adRewardSupply);
       if (ok && this.engine.state) {
@@ -464,7 +492,7 @@ export class UIManager {
       (this.hudRoot!.querySelector('#hud-stage-title') as HTMLElement).textContent = stName;
     });
 
-    const waveStr = dict.waveLabel(s.wave, s.maxWaves);
+    const waveStr = dict.waveLabel(Math.max(1, s.wave), s.maxWaves);
     setIf('wave', waveStr, () => {
       (this.hudRoot!.querySelector('#hud-wave') as HTMLElement).textContent = waveStr;
     });
@@ -473,13 +501,8 @@ export class UIManager {
       (this.hudRoot!.querySelector('#hud-rations') as HTMLElement).textContent = `${s.rations}`;
     });
 
-    setIf('hearts', `${s.hearts}`, () => {
-      (this.hudRoot!.querySelector('#hud-hearts') as HTMLElement).textContent = `${s.hearts}`;
-    });
-
     // Boss HP Bar
-    const boss =
-      s.enemies.find((e) => e.kind === 'lubu') || s.enemies.find((e) => e.kind === 'ram');
+    const boss = s.enemies.find((e) => e.side === 'player' && e.isBoss);
     const bossSig = boss ? `${boss.id}:${Math.ceil(boss.hp)}` : 'none';
     setIf('boss', bossSig, () => {
       const wrap = this.hudRoot!.querySelector('#hud-boss-wrap') as HTMLElement;
@@ -489,21 +512,20 @@ export class UIManager {
         wrap.style.display = 'block';
         const pct = Math.max(0, (boss.hp / boss.maxHp) * 100);
         (this.hudRoot!.querySelector('#hud-boss-fill') as HTMLElement).style.width = `${pct}%`;
-        const title = boss.kind === 'lubu' ? dict.bossName : dict.miniBossName;
         (this.hudRoot!.querySelector('#hud-boss-label') as HTMLElement).textContent =
-          `${title} ${Math.ceil(boss.hp)}`;
+          `${dict.bossName} ${Math.ceil(boss.hp)}`;
       }
     });
 
-    // Synergy Chips
+    // Synergy Seals
     const synSig = s.synergies.map((item) => `${item.id}:${item.tier}:${item.count}`).join('|');
     setIf('syn', synSig, () => {
-      const icons = { vanguard: '⚔️', marksman: '🏹', mystic: '☯️', dragon_guard: '🐉' };
+      const symbols = { vanguard: '◈', marksman: '✦', mystic: '☯', dragon_guard: '❖' };
       const html = s.synergies
         .filter((x) => x.tier > 0)
         .map(
           (x) =>
-            `<span class="syn-chip tier-${x.tier}" title="${dict.synergyNames[x.id]}: ${dict.synergyDescs[x.id]}">${icons[x.id]}${x.count}</span>`
+            `<span class="syn-chip tier-${x.tier}" title="${dict.synergyNames[x.id]}: ${dict.synergyDescs[x.id]}">${symbols[x.id]}${x.count}</span>`
         )
         .join('');
       (this.hudRoot!.querySelector('#hud-synergies') as HTMLElement).innerHTML = html;
@@ -525,7 +547,7 @@ export class UIManager {
       if (!s.selectedUnitInfo) {
         el.classList.remove('visible');
       } else {
-        const uTxt = dict.units[s.selectedUnitInfo.unitId];
+        const uTxt = getUnitDisplayText(s.selectedUnitInfo.unitId);
         el.textContent = `${uTxt.name} [T${s.selectedUnitInfo.tier}] · ${uTxt.role}`;
         el.classList.add('visible');
       }
@@ -540,7 +562,7 @@ export class UIManager {
       lbl.textContent = ultPct >= 100 ? dict.ultReady : `${ultPct}%`;
     });
 
-    // Recruit Button
+    // Conscript / Refresh Button
     const benchHasEmpty = s.bench.some((b) => b === null);
     const recKey = `${s.recruitCost}:${benchHasEmpty ? 1 : 0}:${s.rations >= s.recruitCost ? 1 : 0}`;
     setIf('rec', recKey, () => {
@@ -552,7 +574,7 @@ export class UIManager {
       btn.classList.toggle('affordable', s.rations >= s.recruitCost);
     });
 
-    // Side Boost Button
+    // Tiger Tally / Supply Boost Button
     const save = SaveManager.get();
     const boostMode = !save.freeHeroScrollUsed
       ? 'free_hero'
@@ -577,7 +599,7 @@ export class UIManager {
         btn.className = 'boost-side-btn';
       } else {
         btn.disabled = true;
-        btn.textContent = `⏳ ${Math.ceil(s.supplyAdCooldown)}s`;
+        btn.textContent = `${Math.ceil(s.supplyAdCooldown)}s`;
         btn.className = 'boost-side-btn disabled';
       }
     });
@@ -588,28 +610,30 @@ export class UIManager {
       (this.hudRoot!.querySelector('#hud-farm-lv') as HTMLElement).textContent =
         s.farmLevel >= 6 ? 'MAX' : `Lv.${s.farmLevel}`;
       (this.hudRoot!.querySelector('#hud-farm-cost') as HTMLElement).textContent =
-        s.farmLevel >= 6 ? dict.maxLevel : `🍙${farmCost}`;
+        s.farmLevel >= 6 ? dict.maxLevel : `${farmCost}`;
     });
 
     const decCost = this.engine.getDecreeCost();
     const heroRatePct = Math.round(this.engine.getHeroDraftChance() * 100);
     setIf('dec', `${s.decreeLevel}:${heroRatePct}:${s.rations >= decCost ? 1 : 0}`, () => {
-      (this.hudRoot!.querySelector('#hud-decree-lv') as HTMLElement).textContent = `${heroRatePct}%👑`;
+      (this.hudRoot!.querySelector('#hud-decree-lv') as HTMLElement).textContent = `${heroRatePct}%`;
       (this.hudRoot!.querySelector('#hud-decree-cost') as HTMLElement).textContent =
-        s.decreeLevel >= 5 ? dict.maxLevel : `🍙${decCost}`;
+        s.decreeLevel >= 5 ? dict.maxLevel : `${decCost}`;
     });
 
-    const hasLocked = s.cells.some((r) => r.some((c) => c === 'locked'));
-    setIf('shovel', `${s.shovels}:${s.shovelMode ? 1 : 0}:${hasLocked ? 1 : 0}`, () => {
+    const hasPlayerLocked = s.cells
+      .slice(s.stage.dividerRow)
+      .some((r) => r.some((c) => c === 'locked'));
+    setIf('shovel', `${s.shovels}:${s.shovelMode ? 1 : 0}:${hasPlayerLocked ? 1 : 0}`, () => {
       const btn = this.hudRoot!.querySelector('#btn-tac-shovel') as HTMLButtonElement;
       const sub = this.hudRoot!.querySelector('#hud-shovel-cnt') as HTMLElement;
       btn.classList.toggle('active-mode', s.shovelMode);
-      sub.textContent = !hasLocked ? 'MAX' : s.shovels > 0 ? `x${s.shovels}` : '🍙35 / 🎬';
+      sub.textContent = !hasPlayerLocked ? 'MAX' : s.shovels > 0 ? `x${s.shovels}` : '35';
     });
 
     const fortCost = this.engine.getFortifyCost();
     setIf('fort', `${s.hearts}:${s.rations >= fortCost ? 1 : 0}`, () => {
-      (this.hudRoot!.querySelector('#hud-fortify-cost') as HTMLElement).textContent = `🍙${fortCost}`;
+      (this.hudRoot!.querySelector('#hud-fortify-cost') as HTMLElement).textContent = `${fortCost}`;
     });
   }
 
@@ -639,10 +663,10 @@ export class UIManager {
         <div class="popup-box">
           <h2>${dict.pauseTitle}</h2>
           <div class="pause-actions">
-            <button class="btn-ink btn-amber" id="btn-p-resume">${dict.btnResume}</button>
-            <button class="btn-ink btn-beige" id="btn-p-mute">${muted ? dict.btnMuteOn : dict.btnMuteOff}</button>
-            <button class="btn-ink btn-beige" id="btn-p-lang">${dict.btnLangSwitch}</button>
-            <button class="btn-ink btn-gray" id="btn-p-quit">${dict.btnRetreat}</button>
+            <button class="btn-guofeng btn-cinnabar" id="btn-p-resume">${dict.btnResume}</button>
+            <button class="btn-guofeng btn-jade" id="btn-p-mute">${muted ? dict.btnMuteOn : dict.btnMuteOff}</button>
+            <button class="btn-guofeng btn-jade" id="btn-p-lang">${dict.btnLangSwitch}</button>
+            <button class="btn-guofeng btn-stone" id="btn-p-quit">${dict.btnRetreat}</button>
           </div>
         </div>
       </div>
@@ -693,6 +717,7 @@ export class UIManager {
         kills: s.kills,
         merges: s.merges,
         victory: false,
+        aiDefeated: false,
       });
       return;
     }
@@ -709,8 +734,8 @@ export class UIManager {
             <span>${dict.revivePerk3}</span>
           </div>
           <div class="popup-footer">
-            <button class="btn-ink btn-green" id="btn-do-revive">${dict.btnReviveAd}</button>
-            <button class="btn-ink btn-gray" id="btn-skip-revive">${dict.btnSkipRevive}</button>
+            <button class="btn-guofeng btn-cinnabar" id="btn-do-revive">${dict.btnReviveAd}</button>
+            <button class="btn-guofeng btn-stone" id="btn-skip-revive">${dict.btnSkipRevive}</button>
           </div>
         </div>
       </div>
@@ -739,6 +764,7 @@ export class UIManager {
         kills: s.kills,
         merges: s.merges,
         victory: false,
+        aiDefeated: false,
       });
     };
   }
@@ -749,22 +775,28 @@ export class UIManager {
     const dict = t();
 
     const baseGold = Math.round(
-      28 + sum.wave * 15 + Math.min(200, sum.kills * 0.5) + sum.merges * 2 + (victory ? 120 : 0)
+      30 + sum.wave * 16 + Math.min(220, sum.kills * 0.55) + sum.merges * 3 + (victory ? 130 : 0)
     );
     const baseXp = Math.round(
-      32 + sum.wave * 16 + Math.min(240, sum.kills * 0.65) + (victory ? 110 : 0)
+      35 + sum.wave * 17 + Math.min(240, sum.kills * 0.65) + (victory ? 115 : 0)
     );
     const zones = [2, 3, 5, 3, 2];
+
+    const heading = victory
+      ? sum.aiDefeated
+        ? dict.victoryRivalKoTitle
+        : dict.victoryTitle
+      : dict.defeatTitle;
 
     this.modalRoot.innerHTML = `
       <div class="popup-backdrop">
         <div class="popup-box">
-          <h2>${victory ? dict.victoryTitle : dict.defeatTitle}</h2>
+          <h2>${heading}</h2>
           <p class="popup-sub">${dict.settleSub(sum.wave, sum.kills, sum.merges)}</p>
 
           <div class="reward-preview">
-            <span>🪙 <strong id="rew-gold">+${baseGold}</strong></span>
-            <span>🎖️ <strong id="rew-xp">+${baseXp} XP</strong></span>
+            <span>◈ <strong id="rew-gold">+${baseGold}</strong></span>
+            <span>✦ <strong id="rew-xp">+${baseXp} XP</strong></span>
           </div>
 
           <div class="meter-wrap">
@@ -779,10 +811,10 @@ export class UIManager {
           </div>
 
           <div class="popup-footer">
-            <button class="btn-ink btn-amber" id="btn-mult-claim">
+            <button class="btn-guofeng btn-gilt" id="btn-mult-claim">
               ${dict.btnMultClaim} (<span id="mult-live">x5</span>)
             </button>
-            <button class="btn-ink btn-gray" id="btn-normal-claim">${dict.btnNormalClaim}</button>
+            <button class="btn-guofeng btn-stone" id="btn-normal-claim">${dict.btnNormalClaim}</button>
           </div>
         </div>
       </div>

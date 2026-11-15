@@ -4,59 +4,77 @@ export type SpriteKey =
   | 'unit_lancer'
   | 'unit_mortar'
   | 'unit_frostbow'
+  | 'soul_zhaoyun'
+  | 'weap_zhaoyun'
   | 'hero_zhaoyun'
+  | 'soul_guanyu'
+  | 'weap_guanyu'
   | 'hero_guanyu'
+  | 'soul_zhangfei'
+  | 'weap_zhangfei'
   | 'hero_zhangfei'
-  | 'hero_zhenji'
+  | 'soul_zhuge'
+  | 'weap_zhuge'
   | 'hero_zhuge'
+  | 'soul_zhenji'
+  | 'weap_zhenji'
+  | 'hero_zhenji'
+  | 'soul_shangxiang'
+  | 'weap_shangxiang'
   | 'hero_shangxiang'
   | 'vip_lord'
   | 'icon_rice'
   | 'icon_tent'
   | 'icon_shovel'
-  | 'icon_farm'
-  | 'icon_decree'
-  | 'icon_fortify'
-  | 'icon_ult'
   | 'enemy_grunt'
   | 'enemy_wolf'
   | 'enemy_shield'
-  | 'enemy_shaman'
-  | 'enemy_ram'
   | 'enemy_lubu';
 
 const SPRITE_PATHS: Record<SpriteKey, string> = {
-  unit_blade: './assets/unit_blade.svg',
-  unit_archer: './assets/unit_archer.svg',
-  unit_lancer: './assets/unit_lancer.svg',
-  unit_mortar: './assets/unit_mortar.svg',
-  unit_frostbow: './assets/unit_frostbow.svg',
-  hero_zhaoyun: './assets/hero_zhaoyun.svg',
-  hero_guanyu: './assets/hero_guanyu.svg',
-  hero_zhangfei: './assets/hero_zhangfei.svg',
-  hero_zhenji: './assets/hero_zhenji.svg',
-  hero_zhuge: './assets/hero_zhuge.svg',
-  hero_shangxiang: './assets/hero_shangxiang.svg',
-  vip_lord: './assets/vip_lord.svg',
-  icon_rice: './assets/icon_rice.svg',
-  icon_tent: './assets/icon_tent.svg',
-  icon_shovel: './assets/icon_shovel.svg',
-  icon_farm: './assets/icon_farm.svg',
-  icon_decree: './assets/icon_decree.svg',
-  icon_fortify: './assets/icon_fortify.svg',
-  icon_ult: './assets/icon_ult.svg',
-  enemy_grunt: './assets/enemy_grunt.svg',
-  enemy_wolf: './assets/enemy_wolf.svg',
-  enemy_shield: './assets/enemy_shield.svg',
-  enemy_shaman: './assets/enemy_shaman.svg',
-  enemy_ram: './assets/enemy_ram.svg',
-  enemy_lubu: './assets/enemy_lubu.svg',
+  unit_blade: './assets/unit_blade.png',
+  unit_archer: './assets/unit_archer.png',
+  unit_lancer: './assets/unit_lancer.png',
+  unit_mortar: './assets/unit_mortar.png',
+  unit_frostbow: './assets/unit_frostbow.png',
+
+  soul_zhaoyun: './assets/soul_zhaoyun.png',
+  weap_zhaoyun: './assets/weap_zhaoyun.png',
+  hero_zhaoyun: './assets/hero_zhaoyun.png',
+
+  soul_guanyu: './assets/soul_guanyu.png',
+  weap_guanyu: './assets/weap_guanyu.png',
+  hero_guanyu: './assets/hero_guanyu.png',
+
+  soul_zhangfei: './assets/soul_zhangfei.png',
+  weap_zhangfei: './assets/weap_zhangfei.png',
+  hero_zhangfei: './assets/hero_zhangfei.png',
+
+  soul_zhuge: './assets/soul_zhuge.png',
+  weap_zhuge: './assets/weap_zhuge.png',
+  hero_zhuge: './assets/hero_zhuge.png',
+
+  soul_zhenji: './assets/soul_zhenji.png',
+  weap_zhenji: './assets/weap_zhenji.png',
+  hero_zhenji: './assets/hero_zhenji.png',
+
+  soul_shangxiang: './assets/soul_shangxiang.png',
+  weap_shangxiang: './assets/weap_shangxiang.png',
+  hero_shangxiang: './assets/hero_shangxiang.png',
+
+  vip_lord: './assets/vip_lord.png',
+  icon_rice: './assets/icon_rice.png',
+  icon_tent: './assets/icon_tent.png',
+  icon_shovel: './assets/icon_shovel.png',
+
+  enemy_grunt: './assets/enemy_grunt.png',
+  enemy_wolf: './assets/enemy_wolf.png',
+  enemy_shield: './assets/enemy_shield.png',
+  enemy_lubu: './assets/enemy_lubu.png',
 };
 
-const RASTER_SIZE = 192;
-
 class AssetRegistry {
-  private bitmaps = new Map<SpriteKey, HTMLCanvasElement>();
+  private images = new Map<SpriteKey, HTMLImageElement>();
   private flashes = new Map<SpriteKey, HTMLCanvasElement>();
 
   public async preloadAll(): Promise<void> {
@@ -65,10 +83,9 @@ class AssetRegistry {
       keys.map(async (key) => {
         const img = await this.loadImg(SPRITE_PATHS[key]);
         if (img) {
-          const raster = this.rasterize(img, RASTER_SIZE);
-          this.bitmaps.set(key, raster);
+          this.images.set(key, img);
           if (key.startsWith('enemy_')) {
-            this.flashes.set(key, this.makeSilhouette(raster, '#ffffff'));
+            this.flashes.set(key, this.makeSilhouette(img, '#fff7ed'));
           }
         }
       })
@@ -84,16 +101,7 @@ class AssetRegistry {
     });
   }
 
-  private rasterize(img: HTMLImageElement, size: number): HTMLCanvasElement {
-    const c = document.createElement('canvas');
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(img, 0, 0, size, size);
-    return c;
-  }
-
-  private makeSilhouette(src: HTMLCanvasElement, color: string): HTMLCanvasElement {
+  private makeSilhouette(src: HTMLImageElement, color: string): HTMLCanvasElement {
     const c = document.createElement('canvas');
     c.width = src.width;
     c.height = src.height;
@@ -105,8 +113,8 @@ class AssetRegistry {
     return c;
   }
 
-  public get(key: string): HTMLCanvasElement | undefined {
-    return this.bitmaps.get(key as SpriteKey);
+  public get(key: string): HTMLImageElement | undefined {
+    return this.images.get(key as SpriteKey);
   }
 
   public getFlash(key: string): HTMLCanvasElement | undefined {

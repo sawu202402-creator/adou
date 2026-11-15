@@ -9,18 +9,23 @@ export type AdPlacement =
   | 'hero_scroll_summon'
   | 'settlement_multiplier';
 
+export type HeroKey = 'zhaoyun' | 'guanyu' | 'zhangfei' | 'zhuge' | 'zhenji' | 'shangxiang';
+export type TroopKey = 'blade' | 'archer' | 'lancer' | 'mortar' | 'frostbow';
+
+/**
+ * Tile IDs:
+ * - 5 Base Troops: 'blade' | 'archer' | 'lancer' | 'mortar' | 'frostbow'
+ * - 6 Hero Souls (Part A): 'soul_zhaoyun' | ...
+ * - 6 Divine Weapons (Part B): 'weap_zhaoyun' | ...
+ * - 6 Awakened True Heroes (Fused A+B): 'hero_zhaoyun' | ...
+ */
 export type UnitId =
-  | 'blade'
-  | 'archer'
-  | 'lancer'
-  | 'mortar'
-  | 'frostbow'
-  | 'zhaoyun'
-  | 'guanyu'
-  | 'zhangfei'
-  | 'zhenji'
-  | 'zhuge'
-  | 'shangxiang';
+  | TroopKey
+  | `soul_${HeroKey}`
+  | `weap_${HeroKey}`
+  | `hero_${HeroKey}`;
+
+export type TileCategory = 'troop' | 'soul' | 'weapon' | 'awakened';
 
 export type SynergyTag = 'vanguard' | 'marksman' | 'mystic';
 
@@ -30,31 +35,33 @@ export type AttackPattern =
   | 'pierce_lance'
   | 'mortar_aoe'
   | 'frost_bolt'
+  | 'spirit_strike'
   | 'dragon_sweep'
   | 'jade_execute'
   | 'roar_quake'
-  | 'lotus_blizzard'
   | 'chain_lightning'
+  | 'lotus_blizzard'
   | 'phoenix_volley';
 
 export interface UnitDef {
   id: UnitId;
-  isHero: boolean;
+  category: TileCategory;
+  heroKey?: HeroKey; // links soul_<x>, weap_<x>, and hero_<x>
   spriteKey: string;
   accentColor: string;
-  tileBgTop: string;
-  tileBgBottom: string;
+  frameColor: string;
+  crestSymbol: string; // non-text geometric/elemental mark for instant visual pairing
   synergy: SynergyTag;
   pattern: AttackPattern;
   baseDamage: number;
-  attackInterval: number; // seconds between attacks at Tier 1
-  rangeCells: number; // range in grid cell units
+  attackInterval: number;
+  rangeCells: number;
   projectileSpeed: number;
   aoeRadiusCells?: number;
   slowFactor?: number;
   slowDuration?: number;
   stunDuration?: number;
-  skillEveryN?: number; // Hero signature burst every Nth attack
+  skillEveryN?: number;
 }
 
 export interface TileUnit {
@@ -68,19 +75,20 @@ export interface TileUnit {
   mergeAnimTimer: number;
 }
 
-export type CellType = 'void' | 'wall' | 'path' | 'deploy' | 'locked' | 'vip';
+export type SideOwner = 'ai' | 'player';
+
+export type CellType = 'wall' | 'path' | 'deploy' | 'locked' | 'vip';
 
 export interface GridPoint {
   col: number;
   row: number;
 }
 
-export interface PathLane {
-  id: string;
-  waypoints: GridPoint[]; // grid coordinates from spawn -> barricade -> vip
+export interface DuelLane {
+  owner: SideOwner;
+  waypoints: GridPoint[];
   barricadeCell: GridPoint;
   vipCell: GridPoint;
-  entryDir: 'down' | 'up' | 'right' | 'left';
 }
 
 export type MapTheme = 'pass' | 'river' | 'fleet';
@@ -89,22 +97,15 @@ export interface StageDef {
   id: string;
   index: number;
   theme: MapTheme;
-  cols: number;
-  rows: number;
-  /**
-   * Legend:
-   * '#' = wall (dark parapet)
-   * '.' = outer border ground / road edge
-   * 'P' = enemy marching path
-   * 'D' = unlocked white jade deploy cell
-   * 'L' = locked dark slate cell (unlockable via Golden Shovel)
-   * 'V' = Protected Young Lord cradle cell
-   */
+  cols: number; // 8
+  rows: number; // 10 (rows 0..4 = AI Top Half, rows 5..9 = Player Bottom Half)
+  dividerRow: number; // 5 (horizontal Great Wall between row 4 and row 5)
   layout: string[];
-  lanes: PathLane[];
+  aiLane: DuelLane;
+  playerLane: DuelLane;
 }
 
-export type EnemyKind = 'grunt' | 'wolf' | 'shield' | 'shaman' | 'ram' | 'lubu';
+export type EnemyKind = 'grunt' | 'wolf' | 'shield' | 'lubu';
 
 export interface MetaUpgradeLevels {
   hearts: number;
@@ -129,7 +130,7 @@ export interface SaveData {
 export interface ActiveSynergyInfo {
   id: 'vanguard' | 'marksman' | 'mystic' | 'dragon_guard';
   count: number;
-  tier: 0 | 1 | 2; // 0 = inactive, 1 = bronze/silver, 2 = gold
+  tier: 0 | 1 | 2;
 }
 
 export interface RunSummary {
@@ -139,4 +140,5 @@ export interface RunSummary {
   kills: number;
   merges: number;
   victory: boolean;
+  aiDefeated: boolean;
 }
