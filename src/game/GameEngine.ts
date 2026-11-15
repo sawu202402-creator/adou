@@ -87,12 +87,15 @@ export interface ProjectileEntity {
   ty: number;
   kind:
     | 'arrow'
+    | 'sun_arrow'
     | 'lance'
     | 'mortar'
     | 'dragon'
     | 'boomerang_lance'
     | 'glaive'
     | 'lotus'
+    | 'fireball'
+    | 'chakram'
     | 'phoenix';
   color: string;
   damage: number;
@@ -222,6 +225,7 @@ export interface RunState {
   cells: CellType[][];
   board: (TileUnit | null)[][];
   bench: (TileUnit | null)[];
+  matchHeroes: HeroKey[];
 
   hearts: number;
   maxHearts: number;
@@ -362,6 +366,26 @@ export class GameEngine {
     const baseBarricadeHp = Math.round(180 * meta.barricadeHpMult);
     const emptySyn = computeSynergies([]);
 
+    // Build a focused 7-General rotation for this battle (always including any Generals with equipped weapons!)
+    // so all 12 Generals shine across runs without diluting 2-piece puzzle pairing!
+    const equippedHeroes = (Object.keys(save.equippedWeapons) as HeroKey[]).filter((hk) =>
+      Boolean(save.equippedWeapons[hk])
+    );
+    const starterHero: HeroKey =
+      save.totalRuns === 1
+        ? 'zhaoyun'
+        : equippedHeroes.length > 0 && Math.random() < 0.55
+          ? equippedHeroes[Math.floor(Math.random() * equippedHeroes.length)]
+          : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+
+    const poolSet = new Set<HeroKey>([starterHero, ...equippedHeroes]);
+    const shuffled = [...HERO_KEYS].sort(() => Math.random() - 0.5);
+    for (const hk of shuffled) {
+      if (poolSet.size >= 7) break;
+      poolSet.add(hk);
+    }
+    const matchHeroes = Array.from(poolSet);
+
     this.state = {
       stage,
       mode,
@@ -373,6 +397,7 @@ export class GameEngine {
       cells,
       board,
       bench: [null, null, null, null, null],
+      matchHeroes,
 
       hearts: meta.maxHearts,
       maxHearts: meta.maxHearts,
@@ -439,8 +464,7 @@ export class GameEngine {
       selectedUnitInfo: null,
     };
 
-    // Lean starter hand: 1 Blade + 1 Hero Puzzle Half in bench (no free full-board handout!)
-    const starterHero: HeroKey = 'zhaoyun';
+    // Lean starter hand: 1 Blade + 1 Hero Puzzle Half in bench (varies across the 12 Generals!)
     this.state.bench[0] = this.makeTile('blade', 1);
     this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
 
@@ -1270,7 +1294,7 @@ export class GameEngine {
 
   public getHeroDraftChance(): number {
     const meta = SaveManager.getEffectiveBonuses();
-    return Math.min(0.52, 0.24 + meta.heroChanceBonus);
+    return Math.min(0.58, 0.32 + meta.heroChanceBonus);
   }
 
   /**
@@ -1376,14 +1400,42 @@ export class GameEngine {
   }
 
   private rollUnitForSide(side: SideOwner): UnitId {
-    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.22;
+    const s = this.state;
+    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.28;
     if (Math.random() < heroChance) {
       const unmatched = this.findUnmatchedHeroShards(side);
-      // 42% smart pairing chance so hunting the 2nd puzzle piece is exciting & achievable!
-      if (unmatched.length > 0 && Math.random() < 0.42) {
+      // Higher smart pairing chance (especially when holding >=2 halves) so 12 Generals synthesize smoothly!
+      const pairProb = unmatched.length >= 2 ? 0.7 : 0.56;
+      if (unmatched.length > 0 && Math.random() < pairProb) {
         return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
       }
-      const h = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+
+      if (s && side === 'player') {
+        const upgradeable = Array.from(this.getUpgradeableAwakenedHeroKeys());
+        if (upgradeable.length > 0 && Math.random() < 0.24) {
+          const uh = upgradeable[Math.floor(Math.random() * upgradeable.length)];
+          return Math.random() < 0.5 ? `shard1_${uh}` : `shard2_${uh}`;
+        }
+
+        // Prefer unawakened Generals from this battle's focused 7-General pool; unlock all 12 once pool is awakened!
+        const poolUnawakened = s.matchHeroes.filter(
+          (hk) => !this.findAwakenedHeroOnSide(s, 'player', hk)
+        );
+        const allUnawakened = HERO_KEYS.filter(
+          (hk) => !this.findAwakenedHeroOnSide(s, 'player', hk)
+        );
+        const candidates =
+          poolUnawakened.length > 0
+            ? poolUnawakened
+            : allUnawakened.length > 0
+              ? allUnawakened
+              : HERO_KEYS;
+        const h = candidates[Math.floor(Math.random() * candidates.length)];
+        return Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
+      }
+
+      const aiPool = s ? s.matchHeroes : HERO_KEYS;
+      const h = aiPool[Math.floor(Math.random() * aiPool.length)];
       return Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
     }
     return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
@@ -1959,14 +2011,17 @@ export class GameEngine {
         const uy = center.y;
 
         // Pick target inside circular attack ring (minR .. maxR) around unit/plaque center!
-        const target = this.pickTargetInCircleRange(
-          s,
-          side,
-          ux,
-          uy,
-          rangeInfo.minR,
-          rangeInfo.maxR
-        );
+        const target =
+          def.pattern === 'sun_snipe'
+            ? this.pickSniperTargetInCircleRange(s, side, ux, uy, rangeInfo.minR, rangeInfo.maxR)
+            : this.pickTargetInCircleRange(
+                s,
+                side,
+                ux,
+                uy,
+                rangeInfo.minR,
+                rangeInfo.maxR
+              );
         if (!target) {
           u.cooldown = 0.08;
           continue;
@@ -2040,6 +2095,34 @@ export class GameEngine {
         const progress = e.waypointIndex + e.segProgress;
         if (progress > bestProgress) {
           bestProgress = progress;
+          best = e;
+        }
+      }
+    }
+    return best;
+  }
+
+  private pickSniperTargetInCircleRange(
+    s: RunState,
+    side: SideOwner,
+    ux: number,
+    uy: number,
+    minR: number,
+    maxR: number
+  ): EnemyEntity | null {
+    let best: EnemyEntity | null = null;
+    let bestScore = -1;
+
+    for (const e of s.enemies) {
+      if (e.side !== side || e.hp <= 0) continue;
+      const dist = Math.hypot(e.x - ux, e.y - uy);
+      if (dist >= minR && dist <= maxR + e.radius * 0.35) {
+        const score =
+          (e.isBoss ? 1_000_000 : e.isMiniBoss ? 250_000 : 0) +
+          e.hp +
+          (e.waypointIndex + e.segProgress) * 18;
+        if (score > bestScore) {
+          bestScore = score;
           best = e;
         }
       }
@@ -2573,6 +2656,265 @@ export class GameEngine {
         }
         break;
       }
+
+      // HERO 7 — 马超 (Ma Chao): XILIANG IRON-CAVALRY STAMPEDE LANCE (Line Charge + Knockback & Speed-Scaling!)
+      case 'iron_stampede': {
+        if (playSfx) SoundFX.attack('lance');
+        const travelCells = unitMaxRange + 0.9;
+        const angles = isSkill && hasSigWeapon ? [angle - 0.14, angle, angle + 0.14] : isSkill ? [angle - 0.08, angle + 0.08] : [angle];
+        for (const aAng of angles) {
+          s.effects.push({
+            kind: 'lance_beam',
+            x: ux,
+            y: uy,
+            endX: ux + Math.cos(aAng) * travelCells,
+            endY: uy + Math.sin(aAng) * travelCells,
+            radius: 0.28,
+            color: isSkill ? '#c084fc' : '#8b5cf6',
+            timer: 0,
+            duration: 0.24,
+            angle: aAng,
+          });
+          s.projectiles.push({
+            side,
+            sourceUnitUid: u.uid,
+            startX: ux,
+            startY: uy,
+            x: ux,
+            y: uy,
+            vx: Math.cos(aAng) * def.projectileSpeed,
+            vy: Math.sin(aAng) * def.projectileSpeed,
+            tx: ux + Math.cos(aAng) * travelCells,
+            ty: uy + Math.sin(aAng) * travelCells,
+            kind: 'dragon',
+            color: isSkill ? '#e879f9' : '#a855f7',
+            damage: dmg * (isSkill ? 1.32 : 1.0),
+            bossBonusMult: 1.2,
+            armorPen: 0.55,
+            aoeRadius: 0,
+            hitRadiusBonus: isSkill ? 0.34 : 0.22,
+            pierceLeft: 10,
+            pierceEscalation: 0.12,
+            returning: false,
+            hitIds: new Set(),
+            slowFactor: def.slowFactor || 0.36,
+            slowDur: def.slowDuration || 1.25,
+            stunDur: isSkill ? 0.3 : 0,
+            executeRatio: 0,
+            burnDps: 0,
+            life: 0,
+            maxLife: travelCells / def.projectileSpeed,
+          });
+        }
+        // Knockback enemies directly in front on Stampede skill strike!
+        if (isSkill) {
+          for (const e of s.enemies) {
+            if (e.side !== side || e.hp <= 0) continue;
+            if (Math.hypot(e.x - target.x, e.y - target.y) <= 1.15) {
+              this.knockbackEnemyAlongLane(s, e, e.isBoss ? 0.22 : hasSigWeapon ? 0.65 : 0.45);
+            }
+          }
+        }
+        break;
+      }
+
+      // HERO 8 — 黄忠 (Huang Zhong): ULTRA-LONG 4.15R SUNFALL SNIPE (Boss Hunter & Armor-Breaking Bullseye!)
+      case 'sun_snipe': {
+        if (playSfx) SoundFX.attack('bow');
+        const mult = isSkill ? (hasSigWeapon ? 2.45 : 2.0) : 1.0;
+        const p = this.spawnProj(
+          s,
+          side,
+          u.uid,
+          ux,
+          uy,
+          target,
+          'sun_arrow',
+          isSkill ? '#facc15' : '#eab308',
+          dmg * mult,
+          def.projectileSpeed
+        );
+        p.armorPen = isSkill ? 1.0 : 0.85;
+        p.bossBonusMult = hasSigWeapon ? 1.7 : 1.45;
+        if (isSkill) {
+          p.stunDur = (def.stunDuration || 0.65) + (hasSigWeapon ? 0.35 : 0);
+          p.executeRatio = hasSigWeapon ? 0.26 : 0.18;
+        }
+        break;
+      }
+
+      // HERO 9 — 吕布 (Lu Bu): SKY PIERCER HALBERD CLEAVE + 360° PEERLESS TRUE-DAMAGE SHOCKWAVE!
+      case 'halberd_cleave': {
+        if (playSfx) SoundFX.attack(isSkill ? 'cannon' : 'slash');
+        if (isSkill) {
+          const rad = unitMaxRange * (hasSigWeapon ? 1.25 : 1.1);
+          s.effects.push({
+            kind: 'ring',
+            x: ux,
+            y: uy,
+            radius: rad,
+            color: '#e11d48',
+            timer: 0,
+            duration: 0.38,
+          });
+          s.effects.push({
+            kind: 'slash',
+            x: ux,
+            y: uy,
+            radius: rad * 0.95,
+            color: '#fb7185',
+            timer: 0,
+            duration: 0.32,
+            angle,
+          });
+          for (const e of s.enemies) {
+            if (e.side !== side || e.hp <= 0) continue;
+            if (Math.hypot(e.x - ux, e.y - uy) <= rad) {
+              e.armorBrokenTimer = Math.max(e.armorBrokenTimer, hasSigWeapon ? 4.2 : 2.6);
+              this.damageEnemy(
+                s,
+                e,
+                dmg * (hasSigWeapon ? 2.05 : 1.75),
+                1.0,
+                '#fb7185',
+                u.uid
+              );
+            }
+          }
+        } else {
+          const cleaveR = def.aoeRadiusCells || 1.35;
+          s.effects.push({
+            kind: 'slash',
+            x: target.x,
+            y: target.y,
+            radius: cleaveR,
+            color: '#e11d48',
+            timer: 0,
+            duration: 0.26,
+            angle,
+          });
+          for (const e of s.enemies) {
+            if (e.side !== side || e.hp <= 0) continue;
+            if (Math.hypot(e.x - target.x, e.y - target.y) <= cleaveR) {
+              e.armorBrokenTimer = Math.max(e.armorBrokenTimer, 1.4);
+              this.damageEnemy(s, e, dmg, 0.65, '#f43f5e', u.uid);
+            }
+          }
+        }
+        break;
+      }
+
+      // HERO 10 — 周瑜 (Zhou Yu): RED CLIFFS CONFLAGRATION (Blazing Fireball + Burn Detonation & Sea of Fire!)
+      case 'inferno_burn': {
+        if (playSfx) SoundFX.attack('cannon');
+        const p = this.spawnProj(
+          s,
+          side,
+          u.uid,
+          ux,
+          uy,
+          target,
+          'fireball',
+          '#f97316',
+          dmg * (isSkill ? 1.38 : 1.0),
+          def.projectileSpeed
+        );
+        p.armorPen = 0.6;
+        p.aoeRadius = (def.aoeRadiusCells || 1.22) * (isSkill ? 1.22 : 1.0);
+        p.burnDps = dmg * (hasSigWeapon ? 0.62 : 0.42);
+        p.bossBonusMult = hasSigWeapon ? 1.45 : 1.2;
+        if (isSkill) {
+          p.spawnZoneOnHit = 'fire_patch';
+        }
+        break;
+      }
+
+      // HERO 11 — 貂蝉 (Diao Chan): MOONLIT LOTUS CHAKRAM (Homing Multi-Bounce + Slow & +25% Brittle Charm!)
+      case 'moon_charm': {
+        if (playSfx) SoundFX.attack('frost');
+        const bounces = (isSkill ? 5 : 3) + (hasSigWeapon ? 2 : 0);
+        const p = this.spawnProj(
+          s,
+          side,
+          u.uid,
+          ux,
+          uy,
+          target,
+          'chakram',
+          '#f472b6',
+          dmg * (isSkill ? 1.28 : 1.0),
+          def.projectileSpeed
+        );
+        p.armorPen = 0.65;
+        p.pierceLeft = bounces;
+        p.hitRadiusBonus = 0.16;
+        p.slowFactor = (def.slowFactor || 0.38) + (hasSigWeapon ? 0.12 : 0);
+        p.slowDur = def.slowDuration || 2.0;
+        if (isSkill) {
+          p.stunDur = hasSigWeapon ? 0.75 : 0.4;
+        }
+        break;
+      }
+
+      // HERO 12 — 曹操 (Cao Cao): HEGEMON'S DECREE (Imperial Crossbow Volley + Allied Attack-Speed Frenzy Aura!)
+      case 'imperial_decree': {
+        if (playSfx) SoundFX.attack('bow');
+        const bolts = (isSkill ? 5 : 3) + (hasSigWeapon ? 2 : 0);
+        const inRangeFoes = s.enemies
+          .filter(
+            (e) =>
+              e.side === side &&
+              e.hp > 0 &&
+              Math.hypot(e.x - ux, e.y - uy) <= unitMaxRange + 0.35
+          )
+          .sort((a, b) => b.waypointIndex + b.segProgress - (a.waypointIndex + a.segProgress));
+        const pool = inRangeFoes.length > 0 ? inRangeFoes : [target];
+
+        for (let k = 0; k < bolts; k++) {
+          const tEnemy = pool[k % pool.length];
+          const p = this.spawnProj(
+            s,
+            side,
+            u.uid,
+            ux + (k - (bolts - 1) * 0.5) * 0.1,
+            uy,
+            tEnemy,
+            'arrow',
+            isSkill ? '#facc15' : '#818cf8',
+            dmg * (isSkill ? 1.15 : 0.86),
+            def.projectileSpeed
+          );
+          p.armorPen = 0.5;
+          p.bossBonusMult = 1.25;
+        }
+
+        // Hegemon's Decree Aura: inspire nearby friendly units with +45% Attack Speed Frenzy!
+        if (isSkill) {
+          const auraR = hasSigWeapon ? 2.85 : def.aoeRadiusCells || 2.15;
+          const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
+          const rEnd = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
+          s.effects.push({
+            kind: 'heal_ring',
+            x: ux,
+            y: uy,
+            radius: auraR,
+            color: '#facc15',
+            timer: 0,
+            duration: 0.45,
+          });
+          for (let rr = rStart; rr < rEnd; rr++) {
+            for (let cc = 0; cc < s.stage.cols; cc++) {
+              const ally = s.board[rr][cc];
+              if (!ally) continue;
+              const aCtr = this.getUnitBoardCenter(ally, cc, rr);
+              if (Math.hypot(aCtr.x - ux, aCtr.y - uy) <= auraR) {
+                ally.frenzyTimer = Math.max(ally.frenzyTimer, hasSigWeapon ? 3.4 : 2.3);
+              }
+            }
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -2685,8 +3027,8 @@ export class GameEngine {
         p.vy = Math.sin(backAng) * spd;
       }
 
-      // Homing tracking for single-target arrows & Phoenix fire arrows
-      if (p.targetId !== undefined && p.pierceLeft === 1) {
+      // Homing tracking for single-target arrows, Phoenix arrows, Sun Snipes, Fireballs & Bouncing Chakrams!
+      if (p.targetId !== undefined && (p.pierceLeft === 1 || p.kind === 'chakram')) {
         const tgt = s.enemies.find((e) => e.id === p.targetId && e.hp > 0);
         if (tgt) {
           const spd = Math.hypot(p.vx, p.vy);
@@ -2708,7 +3050,41 @@ export class GameEngine {
           const hitIndex = p.hitIds.size;
           p.hitIds.add(e.id);
 
-          if (p.aoeRadius > 0 && p.kind === 'lotus') {
+          if (p.aoeRadius > 0 && p.kind === 'fireball') {
+            s.effects.push({
+              kind: 'explosion',
+              x: e.x,
+              y: e.y,
+              radius: p.aoeRadius,
+              color: '#f97316',
+              timer: 0,
+              duration: 0.36,
+            });
+            for (const sub of s.enemies) {
+              if (sub.side === p.side && sub.hp > 0 && Math.hypot(sub.x - e.x, sub.y - e.y) <= p.aoeRadius) {
+                // Zhou Yu Red Cliffs Combustion: bonus burst against ALREADY burning foes!
+                if (sub.burnTimer > 0) {
+                  this.damageEnemy(s, sub, p.damage * 0.45, 1.0, '#fde047', p.sourceUnitUid);
+                }
+                this.applyProjHit(s, p, sub, 0);
+              }
+            }
+            if (p.spawnZoneOnHit === 'fire_patch') {
+              s.zones.push({
+                side: p.side,
+                sourceUnitUid: p.sourceUnitUid,
+                kind: 'fire_patch',
+                x: e.x,
+                y: e.y,
+                radius: p.aoeRadius * 1.1,
+                dps: p.burnDps || p.damage * 0.45,
+                slowFactor: 0,
+                tickTimer: 0.2,
+                timer: 0,
+                duration: 2.8,
+              });
+            }
+          } else if (p.aoeRadius > 0 && p.kind === 'lotus') {
             s.effects.push({
               kind: 'ring',
               x: e.x,
@@ -2740,6 +3116,48 @@ export class GameEngine {
             }
           } else {
             this.applyProjHit(s, p, e, hitIndex);
+            // Diao Chan's Moonlit Chakram: apply Brittle Charm (+25% DMG taken) & bounce to nearest unhit enemy!
+            if (p.kind === 'chakram') {
+              e.brittleTimer = Math.max(e.brittleTimer, 3.2);
+              s.effects.push({
+                kind: 'ring',
+                x: e.x,
+                y: e.y,
+                radius: 0.55,
+                color: '#f472b6',
+                timer: 0,
+                duration: 0.22,
+              });
+              if (p.pierceLeft > 1) {
+                let nextTgt: EnemyEntity | null = null;
+                let bestD = 2.9;
+                for (const cand of s.enemies) {
+                  if (cand.side !== p.side || cand.hp <= 0 || p.hitIds.has(cand.id)) continue;
+                  const d = Math.hypot(cand.x - e.x, cand.y - e.y);
+                  if (d < bestD) {
+                    bestD = d;
+                    nextTgt = cand;
+                  }
+                }
+                if (nextTgt) {
+                  p.targetId = nextTgt.id;
+                  p.life = Math.max(0, p.life - 0.35);
+                } else {
+                  p.pierceLeft = 1;
+                }
+              }
+            } else if (p.kind === 'sun_arrow' && p.stunDur > 0) {
+              e.armorBrokenTimer = Math.max(e.armorBrokenTimer, 3.0);
+              s.effects.push({
+                kind: 'ring',
+                x: e.x,
+                y: e.y,
+                radius: 0.85,
+                color: '#facc15',
+                timer: 0,
+                duration: 0.28,
+              });
+            }
           }
 
           p.pierceLeft -= 1;

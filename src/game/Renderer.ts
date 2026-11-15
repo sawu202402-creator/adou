@@ -1764,6 +1764,52 @@ export class BoardRenderer {
         ctx.beginPath();
         ctx.arc(0, 0, cs * 0.5, -0.8, 0.8);
         ctx.stroke();
+      } else if (p.kind === 'sun_arrow') {
+        // Huang Zhong's Blazing Ten-Stone Sunfall Arrow!
+        ctx.rotate(ang);
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = Math.max(2.6, cs * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(-cs * 0.42, 0);
+        ctx.lineTo(cs * 0.34, 0);
+        ctx.stroke();
+
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.arc(cs * 0.14, 0, cs * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fffbeb';
+        ctx.beginPath();
+        ctx.moveTo(cs * 0.44, 0);
+        ctx.lineTo(cs * 0.18, -cs * 0.11);
+        ctx.lineTo(cs * 0.18, cs * 0.11);
+        ctx.closePath();
+        ctx.fill();
+      } else if (p.kind === 'fireball') {
+        // Zhou Yu's Red Cliffs Crimson Fireball
+        const fg = ctx.createRadialGradient(0, 0, 1, 0, 0, cs * 0.24);
+        fg.addColorStop(0, '#fef08a');
+        fg.addColorStop(0.55, '#f97316');
+        fg.addColorStop(1, 'rgba(220, 38, 38, 0)');
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.kind === 'chakram') {
+        // Diao Chan's Spinning Moonlit Rose Chakram Ring
+        ctx.rotate(this.animClock * 16);
+        ctx.strokeStyle = '#fbcfe8';
+        ctx.lineWidth = Math.max(2.4, cs * 0.075);
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.22, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ec4899';
+        ctx.lineWidth = Math.max(1.5, cs * 0.045);
+        ctx.beginPath();
+        ctx.arc(0, 0, cs * 0.15, -0.6, 2.2);
+        ctx.stroke();
       } else if (p.kind === 'dragon') {
         ctx.rotate(ang);
         ctx.strokeStyle = p.color;

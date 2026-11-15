@@ -28,6 +28,30 @@ export type SpriteKey =
   | 'crest_shangxiang'
   | 'weap_shangxiang'
   | 'hero_shangxiang'
+  | 'soul_machao'
+  | 'crest_machao'
+  | 'weap_machao'
+  | 'hero_machao'
+  | 'soul_huangzhong'
+  | 'crest_huangzhong'
+  | 'weap_huangzhong'
+  | 'hero_huangzhong'
+  | 'soul_lubu'
+  | 'crest_lubu'
+  | 'weap_lubu'
+  | 'hero_lubu'
+  | 'soul_zhouyu'
+  | 'crest_zhouyu'
+  | 'weap_zhouyu'
+  | 'hero_zhouyu'
+  | 'soul_diaochan'
+  | 'crest_diaochan'
+  | 'weap_diaochan'
+  | 'hero_diaochan'
+  | 'soul_caocao'
+  | 'crest_caocao'
+  | 'weap_caocao'
+  | 'hero_caocao'
   | 'vip_lord'
   | 'icon_rice'
   | 'icon_tent'
@@ -75,6 +99,36 @@ const SPRITE_PATHS: Record<SpriteKey, string> = {
   crest_shangxiang: './assets/crest_shangxiang.png',
   weap_shangxiang: './assets/weap_shangxiang.png',
   hero_shangxiang: './assets/hero_shangxiang.png',
+
+  soul_machao: './assets/soul_machao.png',
+  crest_machao: './assets/crest_machao.png',
+  weap_machao: './assets/weap_machao.png',
+  hero_machao: './assets/hero_machao.png',
+
+  soul_huangzhong: './assets/soul_huangzhong.png',
+  crest_huangzhong: './assets/crest_huangzhong.png',
+  weap_huangzhong: './assets/weap_huangzhong.png',
+  hero_huangzhong: './assets/hero_huangzhong.png',
+
+  soul_lubu: './assets/soul_lubu.png',
+  crest_lubu: './assets/crest_lubu.png',
+  weap_lubu: './assets/weap_lubu.png',
+  hero_lubu: './assets/hero_lubu.png',
+
+  soul_zhouyu: './assets/soul_zhouyu.png',
+  crest_zhouyu: './assets/crest_zhouyu.png',
+  weap_zhouyu: './assets/weap_zhouyu.png',
+  hero_zhouyu: './assets/hero_zhouyu.png',
+
+  soul_diaochan: './assets/soul_diaochan.png',
+  crest_diaochan: './assets/crest_diaochan.png',
+  weap_diaochan: './assets/weap_diaochan.png',
+  hero_diaochan: './assets/hero_diaochan.png',
+
+  soul_caocao: './assets/soul_caocao.png',
+  crest_caocao: './assets/crest_caocao.png',
+  weap_caocao: './assets/weap_caocao.png',
+  hero_caocao: './assets/hero_caocao.png',
 
   vip_lord: './assets/vip_lord.png',
   icon_rice: './assets/icon_rice.png',

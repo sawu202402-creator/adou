@@ -9,7 +9,19 @@ export type AdPlacement =
   | 'hero_scroll_summon'
   | 'settlement_multiplier';
 
-export type HeroKey = 'zhaoyun' | 'guanyu' | 'zhangfei' | 'zhuge' | 'zhenji' | 'shangxiang';
+export type HeroKey =
+  | 'zhaoyun'
+  | 'guanyu'
+  | 'zhangfei'
+  | 'machao'
+  | 'huangzhong'
+  | 'lubu'
+  | 'zhuge'
+  | 'zhouyu'
+  | 'zhenji'
+  | 'diaochan'
+  | 'shangxiang'
+  | 'caocao';
 export type TroopKey = 'blade' | 'spear' | 'lancer' | 'archer' | 'mortar';
 export type WeaponId = `weap_${HeroKey}`;
 
@@ -63,9 +75,15 @@ export type AttackPattern =
   | 'dragon_boomerang'
   | 'crescent_execute'
   | 'roar_quake'
+  | 'iron_stampede'
+  | 'sun_snipe'
+  | 'halberd_cleave'
   | 'chain_lightning'
+  | 'inferno_burn'
   | 'frost_vortex'
-  | 'phoenix_multishot';
+  | 'moon_charm'
+  | 'phoenix_multishot'
+  | 'imperial_decree';
 
 export interface UnitDef {
   id: UnitId;

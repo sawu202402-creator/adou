@@ -459,6 +459,36 @@ const EN_DICT: Dict = {
       desc: 'Signature Bow of Shangxiang. Ignites full-screen arrow storms.',
       sigBonus: 'Shangxiang Exclusive: Fires +2 blazing Phoenix arrows per volley!',
     },
+    weap_machao: {
+      name: 'Tiger-Head Gold Spear',
+      desc: 'Signature Spear of Ma Chao. Unleashes Xiliang lightning cavalry charges.',
+      sigBonus: 'Ma Chao Exclusive: Stampede launches 3 parallel lightning lances & deeper knockback!',
+    },
+    weap_huangzhong: {
+      name: 'Ten-Stone Sunfall Bow',
+      desc: 'Signature Greatbow of Huang Zhong. Pierces the heaviest Boss armor.',
+      sigBonus: 'Huang Zhong Exclusive: Sunfall Bullseye deals 2.45x DMG & executes <26% HP!',
+    },
+    weap_lubu: {
+      name: 'Sky Piercer Halberd',
+      desc: 'Signature Crescent Halberd of Lu Bu. Peerless devastation.',
+      sigBonus: 'Lu Bu Exclusive: Peerless Annihilation radius +15% & 2.05x True DMG!',
+    },
+    weap_zhouyu: {
+      name: 'Guding Crimson Sword',
+      desc: 'Signature Flame Sword of Zhou Yu. Commands Red Cliffs firestorms.',
+      sigBonus: 'Zhou Yu Exclusive: Burn DoT +50% & massive Red Cliffs combustion blasts!',
+    },
+    weap_diaochan: {
+      name: 'Moonlit Ribbon Chakrams',
+      desc: 'Signature Twin Rings of Diao Chan. Dances gracefully across crowds.',
+      sigBonus: 'Diao Chan Exclusive: +2 extra bounces, stronger slow & longer charm stun!',
+    },
+    weap_caocao: {
+      name: 'Heaven-Reliant Sword',
+      desc: 'Signature Imperial Sword of Cao Cao. Rallies the entire formation.',
+      sigBonus: 'Cao Cao Exclusive: +2 Imperial Bolts & expands Attack-Speed Aura to 2.85R!',
+    },
   },
 
   troops: {
@@ -531,6 +561,48 @@ const EN_DICT: Dict = {
       heroName: 'Shangxiang · Sky Archer',
       role: '✦ [2-Cell · 3.5R] · Split Multishot & Fire Rain',
       desc: 'Occupies 2 cells! Locks onto 3-5 separate targets simultaneously with stacking Scorch Arrows; every 4th volley rains fire on the road!',
+    },
+    machao: {
+      shard1Name: 'Ma Chao · Puzzle 1/2',
+      shard2Name: 'Ma Chao · Puzzle 2/2',
+      heroName: 'Ma Chao · Xiliang Rider',
+      role: '⚡ [2-Cell · 2.5R] · Lightning Cavalry Stampede',
+      desc: 'Occupies 2 cells! Pierces whole lanes with a Xiliang lightning spear that slows foes; every 4th charge knocks enemies backward!',
+    },
+    huangzhong: {
+      shard1Name: 'Huang Zhong · Puzzle 1/2',
+      shard2Name: 'Huang Zhong · Puzzle 2/2',
+      heroName: 'Huang Zhong · Sun Sniper',
+      role: '◎ [2-Cell · 4.2R] · Ultra-Range Boss Snipe',
+      desc: 'Longest range (4.15R)! Prioritizes Bosses & high-HP armor with 85% Armor Pen; every 3rd shot is a 2x Sunfall Bullseye stun!',
+    },
+    lubu: {
+      shard1Name: 'Lu Bu · Puzzle 1/2',
+      shard2Name: 'Lu Bu · Puzzle 2/2',
+      heroName: 'Lu Bu · War God',
+      role: '⚔ [2-Cell · 2.2R] · Halberd Cleave & True DMG',
+      desc: 'Occupies 2 cells! Sweeps his Sky Piercer Halberd to shred armor; every 3rd hit unleashes a 360° True-Damage Peerless Tempest!',
+    },
+    zhouyu: {
+      shard1Name: 'Zhou Yu · Puzzle 1/2',
+      shard2Name: 'Zhou Yu · Puzzle 2/2',
+      heroName: 'Zhou Yu · Flame Viceroy',
+      role: '✹ [2-Cell · 3.2R] · Red Cliffs Burn & Detonate',
+      desc: 'Occupies 2 cells! Hurls explosive fireballs that detonate already-burning foes for bonus True DMG & spreads seas of fire!',
+    },
+    diaochan: {
+      shard1Name: 'Diao Chan · Puzzle 1/2',
+      shard2Name: 'Diao Chan · Puzzle 2/2',
+      heroName: 'Diao Chan · Moon Dancer',
+      role: '✿ [2-Cell · 3.1R] · Bouncing Charm & +25% Vuln',
+      desc: 'Occupies 2 cells! Bounces Moonlit Chakrams across 3-7 foes, slowing them and applying Brittle Charm (+25% DMG taken from all allies)!',
+    },
+    caocao: {
+      shard1Name: 'Cao Cao · Puzzle 1/2',
+      shard2Name: 'Cao Cao · Puzzle 2/2',
+      heroName: 'Cao Cao · Wei Hegemon',
+      role: '♛ [2-Cell · 3.3R] · Volley & Allied Haste Aura',
+      desc: 'Occupies 2 cells! Commands multi-bolt crossbows; every 4th decree buffs all nearby Troops & Generals with +45% Attack Speed!',
     },
   },
 };
@@ -802,6 +874,36 @@ const ZH_DICT: Dict = {
       desc: '枭姬孙尚香神射宝弓，箭若流星火雨。',
       sigBonus: '孙尚香穿戴质变：全屏齐射箭数 +2 支，烈焰灼烧伤害翻倍！',
     },
+    weap_machao: {
+      name: '虎头湛金枪',
+      desc: '西凉锦马超神威金枪，铁骑奔雷破阵如风。',
+      sigBonus: '马超穿戴质变：铁骑冲锋化为三路雷霆枪影，并大幅强化击退距离！',
+    },
+    weap_huangzhong: {
+      name: '万石落日弓',
+      desc: '定军老将黄汉升神弓，百步穿杨贯碎重甲。',
+      sigBonus: '黄忠穿戴质变：落日神箭暴增至 2.45 倍真伤并直接斩杀 <26% 残敌！',
+    },
+    weap_lubu: {
+      name: '方天画戟',
+      desc: '飞将吕奉先无双魔戟，神挡杀神万夫莫敌。',
+      sigBonus: '吕布穿戴质变：【天下无双】真伤旋斩范围扩大并跃升至 2.05 倍真伤！',
+    },
+    weap_zhouyu: {
+      name: '古锭赤炎剑',
+      desc: '江东美周郎佩剑，谈笑间樯橹灰飞烟灭。',
+      sigBonus: '周瑜穿戴质变：赤壁业火持续灼烧提升 50%，引爆连环烈焰！',
+    },
+    weap_diaochan: {
+      name: '闭月霓裳环',
+      desc: '绝世舞姬貂蝉双月金环，流光倾城乱敌心神。',
+      sigBonus: '貂蝉穿戴质变：月轮额外多弹跳 2 名敌军，减速加深并延长魅惑定身！',
+    },
+    weap_caocao: {
+      name: '倚天青釭剑',
+      desc: '魏武帝曹操镇国天剑，号令三军莫敢不从。',
+      sigBonus: '曹操穿戴质变：魏武齐射弩矢 +2 支，全军狂暴号令光环扩大至 2.85 格！',
+    },
   },
 
   troops: {
@@ -874,6 +976,48 @@ const ZH_DICT: Dict = {
       heroName: '真·孙尚香',
       role: '✦【占2格 · 多重锁定火矢】· 叠层流星火雨',
       desc: '占相邻2格！超远射程同时锁定3~5个不同敌人齐射烈焰追踪箭（灼烧无限叠层）；每4击降下【丹凤火雨】铺满火海！',
+    },
+    machao: {
+      shard1Name: '马超·左拼图 [1/2]',
+      shard2Name: '马超·右拼图 [2/2]',
+      heroName: '真·马超',
+      role: '⚡【占2格 · 西凉铁骑枪】· 贯穿减速击退',
+      desc: '占相邻2格！刺出西凉紫电枪影直线贯穿整排敌军并减速；每4击触发【铁骑奔雷】双路冲锋并将前方敌群强制击退！',
+    },
+    huangzhong: {
+      shard1Name: '黄忠·左拼图 [1/2]',
+      shard2Name: '黄忠·右拼图 [2/2]',
+      heroName: '真·黄忠',
+      role: '◎【占2格 · 4.15格超远狙杀】· 专克首领重甲',
+      desc: '全场最远4.15格射程！优先锁定首领与高血铁盾兵（无视85%护甲）；每3箭射出【百步穿杨】落日真伤神箭定身碎甲！',
+    },
+    lubu: {
+      shard1Name: '吕布·左拼图 [1/2]',
+      shard2Name: '吕布·右拼图 [2/2]',
+      heroName: '真·吕布',
+      role: '⚔【占2格 · 方天无双斩】· 全环真伤碎甲',
+      desc: '占相邻2格！挥动方天画戟范围劈斩并碎裂护甲；每3击爆发【天下无双】360°血焰旋风，造成无视护甲的毁灭真伤！',
+    },
+    zhouyu: {
+      shard1Name: '周瑜·左拼图 [1/2]',
+      shard2Name: '周瑜·右拼图 [2/2]',
+      heroName: '真·周瑜',
+      role: '✹【占2格 · 火烧赤壁】· 爆燃引爆火海',
+      desc: '占相邻2格！投掷赤炎火球范围轰炸并点燃敌群（对已灼烧目标触发额外爆燃真伤！）；每3击铺开大范围【赤壁火海】！',
+    },
+    diaochan: {
+      shard1Name: '貂蝉·左拼图 [1/2]',
+      shard2Name: '貂蝉·右拼图 [2/2]',
+      heroName: '真·貂蝉',
+      role: '✿【占2格 · 闭月弹射环】· 群体减速易伤',
+      desc: '占相邻2格！掷出霓裳月轮在3~7名敌人之间追踪弹跳，大幅减速并附加【倾城易伤】（令全军对其伤害提升+25%）！',
+    },
+    caocao: {
+      shard1Name: '曹操·左拼图 [1/2]',
+      shard2Name: '曹操·右拼图 [2/2]',
+      heroName: '真·曹操',
+      role: '♛【占2格 · 魏武号令】· 齐射+全军狂暴光环',
+      desc: '占相邻2格！指挥神臂弩阵多发齐射；每4击发动【魏武挥鞭】鼓舞周围友军与名将进入+45%攻速狂暴状态！',
     },
   },
 };
