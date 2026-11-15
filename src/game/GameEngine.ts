@@ -1098,13 +1098,49 @@ export class GameEngine {
       }
     }
 
-    // 1) Fuse matching Puzzle Piece I + Puzzle Piece II into a 2-CELL Awakened General!
+    // 1A) Post-Synthesis Shard Upgrade: feed any matching shard into an ALREADY-awakened unique AI General!
+    for (let i = 0; i < occupied.length; i++) {
+      const occ = occupied[i];
+      const def = UNITS[occ.unit.unitId];
+      if ((def.category === 'shard1' || def.category === 'shard2') && def.heroKey) {
+        const existingHero = this.findAwakenedHeroOnSide(s, 'ai', def.heroKey);
+        if (
+          existingHero &&
+          (existingHero.tier < MAX_TILE_TIER || existingHero.combatLevel < MAX_HERO_COMBAT_LEVEL)
+        ) {
+          this.removeBoardUnit(s, occ.unit);
+          if (existingHero.tier < MAX_TILE_TIER) existingHero.tier += 1;
+          if (existingHero.combatLevel < MAX_HERO_COMBAT_LEVEL) {
+            existingHero.combatLevel += 1;
+            existingHero.maxXp = getHeroXpForNextLevel(existingHero.combatLevel);
+          }
+          existingHero.levelUpAnimTimer = 0.85;
+          existingHero.mergeAnimTimer = 0.24;
+          const ctr = this.getUnitBoardCenter(
+            existingHero,
+            existingHero.anchorCol,
+            existingHero.anchorRow
+          );
+          this.spawnCombineFX(ctr.x, ctr.y, 'merge', existingHero.unitId);
+          this.recalcSynergies();
+          return;
+        }
+      }
+    }
+
+    // 1B) Fuse matching Puzzle Piece I + Puzzle Piece II into a UNIQUE 2-CELL Awakened General!
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'awaken') {
+          const hKey = UNITS[a.unit.unitId].heroKey;
+          // Strictly 1 instance per General on AI side as well!
+          if (hKey && this.findAwakenedHeroOnSide(s, 'ai', hKey)) {
+            continue;
+          }
+
           this.removeBoardUnit(s, a.unit);
           this.removeBoardUnit(s, b.unit);
 
@@ -1132,28 +1168,19 @@ export class GameEngine {
       }
     }
 
-    // 2) Merge identical same-tier units (supports both 1x1 troops and 2-cell Generals!)
+    // 2) Merge identical same-tier 1x1 Troops (unfused shards cannot merge before synthesis!)
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'merge') {
-          const isAwk = UNITS[res.resultId].category === 'awakened';
-          const nextCombatLvl = isAwk
-            ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(a.unit.combatLevel, b.unit.combatLevel) + 1)
-            : 1;
-          const bAnchorC = b.unit.anchorCol >= 0 ? b.unit.anchorCol : b.col;
-          const bAnchorR = b.unit.anchorRow >= 0 ? b.unit.anchorRow : b.row;
-          const bSecC = b.unit.secCol;
-          const bSecR = b.unit.secRow;
-
           this.removeBoardUnit(s, a.unit);
           this.removeBoardUnit(s, b.unit);
 
-          const merged = this.makeTile(res.resultId, res.resultTier, nextCombatLvl);
-          this.placeBoardUnit(s, merged, bAnchorC, bAnchorR, bSecC, bSecR);
-          const ctr = this.getUnitBoardCenter(merged, bAnchorC, bAnchorR);
+          const merged = this.makeTile(res.resultId, res.resultTier, 1);
+          this.placeBoardUnit(s, merged, b.col, b.row);
+          const ctr = this.getUnitBoardCenter(merged, b.col, b.row);
           this.spawnCombineFX(ctr.x, ctr.y, 'merge', res.resultId);
           this.recalcSynergies();
           return;
@@ -1244,6 +1271,25 @@ export class GameEngine {
     return Math.min(0.52, 0.24 + meta.heroChanceBonus);
   }
 
+  /**
+   * Returns the unique awakened General instance on the given side's board, or null if not yet synthesized.
+   * Each General can only exist ONCE per side; subsequent shards feed into this General to upgrade!
+   */
+  public findAwakenedHeroOnSide(s: RunState, side: SideOwner, heroKey: HeroKey): TileUnit | null {
+    const targetId: UnitId = `hero_${heroKey}`;
+    const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
+    const rEnd = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
+    for (let r = rStart; r < rEnd; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        const u = s.board[r][c];
+        if (u && u.unitId === targetId) {
+          return u;
+        }
+      }
+    }
+    return null;
+  }
+
   public findUnmatchedHeroShards(side: SideOwner): { heroKey: HeroKey; missingId: UnitId }[] {
     const s = this.state;
     if (!s) return [];
@@ -1272,6 +1318,8 @@ export class GameEngine {
 
     const unmatched: { heroKey: HeroKey; missingId: UnitId }[] = [];
     for (const h of HERO_KEYS) {
+      // Skip Generals already awakened on this side (cannot awaken a duplicate 2nd copy!)
+      if (this.findAwakenedHeroOnSide(s, side, h)) continue;
       if (hasS1.has(h) && !hasS2.has(h)) {
         unmatched.push({ heroKey: h, missingId: `shard2_${h}` });
       } else if (hasS2.has(h) && !hasS1.has(h)) {
@@ -1281,7 +1329,7 @@ export class GameEngine {
     return unmatched;
   }
 
-  /** Returns HeroKeys for which BOTH Piece I and Piece II are currently held on player's board/bench! */
+  /** Returns HeroKeys for which BOTH Piece I and Piece II are held AND that General is NOT yet awakened on player's board! */
   public getReadyPuzzleHeroKeys(): Set<HeroKey> {
     const s = this.state;
     const ready = new Set<HeroKey>();
@@ -1305,9 +1353,24 @@ export class GameEngine {
     for (const b of s.bench) scan(b);
 
     for (const h of HERO_KEYS) {
+      if (this.findAwakenedHeroOnSide(s, 'player', h)) continue;
       if (hasS1.has(h) && hasS2.has(h)) ready.add(h);
     }
     return ready;
+  }
+
+  /** Returns HeroKeys already awakened on player's board that can still absorb new shards to upgrade! */
+  public getUpgradeableAwakenedHeroKeys(): Set<HeroKey> {
+    const s = this.state;
+    const out = new Set<HeroKey>();
+    if (!s) return out;
+    for (const h of HERO_KEYS) {
+      const hero = this.findAwakenedHeroOnSide(s, 'player', h);
+      if (hero && (hero.tier < MAX_TILE_TIER || hero.combatLevel < MAX_HERO_COMBAT_LEVEL)) {
+        out.add(h);
+      }
+    }
+    return out;
   }
 
   private rollUnitForSide(side: SideOwner): UnitId {
@@ -1387,19 +1450,36 @@ export class GameEngine {
       return;
     }
 
-    const h = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
-    const slots: number[] = [];
-    for (let i = 0; i < s.bench.length; i++) {
-      if (s.bench[i] === null) slots.push(i);
+    const unawakened = HERO_KEYS.filter((hk) => !this.findAwakenedHeroOnSide(s, 'player', hk));
+    if (unawakened.length > 0) {
+      const h = unawakened[Math.floor(Math.random() * unawakened.length)];
+      const slots: number[] = [];
+      for (let i = 0; i < s.bench.length; i++) {
+        if (s.bench[i] === null) slots.push(i);
+      }
+      for (let i = 0; i < s.bench.length && slots.length < 2; i++) {
+        if (!slots.includes(i)) slots.push(i);
+      }
+      s.bench[slots[0]] = this.makeTile(`shard1_${h}`, 1);
+      s.bench[slots[1]] = this.makeTile(`shard2_${h}`, 1);
+      SoundFX.merge(3, true);
+      const hName = getUnitDisplayText(`hero_${h}`).name;
+      this.showBanner(`◈ ${hName} [1/2 + 2/2]`, 2.4);
+      return;
     }
-    for (let i = 0; i < s.bench.length && slots.length < 2; i++) {
-      if (!slots.includes(i)) slots.push(i);
-    }
-    s.bench[slots[0]] = this.makeTile(`shard1_${h}`, 1);
-    s.bench[slots[1]] = this.makeTile(`shard2_${h}`, 1);
+
+    // All 6 Generals are already on the board -> grant 2 upgrade shards for an upgradeable General!
+    const upgradeable = Array.from(this.getUpgradeableAwakenedHeroKeys());
+    const h =
+      upgradeable.length > 0
+        ? upgradeable[Math.floor(Math.random() * upgradeable.length)]
+        : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+    const emptyIdx = s.bench.findIndex((b) => b === null);
+    const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
+    s.bench[targetIdx] = this.makeTile(`shard1_${h}`, 1);
     SoundFX.merge(3, true);
     const hName = getUnitDisplayText(`hero_${h}`).name;
-    this.showBanner(`◈ ${hName} [1/2 + 2/2]`, 2.4);
+    this.showBanner(`✦ ${hName} [1/2]`, 2.4);
   }
 
   public getFarmCost(): number {
@@ -1859,9 +1939,10 @@ export class GameEngine {
             ? SaveManager.getHeroWeaponBonus(def.heroKey)
             : { weaponId: null, star: 0, isSignature: false, dmgMult: 1, aspdMult: 1 };
 
+        const isAwakened = def.category === 'awakened';
         const frenzyMult = u.frenzyTimer > 0 ? 1.45 : 1.0;
         const speedMult =
-          getTierSpeedMultiplier(u.tier) *
+          getTierSpeedMultiplier(u.tier, isAwakened) *
           getCombatLevelSpeedMult(u.combatLevel) *
           syn.globalAspdMult *
           sideAspdScale *
@@ -1898,7 +1979,7 @@ export class GameEngine {
 
         let dmg =
           def.baseDamage *
-          getTierDamageMultiplier(u.tier) *
+          getTierDamageMultiplier(u.tier, isAwakened) *
           getCombatLevelDamageMult(u.combatLevel) *
           syn.globalDmgMult *
           sideDmgScale *
@@ -3633,11 +3714,57 @@ export class GameEngine {
       return false;
     }
 
-    // 1) Combine Check (2-Piece Hero Awakening OR Identical Tier Merge)
+    // 1) Combine Check (Post-Synthesis Hero Shard Upgrade, Unique 2-Piece Hero Awakening, OR Identical Troop Merge)
     const combo = dstUnit ? checkTileCombine(srcUnit, dstUnit) : null;
     if (combo && dstUnit) {
+      if (combo.mode === 'upgrade_hero') {
+        // Post-Synthesis Shard Upgrade: consume the new shard and upgrade the existing unique 2-cell General in place!
+        const srcIsHero = UNITS[srcUnit.unitId].category === 'awakened';
+        const heroTile = srcIsHero ? srcUnit : dstUnit;
+        const shardTile = srcIsHero ? dstUnit : srcUnit;
+        const shardLoc = srcIsHero ? dst : src;
+
+        this.clearSourceUnit(s, shardLoc, shardTile);
+
+        if (heroTile.tier < MAX_TILE_TIER) {
+          heroTile.tier += 1;
+        }
+        if (heroTile.combatLevel < MAX_HERO_COMBAT_LEVEL) {
+          heroTile.combatLevel += 1;
+          heroTile.maxXp = getHeroXpForNextLevel(heroTile.combatLevel);
+        }
+        heroTile.levelUpAnimTimer = 0.9;
+        heroTile.mergeAnimTimer = 0.26;
+
+        s.merges += 1;
+        s.ultCharge = Math.min(100, s.ultCharge + 10);
+        s.screenShake = 0.22;
+        SoundFX.merge(heroTile.tier, true);
+        this.setSelectedInfoFromUnit(heroTile);
+        const heroTxt = getUnitDisplayText(heroTile.unitId);
+        this.showBanner(
+          t().bannerHeroShardUpgraded(heroTxt.name, heroTile.combatLevel, heroTile.tier),
+          2.6
+        );
+        const center = this.getUnitBoardCenter(heroTile, heroTile.anchorCol, heroTile.anchorRow);
+        this.spawnCombineFX(center.x, center.y, 'awaken', heroTile.unitId);
+        this.recalcSynergies();
+        return true;
+      }
+
       if (combo.mode === 'awaken') {
-        // Awakening fuses two 1x1 puzzle halves into a 2-CELL Awakened General!
+        // Enforce strictly ONE instance per General! If already synthesized on board, instruct player to drag shards onto that General!
+        const hKey = UNITS[srcUnit.unitId].heroKey;
+        const existingHero = hKey ? this.findAwakenedHeroOnSide(s, 'player', hKey) : null;
+        if (existingHero) {
+          const heroTxt = getUnitDisplayText(existingHero.unitId);
+          this.setSelectedInfoFromUnit(existingHero);
+          this.showBanner(t().bannerHeroAlreadyActive(heroTxt.name), 2.8);
+          SoundFX.tileClack(false);
+          return false;
+        }
+
+        // Awakening fuses two 1x1 puzzle halves into a UNIQUE 2-CELL Awakened General!
         if (dst.type === 'bench') {
           const pair = this.findEmptyAdjacentDeployPair(s, 'player');
           if (!pair) {
@@ -3706,35 +3833,7 @@ export class GameEngine {
         return true;
       }
 
-      // combo.mode === 'merge'
-      const isHeroMerge = UNITS[combo.resultId].category === 'awakened';
-      const nextCombatLevel = isHeroMerge
-        ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(srcUnit.combatLevel, dstUnit.combatLevel) + 1)
-        : 1;
-
-      if (isHeroMerge) {
-        // Merging two identical same-tier 2-Cell Generals on the board!
-        const c1 = dstUnit.anchorCol;
-        const r1 = dstUnit.anchorRow;
-        const c2 = dstUnit.secCol;
-        const r2 = dstUnit.secRow;
-        this.removeBoardUnit(s, srcUnit);
-        this.removeBoardUnit(s, dstUnit);
-
-        const created = this.makeTile(combo.resultId, combo.resultTier, nextCombatLevel);
-        this.placeBoardUnit(s, created, c1, r1, c2, r2);
-
-        s.merges += 1;
-        s.ultCharge = Math.min(100, s.ultCharge + 10);
-        SoundFX.merge(combo.resultTier, true);
-        this.setSelectedInfoFromUnit(created);
-        const center = this.getUnitBoardCenter(created, c1, r1);
-        this.spawnCombineFX(center.x, center.y, 'merge', combo.resultId);
-        this.recalcSynergies();
-        return true;
-      }
-
-      // Standard 1x1 troop or duplicate 1x1 shard merge
+      // combo.mode === 'merge' (Standard 1x1 troop merge; unfused shards do nothing before synthesis)
       this.clearSourceUnit(s, src, srcUnit);
       this.clearSourceUnit(s, dst, dstUnit);
       const created = this.makeTile(combo.resultId, combo.resultTier, 1);
@@ -3819,13 +3918,32 @@ export class GameEngine {
       srcUnit.mergeAnimTimer = 0.16;
       SoundFX.tileClack(true);
       if (dst.type === 'board' && !getUnitCircleRange(srcUnit).canAttack) {
-        this.showBanner(t().bannerShardCannotAttack, 2.2);
+        const sDef = UNITS[srcUnit.unitId];
+        const existingHero = sDef.heroKey
+          ? this.findAwakenedHeroOnSide(s, 'player', sDef.heroKey)
+          : null;
+        if (existingHero) {
+          this.showBanner(
+            t().bannerHeroAlreadyActive(getUnitDisplayText(existingHero.unitId).name),
+            2.4
+          );
+        } else {
+          this.showBanner(t().bannerShardCannotAttack, 2.2);
+        }
       }
       this.recalcSynergies();
       return true;
     }
 
     if (dstUnit.cellSpan === 2) {
+      const sDef = UNITS[srcUnit.unitId];
+      if (
+        (sDef.category === 'shard1' || sDef.category === 'shard2') &&
+        sDef.heroKey === UNITS[dstUnit.unitId].heroKey
+      ) {
+        this.showBanner(t().bannerMaxLevel, 1.8);
+        return false;
+      }
       if (src.type === 'bench') {
         this.showBanner(t().bannerHeroCannotBench, 2.2);
         return false;

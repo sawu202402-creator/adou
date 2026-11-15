@@ -101,6 +101,8 @@ interface Dict {
   bannerShardCannotAttack: string;
   bannerNeedTwoCellsForHero: string;
   bannerHeroCannotBench: string;
+  bannerHeroAlreadyActive: (name: string) => string;
+  bannerHeroShardUpgraded: (name: string, lvl: number, tier: number) => string;
   bannerHeroLevelUp: (name: string, lvl: number) => string;
   bannerTalismanPick: string;
   bannerTalismanUpgraded: (name: string, tier: number) => string;
@@ -222,11 +224,11 @@ const EN_DICT: Dict = {
   unequippedLabel: 'Tap to Equip',
 
   codexFusionTitle:
-    '2-Cell Generals: [Puzzle 1/2] + [Puzzle 2/2] = 2-Grid General (Unique Signature Attacks!)',
+    'Unique 2-Cell Generals: [1/2] + [2/2] = Unique General · Feed Extra Shards Afterwards to Upgrade!',
   codexTroopsTitle: 'Five Troops Range Ladder: Blade 1.15R ➔ Cav +0.5 ➔ Spear +0.5 ➔ Bow +1.0 ➔ Bombard +0.5',
   codexSynergyTitle: 'Battlefield Formation Synergies',
   codexRuleTip:
-    'Generals occupy 2 ADJACENT jade cells! Strict troop range steps: Blade (1.15R Single) ➔ Cavalry (1.65R AoE, +0.5) ➔ Spear (2.15R Pierce, +0.5) ➔ Archer (3.15R Focus, +1.0) ➔ Bombard (3.65R Siege, +0.5)!',
+    'Each General is UNIQUE (max 1 on board, occupies 2 cells)! Shards have zero effect before synthesis; once synthesized, drag ANY new shard of that General directly onto them to upgrade!',
 
   rivalTag: 'RIVAL',
   playerTag: 'YOU',
@@ -262,9 +264,13 @@ const EN_DICT: Dict = {
     gotShard
       ? `Tomb Raider! +${buns} Buns & Unearthed 1 Weapon Shard!`
       : `Tomb Raider! Unearthed +${buns} Bonus Buns!`,
-  bannerShardCannotAttack: 'Puzzle Piece cannot attack alone! Combine [1/2] + [2/2] on 2 adjacent cells!',
+  bannerShardCannotAttack: 'Shards have zero effect before synthesis! Fuse [1/2]+[2/2] first, or feed to an awakened General!',
   bannerNeedTwoCellsForHero: 'Generals occupy 2 adjacent jade cells! Free an adjacent slot or dig with a Shovel!',
   bannerHeroCannotBench: '2-Cell Generals cannot return to a 1-slot camp bench!',
+  bannerHeroAlreadyActive: (name) =>
+    `${name} is already on the board (max 1)! Drag new shards directly onto ${name} to upgrade!`,
+  bannerHeroShardUpgraded: (name, lvl, tier) =>
+    `✦ Shard Absorbed! ${name} Upgraded to Lv.${lvl} · ★${tier}!`,
   bannerHeroLevelUp: (name, lvl) => `✦ ${name} Leveled Up to Lv.${lvl}! (DMG & Range Up)`,
   bannerTalismanPick: 'Divine Talisman Ready: Tap any Troop or General to +1 Tier & Haste!',
   bannerTalismanUpgraded: (name, tier) => `Divine Talisman! ${name} Promoted to Tier ${tier}!`,
@@ -561,11 +567,11 @@ const ZH_DICT: Dict = {
   equippedOn: (heroName) => `已装备：${heroName}`,
   unequippedLabel: '点击装备武将',
 
-  codexFusionTitle: '双格名将合成：【左拼图 1/2】＋【右拼图 2/2】＝ 占2格真名将（每位武将专属攻击机制！）',
+  codexFusionTitle: '唯一双格名将：【1/2】＋【2/2】合成唯一真武将 · 合成后拖入新碎片直接给武将升级！',
   codexTroopsTitle: '五大兵种阶梯射程：刀1.15格 ➔ 骑+0.5 ➔ 枪+0.5 ➔ 弓+1.0 ➔ 炮+0.5',
   codexSynergyTitle: '军阵奇门羁绊（上阵自动激活）',
   codexRuleTip:
-    '真名将占【相邻2格】阵位！五兵种射程严格递增：刀兵(1.15格单体) ➔ 骑兵(1.65格范围,+0.5) ➔ 枪兵(2.15格贯穿,+0.5) ➔ 弓兵(3.15格叠伤,+1.0) ➔ 火炮(3.65格重轰,+0.5)！',
+    '每位武将场上【仅限1尊】（占相邻2格）！合成前碎片不起任何作用；合成上阵后，再抽到该武将任意新碎片可直接拖到武将身上升级升阶！',
 
   rivalTag: '敌方守军',
   playerTag: '我方阿斗',
@@ -601,9 +607,13 @@ const ZH_DICT: Dict = {
     gotShard
       ? `摸金校尉触发！挖出 +${buns} 馒头，并惊喜出土 1 枚【神兵碎片】！`
       : `摸金校尉触发！额外挖出 +${buns} 馒头军粮！`,
-  bannerShardCannotAttack: '单块武将拼图无法攻击！请集齐【1/2 + 2/2】在相邻2格合成真武将',
+  bannerShardCannotAttack: '碎片在武将合成前不起作用！请先【1/2+2/2】合成武将，合成后新碎片可拖给该武将升级',
   bannerNeedTwoCellsForHero: '真名将需占【相邻2格】白玉阵位！请先腾出相邻格或用金铲扩建',
   bannerHeroCannotBench: '名将占2格阵位，无法收回单格备战营帐！',
+  bannerHeroAlreadyActive: (name) =>
+    `【${name}】已在场（同名武将仅限1尊）！请将新碎片直接拖到【${name}】身上升级！`,
+  bannerHeroShardUpgraded: (name, lvl, tier) =>
+    `✦ 吸收武将碎片！【${name}】突破至 Lv.${lvl} · ${tier}阶！`,
   bannerHeroLevelUp: (name, lvl) => `✦【${name}】杀敌历练升至 Lv.${lvl}！伤害与射程提升！`,
   bannerTalismanPick: '【神兵符】已出鞘：点击任意士兵或武将，无条件升阶并全军狂暴！',
   bannerTalismanUpgraded: (name, tier) => `神兵符显灵！【${name}】跃升至 ${tier} 阶并攻速狂飙！`,

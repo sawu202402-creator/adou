@@ -1,11 +1,10 @@
 import { StageDef } from '../types';
 
 /**
- * Symmetric 8x10 Duel Battlefield Maps (Faithful to 赵云与阿斗 inner-core + outer-road layout):
- * - Rows 0..4: Top Half = Rival AI Commander Territory
- * - Rows 5..9: Bottom Half = Player Territory
- * Notice how inner 'D' cells sit 1-2 cells from the 'P' road, while 'L' locked stone cells
- * hug the outer perimeter — making Golden Shovel excavation crucial for 1-cell Melee ('刀')!
+ * Symmetric 8x10 Duel Battlefield Maps:
+ * - Strictly ONE single 1-cell-wide road ('P' -> 'V') per side!
+ * - ZERO dead '#' wall blocks: EVERY other cell on the board is unit-placement territory
+ *   ('D' initial open jade pedestals + 'L' sealed stone pedestals unlockable via Shovel)!
  */
 export const STAGES: StageDef[] = [
   {
@@ -18,30 +17,33 @@ export const STAGES: StageDef[] = [
     finalBoss: 'lubu',
     layout: [
       // === TOP HALF: AI RIVAL (rows 0..4) ===
-      '##PPPP##',
       'PPPPPPPP',
       'PLLDDLLP',
       'PLLDDLLP',
-      'VLLLLLL#',
+      'PLLDDLLP',
+      'VLLLLLLP',
       // === BOTTOM HALF: PLAYER (rows 5..9) ===
-      '#LLLLLLV',
+      'PLLLLLLV',
+      'PLLDDLLP',
       'PLLDDLLP',
       'PLLDDLLP',
       'PPPPPPPP',
-      '##PPPP##',
     ],
     aiLane: {
       owner: 'ai',
       waypoints: [
+        { col: 7, row: 4 },
         { col: 7, row: 3 },
         { col: 7, row: 2 },
         { col: 7, row: 1 },
-        { col: 6, row: 1 },
-        { col: 5, row: 1 },
-        { col: 4, row: 1 },
-        { col: 3, row: 1 },
-        { col: 2, row: 1 },
-        { col: 1, row: 1 },
+        { col: 7, row: 0 },
+        { col: 6, row: 0 },
+        { col: 5, row: 0 },
+        { col: 4, row: 0 },
+        { col: 3, row: 0 },
+        { col: 2, row: 0 },
+        { col: 1, row: 0 },
+        { col: 0, row: 0 },
         { col: 0, row: 1 },
         { col: 0, row: 2 },
         { col: 0, row: 3 },
@@ -53,15 +55,18 @@ export const STAGES: StageDef[] = [
     playerLane: {
       owner: 'player',
       waypoints: [
+        { col: 0, row: 5 },
         { col: 0, row: 6 },
         { col: 0, row: 7 },
         { col: 0, row: 8 },
-        { col: 1, row: 8 },
-        { col: 2, row: 8 },
-        { col: 3, row: 8 },
-        { col: 4, row: 8 },
-        { col: 5, row: 8 },
-        { col: 6, row: 8 },
+        { col: 0, row: 9 },
+        { col: 1, row: 9 },
+        { col: 2, row: 9 },
+        { col: 3, row: 9 },
+        { col: 4, row: 9 },
+        { col: 5, row: 9 },
+        { col: 6, row: 9 },
+        { col: 7, row: 9 },
         { col: 7, row: 8 },
         { col: 7, row: 7 },
         { col: 7, row: 6 },
@@ -80,34 +85,34 @@ export const STAGES: StageDef[] = [
     dividerRow: 5,
     finalBoss: 'zhangjiao',
     layout: [
-      // === TOP HALF: AI RIVAL ===
-      '#PPPPPP#',
-      '#PLDDLP#',
-      '#PLDDLP#',
-      'PPPLLLPP',
-      'V#LLLL##',
-      // === BOTTOM HALF: PLAYER ===
-      '##LLLL#V',
-      'PPLLLPPP',
-      '#PLDDLP#',
-      '#PLDDLP#',
-      '#PPPPPP#',
+      // === TOP HALF: AI RIVAL (rows 0..4) ===
+      'LLPPPPLL',
+      'LLPDDPLL',
+      'LLPDDPLL',
+      'PPPDDPPP',
+      'VLLLLLLL',
+      // === BOTTOM HALF: PLAYER (rows 5..9) ===
+      'LLLLLLLV',
+      'PPPDDPPP',
+      'LLPDDPLL',
+      'LLPDDPLL',
+      'LLPPPPLL',
     ],
     aiLane: {
       owner: 'ai',
       waypoints: [
         { col: 7, row: 3 },
         { col: 6, row: 3 },
-        { col: 6, row: 2 },
-        { col: 6, row: 1 },
-        { col: 6, row: 0 },
+        { col: 5, row: 3 },
+        { col: 5, row: 2 },
+        { col: 5, row: 1 },
         { col: 5, row: 0 },
         { col: 4, row: 0 },
         { col: 3, row: 0 },
         { col: 2, row: 0 },
-        { col: 1, row: 0 },
-        { col: 1, row: 1 },
-        { col: 1, row: 2 },
+        { col: 2, row: 1 },
+        { col: 2, row: 2 },
+        { col: 2, row: 3 },
         { col: 1, row: 3 },
         { col: 0, row: 3 },
         { col: 0, row: 4 },
@@ -120,16 +125,16 @@ export const STAGES: StageDef[] = [
       waypoints: [
         { col: 0, row: 6 },
         { col: 1, row: 6 },
-        { col: 1, row: 7 },
-        { col: 1, row: 8 },
-        { col: 1, row: 9 },
+        { col: 2, row: 6 },
+        { col: 2, row: 7 },
+        { col: 2, row: 8 },
         { col: 2, row: 9 },
         { col: 3, row: 9 },
         { col: 4, row: 9 },
         { col: 5, row: 9 },
-        { col: 6, row: 9 },
-        { col: 6, row: 8 },
-        { col: 6, row: 7 },
+        { col: 5, row: 8 },
+        { col: 5, row: 7 },
+        { col: 5, row: 6 },
         { col: 6, row: 6 },
         { col: 7, row: 6 },
         { col: 7, row: 5 },
@@ -147,18 +152,18 @@ export const STAGES: StageDef[] = [
     dividerRow: 5,
     finalBoss: 'lubu',
     layout: [
-      // === TOP HALF: AI RIVAL ===
-      'PPPPPPP#',
-      '#LLDDLP#',
-      '#LLDDLP#',
-      '#PPPPPP#',
-      'VPLLLL##',
-      // === BOTTOM HALF: PLAYER ===
-      '##LLLLPV',
-      '#PPPPPP#',
-      '#PLDDLL#',
-      '#PLDDLL#',
-      '#PPPPPPP',
+      // === TOP HALF: AI RIVAL (rows 0..4) ===
+      'PPPPPPPL',
+      'LLDDDLPL',
+      'LLDDDLPL',
+      'LPPPPPPL',
+      'VPLLLLLL',
+      // === BOTTOM HALF: PLAYER (rows 5..9) ===
+      'LLLLLLPV',
+      'LPPPPPPL',
+      'LPLDDDLL',
+      'LPLDDDLL',
+      'LPPPPPPP',
     ],
     aiLane: {
       owner: 'ai',

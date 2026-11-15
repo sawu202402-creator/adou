@@ -33,6 +33,7 @@ export class BoardRenderer {
 
     const L = engine.layout;
     const readyPuzzles = engine.getReadyPuzzleHeroKeys();
+    const upgradeableHeroes = engine.getUpgradeableAwakenedHeroKeys();
 
     ctx.save();
 
@@ -91,15 +92,24 @@ export class BoardRenderer {
           highlight = 'selected';
         } else if (isPlayerSide && activeUnit && activeUnit.uid !== u.uid) {
           const combo = checkTileCombine(activeUnit, u);
-          if (combo) highlight = combo.mode;
+          if (combo) {
+            if (combo.mode === 'upgrade_hero') {
+              highlight = 'awaken';
+            } else if (combo.mode === 'awaken') {
+              const hk = UNITS[u.unitId].heroKey;
+              highlight = hk && engine.findAwakenedHeroOnSide(s, 'player', hk) ? 'none' : 'awaken';
+            } else {
+              highlight = 'merge';
+            }
+          }
         } else if (isPlayerSide) {
           const def = UNITS[u.unitId];
-          if (
-            (def.category === 'shard1' || def.category === 'shard2') &&
-            def.heroKey &&
-            readyPuzzles.has(def.heroKey)
-          ) {
-            highlight = 'awaken';
+          if ((def.category === 'shard1' || def.category === 'shard2') && def.heroKey) {
+            if (readyPuzzles.has(def.heroKey)) {
+              highlight = 'awaken';
+            } else if (upgradeableHeroes.has(def.heroKey)) {
+              highlight = 'merge';
+            }
           }
         }
 
@@ -151,7 +161,7 @@ export class BoardRenderer {
     this.drawFloatingTexts(ctx, engine, s);
 
     // 9. Player War-Camp Tent & 5-Slot Bench Row
-    this.drawCampBench(ctx, engine, s, activeUnit, readyPuzzles);
+    this.drawCampBench(ctx, engine, s, activeUnit, readyPuzzles, upgradeableHeroes);
 
     // 10. Floating Dragged Tile (1x1 or 2-Cell Double Plaque!)
     if (engine.drag && engine.drag.active && engine.drag.movedEnough) {
@@ -318,46 +328,83 @@ export class BoardRenderer {
     }
 
     if (cell === 'path' || cell === 'vip') {
-      ctx.fillStyle = (col + row) % 2 === 0 ? '#ccc9be' : '#c3c0b4';
+      // Single continuous stone march road (distinct dark-edged slate road so the single lane pops immediately!)
+      ctx.fillStyle = (col + row) % 2 === 0 ? '#9c9789' : '#938e80';
       ctx.fillRect(x, y, cs, cs);
       if (frostRoad && cell === 'path') {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.13)';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
         ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
       }
-      ctx.strokeStyle = 'rgba(65, 62, 55, 0.28)';
+      ctx.strokeStyle = 'rgba(44, 41, 36, 0.42)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, cs - 1, cs - 1);
       return;
     }
 
     if (cell === 'locked') {
-      ctx.fillStyle = (col + row) % 2 === 0 ? '#6e726b' : '#666a63';
-      ctx.fillRect(x, y, cs, cs);
-      ctx.strokeStyle = '#3b3e39';
-      ctx.lineWidth = 1.25;
-      ctx.strokeRect(x + 1, y + 1, cs - 2, cs - 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-      ctx.strokeRect(x + 4, y + 4, cs - 8, cs - 8);
+      // Shovel-unlockable unit placement pedestal (styled as a sealed sandstone placement grid cell, NOT an impassable wall!)
+      const lGrad = ctx.createLinearGradient(x, y, x, y + cs);
+      lGrad.addColorStop(0, '#dbd4c4');
+      lGrad.addColorStop(1, '#cbc2b0');
+      ctx.fillStyle = lGrad;
+      ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
 
-      // Subtle carved stone seal mark so sealed slabs look distinct from open ground
-      ctx.strokeStyle = 'rgba(35, 38, 34, 0.36)';
-      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = '#99907d';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(x + 1.5, y + 1.5, cs - 3, cs - 3);
+
+      // Matching corner pedestal brackets so players see every non-road cell is unit placement territory
+      ctx.strokeStyle = 'rgba(110, 100, 82, 0.45)';
+      ctx.lineWidth = 1;
+      const m = 5;
+      const len = Math.max(4, cs * 0.13);
       ctx.beginPath();
-      ctx.moveTo(x + cs * 0.34, y + cs * 0.34);
-      ctx.lineTo(x + cs * 0.66, y + cs * 0.66);
-      ctx.moveTo(x + cs * 0.66, y + cs * 0.34);
-      ctx.lineTo(x + cs * 0.34, y + cs * 0.66);
+      ctx.moveTo(x + m, y + m + len);
+      ctx.lineTo(x + m, y + m);
+      ctx.lineTo(x + m + len, y + m);
+
+      ctx.moveTo(x + cs - m - len, y + m);
+      ctx.lineTo(x + cs - m, y + m);
+      ctx.lineTo(x + cs - m, y + m + len);
+
+      ctx.moveTo(x + m, y + cs - m - len);
+      ctx.lineTo(x + m, y + cs - m);
+      ctx.lineTo(x + m + len, y + cs - m);
+
+      ctx.moveTo(x + cs - m - len, y + cs - m);
+      ctx.lineTo(x + cs - m, y + cs - m);
+      ctx.lineTo(x + cs - m, y + cs - m - len);
       ctx.stroke();
+
+      // Subtle central bronze seal emblem indicating Shovel excavation unlocks this pedestal
+      const cx = x + cs * 0.5;
+      const cy = y + cs * 0.5;
+      const sr = Math.max(4.5, cs * 0.14);
+      ctx.save();
+      ctx.fillStyle = 'rgba(120, 105, 80, 0.22)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, sr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(105, 90, 68, 0.48)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - sr * 0.48, cy - sr * 0.48);
+      ctx.lineTo(cx + sr * 0.48, cy + sr * 0.48);
+      ctx.moveTo(cx + sr * 0.48, cy - sr * 0.48);
+      ctx.lineTo(cx - sr * 0.48, cy + sr * 0.48);
+      ctx.stroke();
+      ctx.restore();
 
       if (digHighlight && isPlayerHalf) {
         const pulse = 0.55 + 0.4 * Math.sin(this.animClock * 6.5);
         ctx.save();
-        ctx.strokeStyle = `rgba(250, 204, 21, ${pulse})`;
-        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = `rgba(217, 119, 6, ${pulse})`;
+        ctx.lineWidth = 2.5;
         ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
         const shImg = Assets.get('icon_shovel');
         if (shImg) {
-          ctx.globalAlpha = 0.78;
+          ctx.globalAlpha = 0.85;
           ctx.drawImage(shImg, x + cs * 0.24, y + cs * 0.24, cs * 0.52, cs * 0.52);
         }
         ctx.restore();
@@ -541,8 +588,31 @@ export class BoardRenderer {
             centerGridX = col + 0.5;
             centerGridY = row + 0.5;
           }
-        } else if (hoverCombo && hoverCombo.mode === 'awaken') {
-          // Previewing 1/2 + 2/2 fusion into a 2-Cell Awakened General right on the board!
+        } else if (
+          hoverCombo &&
+          hoverCombo.mode === 'upgrade_hero' &&
+          hoveredBoardUnit &&
+          hoveredBoardUnit.cellSpan === 2
+        ) {
+          // Previewing feeding a new shard into your existing unique 2-Cell General!
+          twoCellFootprint = {
+            c1: hoveredBoardUnit.anchorCol,
+            r1: hoveredBoardUnit.anchorRow,
+            c2: hoveredBoardUnit.secCol,
+            r2: hoveredBoardUnit.secRow,
+          };
+          previewUnit = hoveredBoardUnit;
+          centerGridX = (twoCellFootprint.c1 + twoCellFootprint.c2) * 0.5 + 0.5;
+          centerGridY = (twoCellFootprint.r1 + twoCellFootprint.r2) * 0.5 + 0.5;
+        } else if (
+          hoverCombo &&
+          hoverCombo.mode === 'awaken' &&
+          !(
+            UNITS[dragUnit.unitId].heroKey &&
+            engine.findAwakenedHeroOnSide(s, 'player', UNITS[dragUnit.unitId].heroKey!)
+          )
+        ) {
+          // Previewing 1/2 + 2/2 fusion into a unique 2-Cell Awakened General right on the board!
           twoCellFootprint = engine.previewTwoCellPlacement(col, row, true, dragUnit.uid);
           previewUnit = {
             ...dragUnit,
@@ -1465,7 +1535,8 @@ export class BoardRenderer {
     engine: GameEngine,
     s: RunState,
     activeUnit: TileUnit | null,
-    readyPuzzles: Set<HeroKey>
+    readyPuzzles: Set<HeroKey>,
+    upgradeableHeroes: Set<HeroKey>
   ): void {
     const L = engine.layout;
     const bs = L.benchTileSize;
@@ -1507,13 +1578,24 @@ export class BoardRenderer {
         highlight = 'selected';
       } else if (activeUnit && activeUnit.uid !== u.uid) {
         const combo = checkTileCombine(activeUnit, u);
-        if (combo) highlight = combo.mode;
-      } else if (
-        (def.category === 'shard1' || def.category === 'shard2') &&
-        def.heroKey &&
-        readyPuzzles.has(def.heroKey)
-      ) {
-        highlight = 'awaken';
+        if (combo) {
+          if (combo.mode === 'upgrade_hero') {
+            highlight = 'awaken';
+          } else if (combo.mode === 'awaken') {
+            highlight =
+              def.heroKey && engine.findAwakenedHeroOnSide(s, 'player', def.heroKey)
+                ? 'none'
+                : 'awaken';
+          } else {
+            highlight = 'merge';
+          }
+        }
+      } else if ((def.category === 'shard1' || def.category === 'shard2') && def.heroKey) {
+        if (readyPuzzles.has(def.heroKey)) {
+          highlight = 'awaken';
+        } else if (upgradeableHeroes.has(def.heroKey)) {
+          highlight = 'merge';
+        }
       }
 
       this.drawWarTile(ctx, u, sx + 2, sy + 2, bs - 4, highlight, false, true);

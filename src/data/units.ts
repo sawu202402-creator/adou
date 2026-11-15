@@ -22,8 +22,8 @@ export const HERO_KEYS: HeroKey[] = [
 /** 5 Classic Rarity Ranks: 1(White) -> 2(Green) -> 3(Blue) -> 4(Purple) -> 5(Orange/Gold) */
 export const MAX_TILE_TIER = 5;
 
-/** Awakened Generals level up in battle from Lv.1 to Lv.12 via attack & kill XP! */
-export const MAX_HERO_COMBAT_LEVEL = 12;
+/** Awakened Generals level up in battle from Lv.1 to Lv.15 via combat XP & feeding extra hero shards! */
+export const MAX_HERO_COMBAT_LEVEL = 15;
 
 interface HeroThemeSpec {
   accent: string;
@@ -369,13 +369,15 @@ export function getCombatLevelSpeedMult(combatLevel: number): number {
 
 /**
  * Checks if two tiles can combine:
- * 1) 'awaken': Matching Hero Puzzle Piece I + Hero Puzzle Piece II -> Awakened General!
- * 2) 'merge': Identical UnitId (except 'shovel') + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
+ * 1) 'upgrade_hero': Feeding ANY matching shard ('shard1_X' or 'shard2_X') into an ALREADY-AWAKENED General ('hero_X') upgrades that General!
+ * 2) 'awaken': Matching Hero Puzzle Piece I + Hero Puzzle Piece II -> Summons the UNIQUE 2-Cell Awakened General!
+ * 3) 'merge': Identical Troop + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
+ *    (Unfused shards have zero effect before synthesis and NEVER merge with identical shards; Generals are unique 1-per-hero!)
  */
 export function checkTileCombine(
   a: TileUnit,
   b: TileUnit
-): { mode: 'awaken' | 'merge'; resultId: UnitId; resultTier: number } | null {
+): { mode: 'awaken' | 'merge' | 'upgrade_hero'; resultId: UnitId; resultTier: number } | null {
   if (a.uid === b.uid) return null;
 
   const defA = UNITS[a.unitId];
@@ -385,6 +387,26 @@ export function checkTileCombine(
     return null;
   }
 
+  // After a General is synthesized, feeding ANY new shard of that General upgrades them!
+  if (defA.heroKey && defA.heroKey === defB.heroKey) {
+    const aIsHero = defA.category === 'awakened';
+    const bIsHero = defB.category === 'awakened';
+    const aIsShard = defA.category === 'shard1' || defA.category === 'shard2';
+    const bIsShard = defB.category === 'shard1' || defB.category === 'shard2';
+    if ((aIsHero && bIsShard) || (bIsHero && aIsShard)) {
+      const heroTile = aIsHero ? a : b;
+      if (heroTile.tier < MAX_TILE_TIER || heroTile.combatLevel < MAX_HERO_COMBAT_LEVEL) {
+        return {
+          mode: 'upgrade_hero',
+          resultId: heroTile.unitId,
+          resultTier: Math.min(MAX_TILE_TIER, heroTile.tier + 1),
+        };
+      }
+      return null;
+    }
+  }
+
+  // Synthesize [1/2] + [2/2] -> Unique 2-Cell Awakened General!
   if (
     defA.heroKey &&
     defA.heroKey === defB.heroKey &&
@@ -392,23 +414,32 @@ export function checkTileCombine(
       (defA.category === 'shard2' && defB.category === 'shard1'))
   ) {
     const heroId: UnitId = `hero_${defA.heroKey}`;
-    const fusedTier = Math.min(MAX_TILE_TIER, Math.max(a.tier, b.tier));
-    return { mode: 'awaken', resultId: heroId, resultTier: fusedTier };
+    return { mode: 'awaken', resultId: heroId, resultTier: 1 };
   }
 
-  if (a.unitId === b.unitId && a.tier === b.tier && a.tier < MAX_TILE_TIER) {
+  // Only standard troops merge with identical troops (shards do nothing before synthesis!)
+  if (
+    defA.category === 'troop' &&
+    defB.category === 'troop' &&
+    a.unitId === b.unitId &&
+    a.tier === b.tier &&
+    a.tier < MAX_TILE_TIER
+  ) {
     return { mode: 'merge', resultId: a.unitId, resultTier: a.tier + 1 };
   }
 
   return null;
 }
 
-export function getTierDamageMultiplier(tier: number): number {
+export function getTierDamageMultiplier(tier: number, isAwakened = false): number {
+  if (isAwakened) {
+    return 1 + (tier - 1) * 0.3;
+  }
   return Math.pow(1.68, tier - 1);
 }
 
-export function getTierSpeedMultiplier(tier: number): number {
-  return 1 + (tier - 1) * 0.1;
+export function getTierSpeedMultiplier(tier: number, isAwakened = false): number {
+  return 1 + (tier - 1) * (isAwakened ? 0.06 : 0.1);
 }
 
 export function computeSynergies(boardUnits: (TileUnit | null)[]): {
