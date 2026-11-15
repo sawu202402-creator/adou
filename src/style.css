@@ -1186,3 +1186,478 @@ body {
     font-size: 16.5px;
   }
 }
+
+
+/* ==================== V3 DIVINE ARMORY, SKILL SHOP, RANGE MATRIX & VICTORY SHOP ==================== */
+.nav-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fef3c7;
+  font-size: 10.5px;
+  font-weight: 900;
+  border: 1px solid #fde047;
+}
+
+.stage-emblem-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-boss-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid #991b1b;
+  background: radial-gradient(circle, #3d211d 0%, #1c1412 100%);
+  padding: 2px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.stage-boss-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stage-boss-pill {
+  display: inline-block;
+  align-self: flex-start;
+  margin-bottom: 7px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: rgba(124, 29, 24, 0.12);
+  border: 1px solid rgba(153, 27, 27, 0.45);
+  color: #7f1d1d;
+}
+
+/* Divine Armory Cards */
+.armory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 13px;
+}
+
+.weapon-card {
+  background: linear-gradient(180deg, rgba(248, 242, 228, 0.96), rgba(232, 221, 199, 0.96));
+  border: 1.5px solid #8c6d32;
+  border-radius: 8px;
+  padding: 12px 13px;
+  color: #261e18;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.weapon-card.unlocked {
+  border: 2px solid #c59b27;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42), 0 0 12px rgba(212, 175, 55, 0.25);
+}
+
+.weap-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.weap-icon-tile {
+  width: 58px;
+  height: 58px;
+  border-width: 2.5px;
+}
+
+.weap-star-pill {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(124, 29, 24, 0.92);
+  color: #fde047;
+  font-size: 9.5px;
+  font-weight: 900;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid #facc15;
+}
+
+.weap-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.weap-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.weap-title-row strong {
+  font-family: 'STKaiti', 'KaiTi', 'Noto Serif SC', Georgia, serif;
+  font-size: 16px;
+  color: #7c1d18;
+}
+
+.weap-stars {
+  font-size: 12px;
+  color: #b45309;
+  letter-spacing: 1px;
+}
+
+.weap-desc {
+  font-size: 11.5px;
+  color: #44382e;
+  margin: 2px 0;
+}
+
+.weap-sig {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1b4332;
+  line-height: 1.35;
+}
+
+.shard-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shard-bar-track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  border-radius: 5px;
+  background: rgba(41, 32, 24, 0.85);
+  border: 1px solid #8c6d32;
+  overflow: hidden;
+}
+
+.shard-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #991b1b, #d97706);
+  transition: width 0.2s ease;
+}
+
+.shard-bar-txt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #fef3c7;
+  text-shadow: 0 1px 2px #000;
+}
+
+.shard-bar-txt img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.equip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(140, 109, 50, 0.45);
+  font-size: 12px;
+}
+
+.equip-label {
+  font-weight: 800;
+  color: #5c3d1e;
+}
+
+.equip-select {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1.5px solid #8c6d32;
+  background: #fcf8ee;
+  color: #261e18;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.equip-locked-hint {
+  color: #6b5335;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* Skill Shop Grid */
+.skill-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.upg-icon-box {
+  position: relative;
+}
+
+.skill-corner-seal {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #fef3c7;
+  font-size: 10.5px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fde68a;
+}
+
+/* Codex Mini 7x7 Grid-Range Diagram & Equipped Weapon Mini Badge */
+.mini-range-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 8px);
+  grid-template-rows: repeat(7, 8px);
+  gap: 1.5px;
+  padding: 4px;
+  background: #29221c;
+  border: 1.5px solid #8c6d32;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.rg-c {
+  width: 8px;
+  height: 8px;
+  border-radius: 1.5px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.rg-c.hit {
+  background: #34d399;
+  box-shadow: 0 0 3px rgba(52, 211, 153, 0.7);
+}
+
+.rg-c.center {
+  background: #f59e0b;
+  color: #1c1917;
+  font-size: 6.5px;
+  line-height: 8px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.mini-eq-weap {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 19px !important;
+  height: 19px !important;
+  border-radius: 4px;
+  border: 1px solid #facc15;
+  background: #1c1917;
+}
+
+/* HUD Top-Right Skill Seals, Boss Heal Bar & Green Exorcism Talisman */
+.skill-seal-chip {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #fef3c7;
+  border: 1px solid #fde68a;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.skill-seal-chip em {
+  font-style: normal;
+  font-size: 9.5px;
+  opacity: 0.92;
+}
+
+.boss-bar-fill.healing {
+  background: linear-gradient(90deg, #15803d, #4ade80);
+}
+
+.ult-orb-btn.active-pick {
+  border-color: #34d399;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.95);
+}
+
+.tac-btn.talisman-green {
+  background: linear-gradient(180deg, #1f6f43 0%, #134e2e 100%);
+  border-color: #86efac;
+  color: #ecfdf5;
+}
+
+.tac-btn.talisman-green.on-cd {
+  opacity: 0.65;
+  filter: grayscale(0.4);
+}
+
+/* Post-Victory Wide Settlement + Inline Skill Shop */
+.popup-box.settle-wide {
+  max-width: 470px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: 16px 16px;
+}
+
+.wallet-tag {
+  background: #292018;
+  color: #fde68a;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  border: 1px solid #c59b27;
+}
+
+.settle-section {
+  text-align: left;
+  background: rgba(46, 36, 28, 0.08);
+  border: 1px solid rgba(140, 109, 50, 0.45);
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.settle-sec-head {
+  font-family: 'STKaiti', 'KaiTi', 'Noto Serif SC', Georgia, serif;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #7c1d18;
+  margin-bottom: 6px;
+}
+
+.settle-drops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drop-shard-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fcf8ee;
+  border: 1px solid #b8860b;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.drop-shard-pill img {
+  width: 32px;
+  height: 32px;
+  border-radius: 5px;
+  object-fit: cover;
+  border: 1px solid #8c6d32;
+}
+
+.drop-shard-txt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-size: 11.5px;
+}
+
+.drop-shard-txt strong {
+  color: #7c1d18;
+}
+
+.drop-shard-txt span {
+  color: #57493c;
+}
+
+.no-drops-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #4a3d31;
+}
+
+.no-drops-note img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.settle-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 175px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.settle-skill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fcf8ee;
+  border: 1px solid rgba(140, 109, 50, 0.45);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.ss-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ss-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: #fef3c7;
+  font-size: 12px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #fde68a;
+}
+
+.ss-name {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #261e18;
+}
+
+.ss-name small {
+  color: #6b5335;
+  font-size: 11px;
+}
+
+.ss-val {
+  font-size: 11px;
+  color: #1b4332;
+  font-weight: 700;
+}

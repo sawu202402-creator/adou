@@ -1,10 +1,11 @@
 import { StageDef } from '../types';
 
 /**
- * Symmetric 8x10 Duel Battlefield Maps:
+ * Symmetric 8x10 Duel Battlefield Maps (Faithful to 赵云与阿斗 inner-core + outer-road layout):
  * - Rows 0..4: Top Half = Rival AI Commander Territory
  * - Rows 5..9: Bottom Half = Player Territory
- * Separated across row 4|5 by an ancient Great Wall parapet!
+ * Notice how inner 'D' cells sit 1-2 cells from the 'P' road, while 'L' locked stone cells
+ * hug the outer perimeter — making Golden Shovel excavation crucial for 1-cell Melee ('刀')!
  */
 export const STAGES: StageDef[] = [
   {
@@ -14,6 +15,7 @@ export const STAGES: StageDef[] = [
     cols: 8,
     rows: 10,
     dividerRow: 5,
+    finalBoss: 'lubu',
     layout: [
       // === TOP HALF: AI RIVAL (rows 0..4) ===
       '##PPPP##',
@@ -76,6 +78,7 @@ export const STAGES: StageDef[] = [
     cols: 8,
     rows: 10,
     dividerRow: 5,
+    finalBoss: 'zhangjiao',
     layout: [
       // === TOP HALF: AI RIVAL ===
       '#PPPPPP#',
@@ -142,6 +145,7 @@ export const STAGES: StageDef[] = [
     cols: 8,
     rows: 10,
     dividerRow: 5,
+    finalBoss: 'lubu',
     layout: [
       // === TOP HALF: AI RIVAL ===
       'PPPPPPP#',

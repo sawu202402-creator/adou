@@ -1,64 +1,78 @@
 export type SpriteKey =
   | 'unit_blade'
-  | 'unit_archer'
+  | 'unit_spear'
   | 'unit_lancer'
+  | 'unit_archer'
   | 'unit_mortar'
-  | 'unit_frostbow'
   | 'soul_zhaoyun'
+  | 'crest_zhaoyun'
   | 'weap_zhaoyun'
   | 'hero_zhaoyun'
   | 'soul_guanyu'
+  | 'crest_guanyu'
   | 'weap_guanyu'
   | 'hero_guanyu'
   | 'soul_zhangfei'
+  | 'crest_zhangfei'
   | 'weap_zhangfei'
   | 'hero_zhangfei'
   | 'soul_zhuge'
+  | 'crest_zhuge'
   | 'weap_zhuge'
   | 'hero_zhuge'
   | 'soul_zhenji'
+  | 'crest_zhenji'
   | 'weap_zhenji'
   | 'hero_zhenji'
   | 'soul_shangxiang'
+  | 'crest_shangxiang'
   | 'weap_shangxiang'
   | 'hero_shangxiang'
   | 'vip_lord'
   | 'icon_rice'
   | 'icon_tent'
   | 'icon_shovel'
+  | 'icon_chest'
   | 'enemy_grunt'
   | 'enemy_wolf'
   | 'enemy_shield'
+  | 'enemy_zhangjiao'
   | 'enemy_lubu';
 
 const SPRITE_PATHS: Record<SpriteKey, string> = {
   unit_blade: './assets/unit_blade.png',
-  unit_archer: './assets/unit_archer.png',
+  unit_spear: './assets/unit_spear.png',
   unit_lancer: './assets/unit_lancer.png',
+  unit_archer: './assets/unit_archer.png',
   unit_mortar: './assets/unit_mortar.png',
-  unit_frostbow: './assets/unit_frostbow.png',
 
   soul_zhaoyun: './assets/soul_zhaoyun.png',
+  crest_zhaoyun: './assets/crest_zhaoyun.png',
   weap_zhaoyun: './assets/weap_zhaoyun.png',
   hero_zhaoyun: './assets/hero_zhaoyun.png',
 
   soul_guanyu: './assets/soul_guanyu.png',
+  crest_guanyu: './assets/crest_guanyu.png',
   weap_guanyu: './assets/weap_guanyu.png',
   hero_guanyu: './assets/hero_guanyu.png',
 
   soul_zhangfei: './assets/soul_zhangfei.png',
+  crest_zhangfei: './assets/crest_zhangfei.png',
   weap_zhangfei: './assets/weap_zhangfei.png',
   hero_zhangfei: './assets/hero_zhangfei.png',
 
   soul_zhuge: './assets/soul_zhuge.png',
+  crest_zhuge: './assets/crest_zhuge.png',
   weap_zhuge: './assets/weap_zhuge.png',
   hero_zhuge: './assets/hero_zhuge.png',
 
   soul_zhenji: './assets/soul_zhenji.png',
+  crest_zhenji: './assets/crest_zhenji.png',
   weap_zhenji: './assets/weap_zhenji.png',
   hero_zhenji: './assets/hero_zhenji.png',
 
   soul_shangxiang: './assets/soul_shangxiang.png',
+  crest_shangxiang: './assets/crest_shangxiang.png',
   weap_shangxiang: './assets/weap_shangxiang.png',
   hero_shangxiang: './assets/hero_shangxiang.png',
 
@@ -66,10 +80,12 @@ const SPRITE_PATHS: Record<SpriteKey, string> = {
   icon_rice: './assets/icon_rice.png',
   icon_tent: './assets/icon_tent.png',
   icon_shovel: './assets/icon_shovel.png',
+  icon_chest: './assets/icon_chest.png',
 
   enemy_grunt: './assets/enemy_grunt.png',
   enemy_wolf: './assets/enemy_wolf.png',
   enemy_shield: './assets/enemy_shield.png',
+  enemy_zhangjiao: './assets/enemy_zhangjiao.png',
   enemy_lubu: './assets/enemy_lubu.png',
 };
 

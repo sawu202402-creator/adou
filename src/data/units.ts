@@ -1,6 +1,8 @@
 import {
   ActiveSynergyInfo,
+  GridPoint,
   HeroKey,
+  RangeShape,
   SynergyTag,
   TileUnit,
   TroopKey,
@@ -8,7 +10,7 @@ import {
   UnitId,
 } from '../types';
 
-export const TROOP_KEYS: TroopKey[] = ['blade', 'archer', 'lancer', 'mortar', 'frostbow'];
+export const TROOP_KEYS: TroopKey[] = ['blade', 'spear', 'lancer', 'archer', 'mortar'];
 export const HERO_KEYS: HeroKey[] = [
   'zhaoyun',
   'guanyu',
@@ -18,13 +20,15 @@ export const HERO_KEYS: HeroKey[] = [
   'shangxiang',
 ];
 
-export const MAX_TILE_TIER = 4;
+/** 5 Classic Rarity Ranks: 1(White) -> 2(Green) -> 3(Blue) -> 4(Purple) -> 5(Orange/Gold) */
+export const MAX_TILE_TIER = 5;
 
 interface HeroThemeSpec {
   accent: string;
   frame: string;
   crest: string;
   synergy: SynergyTag;
+  rangeShape: RangeShape;
   pattern: UnitDef['pattern'];
   awakenedDamage: number;
   interval: number;
@@ -43,12 +47,13 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#1d5b79',
     crest: '◈',
     synergy: 'vanguard',
+    rangeShape: 'hero_melee_2',
     pattern: 'dragon_sweep',
-    awakenedDamage: 68,
-    interval: 0.74,
-    range: 2.75,
-    projSpeed: 11.2,
-    aoe: 1.7,
+    awakenedDamage: 74,
+    interval: 0.72,
+    range: 2.35,
+    projSpeed: 11.8,
+    aoe: 1.65,
     skillEveryN: 4,
   },
   guanyu: {
@@ -56,12 +61,13 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#1b4332',
     crest: '☾',
     synergy: 'vanguard',
+    rangeShape: 'hero_melee_2',
     pattern: 'jade_execute',
-    awakenedDamage: 94,
-    interval: 1.12,
-    range: 2.55,
-    projSpeed: 9.4,
-    aoe: 1.65,
+    awakenedDamage: 102,
+    interval: 1.08,
+    range: 2.25,
+    projSpeed: 9.6,
+    aoe: 1.6,
     skillEveryN: 3,
   },
   zhangfei: {
@@ -69,13 +75,14 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#7f2b0a',
     crest: '❖',
     synergy: 'vanguard',
+    rangeShape: 'hero_melee_2',
     pattern: 'roar_quake',
-    awakenedDamage: 70,
-    interval: 0.98,
-    range: 2.35,
+    awakenedDamage: 76,
+    interval: 0.96,
+    range: 2.2,
     projSpeed: 0,
     aoe: 2.15,
-    stunDur: 1.1,
+    stunDur: 1.15,
     skillEveryN: 4,
   },
   zhuge: {
@@ -83,10 +90,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#785914',
     crest: '☯',
     synergy: 'mystic',
+    rangeShape: 'hero_caster_3',
     pattern: 'chain_lightning',
-    awakenedDamage: 64,
-    interval: 1.05,
-    range: 3.7,
+    awakenedDamage: 68,
+    interval: 1.02,
+    range: 3.4,
     projSpeed: 14.0,
     skillEveryN: 3,
   },
@@ -95,15 +103,16 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#1e4e8c',
     crest: '✻',
     synergy: 'mystic',
+    rangeShape: 'hero_caster_3',
     pattern: 'lotus_blizzard',
-    awakenedDamage: 56,
-    interval: 0.96,
-    range: 3.4,
-    projSpeed: 9.0,
+    awakenedDamage: 58,
+    interval: 0.94,
+    range: 3.3,
+    projSpeed: 9.2,
     aoe: 1.55,
-    slow: 0.52,
+    slow: 0.5,
     slowDur: 2.6,
-    stunDur: 0.85,
+    stunDur: 0.9,
     skillEveryN: 4,
   },
   shangxiang: {
@@ -111,17 +120,19 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     frame: '#7a1818',
     crest: '✦',
     synergy: 'marksman',
+    rangeShape: 'hero_global_4',
     pattern: 'phoenix_volley',
-    awakenedDamage: 48,
-    interval: 0.66,
-    range: 3.8,
-    projSpeed: 12.4,
+    awakenedDamage: 52,
+    interval: 0.65,
+    range: 4.5,
+    projSpeed: 12.8,
     skillEveryN: 4,
   },
 };
 
 function buildUnitRegistry(): Record<UnitId, UnitDef> {
   const reg: Partial<Record<UnitId, UnitDef>> = {
+    // 1. 刀兵: Highest base cleave damage, STRICT 1-cell adjacent (3x3) melee range!
     blade: {
       id: 'blade',
       category: 'troop',
@@ -130,27 +141,35 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'vanguard',
+      rangeShape: 'melee_1',
       pattern: 'cleave',
-      baseDamage: 26,
-      attackInterval: 0.9,
-      rangeCells: 2.15,
+      baseDamage: 56,
+      attackInterval: 0.88,
+      minRangeCells: 0,
+      rangeCells: 1.42,
       projectileSpeed: 0,
-      aoeRadiusCells: 1.45,
+      aoeRadiusCells: 1.35,
     },
-    archer: {
-      id: 'archer',
+
+    // 2. 枪兵: Straight 2-cell cross corridors + multi-target line pierce!
+    spear: {
+      id: 'spear',
       category: 'troop',
-      spriteKey: 'unit_archer',
-      accentColor: '#386641',
+      spriteKey: 'unit_spear',
+      accentColor: '#b91c1c',
       frameColor: '#5c4b3c',
       crestSymbol: '',
-      synergy: 'marksman',
-      pattern: 'arrow',
-      baseDamage: 21,
-      attackInterval: 0.62,
-      rangeCells: 3.45,
-      projectileSpeed: 11.5,
+      synergy: 'vanguard',
+      rangeShape: 'spear_line_2',
+      pattern: 'pierce_lance',
+      baseDamage: 34,
+      attackInterval: 0.82,
+      minRangeCells: 0,
+      rangeCells: 2.45,
+      projectileSpeed: 11.2,
     },
+
+    // 3. 骑兵: Agile 2-cell diamond zone, fast tempo wave clearer!
     lancer: {
       id: 'lancer',
       category: 'troop',
@@ -159,12 +178,34 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'vanguard',
-      pattern: 'pierce_lance',
-      baseDamage: 30,
-      attackInterval: 1.06,
-      rangeCells: 2.85,
-      projectileSpeed: 9.6,
+      rangeShape: 'cavalry_2',
+      pattern: 'cavalry_slash',
+      baseDamage: 31,
+      attackInterval: 0.68,
+      minRangeCells: 0,
+      rangeCells: 2.25,
+      projectileSpeed: 10.5,
     },
+
+    // 4. 弓兵: Deep inner-core 3-cell (7x7) long-range single-target Boss sniper!
+    archer: {
+      id: 'archer',
+      category: 'troop',
+      spriteKey: 'unit_archer',
+      accentColor: '#386641',
+      frameColor: '#5c4b3c',
+      crestSymbol: '',
+      synergy: 'marksman',
+      rangeShape: 'archer_3',
+      pattern: 'arrow',
+      baseDamage: 24,
+      attackInterval: 0.58,
+      minRangeCells: 0,
+      rangeCells: 3.45,
+      projectileSpeed: 12.2,
+    },
+
+    // 5. 神威炮: Siege ring (2..3 cells away, 1-cell melee blindspot!), heavy armor-piercing AoE!
     mortar: {
       id: 'mortar',
       category: 'troop',
@@ -173,73 +214,62 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       frameColor: '#5c4b3c',
       crestSymbol: '',
       synergy: 'mystic',
+      rangeShape: 'mortar_ring_3',
       pattern: 'mortar_aoe',
-      baseDamage: 42,
-      attackInterval: 1.45,
-      rangeCells: 3.25,
-      projectileSpeed: 7.5,
-      aoeRadiusCells: 1.38,
-    },
-    frostbow: {
-      id: 'frostbow',
-      category: 'troop',
-      spriteKey: 'unit_frostbow',
-      accentColor: '#2c7da0',
-      frameColor: '#5c4b3c',
-      crestSymbol: '',
-      synergy: 'marksman',
-      pattern: 'frost_bolt',
-      baseDamage: 19,
-      attackInterval: 0.84,
-      rangeCells: 3.15,
-      projectileSpeed: 10.2,
-      slowFactor: 0.42,
-      slowDuration: 2.2,
+      baseDamage: 48,
+      attackInterval: 1.42,
+      minRangeCells: 1.45,
+      rangeCells: 3.35,
+      projectileSpeed: 7.8,
+      aoeRadiusCells: 1.35,
     },
   };
 
   for (const h of HERO_KEYS) {
     const sp = HERO_SPECS[h];
-    const soulId: UnitId = `soul_${h}`;
-    const weapId: UnitId = `weap_${h}`;
+    const s1: UnitId = `shard1_${h}`;
+    const s2: UnitId = `shard2_${h}`;
     const heroId: UnitId = `hero_${h}`;
 
-    // Unawakened Hero Soul Tile (Part A — fights with medium martial strikes, waiting for Weapon!)
-    reg[soulId] = {
-      id: soulId,
-      category: 'soul',
+    // Hero Shard I (Left Portrait Tally ◐ — needs Shard II ◑ to summon Hero!)
+    reg[s1] = {
+      id: s1,
+      category: 'shard1',
       heroKey: h,
       spriteKey: `soul_${h}`,
       accentColor: sp.accent,
       frameColor: sp.frame,
       crestSymbol: sp.crest,
       synergy: sp.synergy,
-      pattern: sp.synergy === 'vanguard' ? 'cleave' : 'spirit_strike',
-      baseDamage: Math.round(sp.awakenedDamage * 0.44),
-      attackInterval: sp.interval * 1.12,
-      rangeCells: Math.max(2.15, sp.range - 0.35),
-      projectileSpeed: 10.2,
-      aoeRadiusCells: 1.35,
+      rangeShape: 'shard_sentry',
+      pattern: 'spirit_strike',
+      baseDamage: 14,
+      attackInterval: 1.25,
+      minRangeCells: 0,
+      rangeCells: 1.5,
+      projectileSpeed: 9.5,
     };
 
-    // Unawakened Divine Weapon Tile (Part B — fires spirit qi bolts, waiting for Soul!)
-    reg[weapId] = {
-      id: weapId,
-      category: 'weapon',
+    // Hero Shard II (Right Totem Crest Tally ◑ — needs Shard I ◐ to summon Hero!)
+    reg[s2] = {
+      id: s2,
+      category: 'shard2',
       heroKey: h,
-      spriteKey: `weap_${h}`,
+      spriteKey: `crest_${h}`,
       accentColor: sp.accent,
       frameColor: sp.frame,
       crestSymbol: sp.crest,
       synergy: sp.synergy,
+      rangeShape: 'shard_sentry',
       pattern: 'spirit_strike',
-      baseDamage: Math.round(sp.awakenedDamage * 0.42),
-      attackInterval: sp.interval * 1.1,
-      rangeCells: sp.range,
-      projectileSpeed: 11.0,
+      baseDamage: 14,
+      attackInterval: 1.25,
+      minRangeCells: 0,
+      rangeCells: 1.5,
+      projectileSpeed: 9.5,
     };
 
-    // Fused Awakened Legendary General (Soul + Weapon -> True Hero!)
+    // Full Awakened Legendary General (Shard I + Shard II -> Hero!)
     reg[heroId] = {
       id: heroId,
       category: 'awakened',
@@ -249,9 +279,11 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       frameColor: '#c59b27',
       crestSymbol: sp.crest,
       synergy: sp.synergy,
+      rangeShape: sp.rangeShape,
       pattern: sp.pattern,
       baseDamage: sp.awakenedDamage,
       attackInterval: sp.interval,
+      minRangeCells: 0,
       rangeCells: sp.range,
       projectileSpeed: sp.projSpeed,
       aoeRadiusCells: sp.aoe,
@@ -268,9 +300,88 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
 export const UNITS: Record<UnitId, UnitDef> = buildUnitRegistry();
 
 /**
- * Determines if two tiles can combine:
- * - 'awaken': Matching Hero Soul + Divine Weapon (any tier!) -> Fuses into Awakened Hero!
- * - 'merge': Identical UnitId + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
+ * Exact Grid-Cell Range Evaluator:
+ * Used BOTH to highlight exact targetable tiles on the 8x10 board AND to validate enemy targeting!
+ */
+export function isCellInUnitRange(
+  def: UnitDef,
+  tier: number,
+  uCol: number,
+  uRow: number,
+  tCol: number,
+  tRow: number
+): boolean {
+  const dc = Math.abs(tCol - uCol);
+  const dr = Math.abs(tRow - uRow);
+  const cheb = Math.max(dc, dr);
+  const manh = dc + dr;
+
+  switch (def.rangeShape) {
+    case 'melee_1':
+      // Strict 3x3 adjacent cells; Tier 4+ unlocks orthogonal 2-cell reach
+      if (cheb <= 1) return true;
+      if (tier >= 4 && ((dc === 0 && dr <= 2) || (dr === 0 && dc <= 2))) return true;
+      return false;
+
+    case 'spear_line_2': {
+      // Straight cross corridors (2 cells, 3 cells at Tier 3+) + adjacent 3x3
+      const maxLine = tier >= 3 ? 3 : 2;
+      return (dc === 0 && dr <= maxLine) || (dr === 0 && dc <= maxLine) || cheb <= 1;
+    }
+
+    case 'cavalry_2':
+      // Agile 2-cell rounded diamond around unit
+      return cheb <= 2 && manh <= (tier >= 4 ? 4 : 3);
+
+    case 'archer_3':
+      // Long 3-cell (7x7) inner-core coverage (4 cells orthogonal at Tier 5)
+      if (cheb <= 3) return true;
+      if (tier >= 5 && ((dc === 0 && dr <= 4) || (dr === 0 && dc <= 4))) return true;
+      return false;
+
+    case 'mortar_ring_3':
+      // 1-cell melee blindspot! Shells 2..3 cells away
+      return cheb >= 2 && cheb <= 3;
+
+    case 'shard_sentry':
+      return cheb <= 1;
+
+    case 'hero_melee_2':
+      return cheb <= 2;
+
+    case 'hero_caster_3':
+      return cheb <= 3;
+
+    case 'hero_global_4':
+      return cheb <= 5;
+  }
+}
+
+export function getTargetableGridCells(
+  def: UnitDef,
+  tier: number,
+  uCol: number,
+  uRow: number,
+  cols: number,
+  rStart: number,
+  rEnd: number
+): GridPoint[] {
+  const out: GridPoint[] = [];
+  for (let r = rStart; r < rEnd; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (c === uCol && r === uRow) continue;
+      if (isCellInUnitRange(def, tier, uCol, uRow, c, r)) {
+        out.push({ col: c, row: r });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Checks if two tiles can combine:
+ * 1) 'awaken': Matching Hero Shard I (◐) + Hero Shard II (◑) -> Awakened General!
+ * 2) 'merge': Identical UnitId + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
  */
 export function checkTileCombine(
   a: TileUnit,
@@ -281,19 +392,17 @@ export function checkTileCombine(
   const defA = UNITS[a.unitId];
   const defB = UNITS[b.unitId];
 
-  // 1) 2-Piece Hero Synthesis: Soul + Weapon of the same HeroKey!
   if (
     defA.heroKey &&
     defA.heroKey === defB.heroKey &&
-    ((defA.category === 'soul' && defB.category === 'weapon') ||
-      (defA.category === 'weapon' && defB.category === 'soul'))
+    ((defA.category === 'shard1' && defB.category === 'shard2') ||
+      (defA.category === 'shard2' && defB.category === 'shard1'))
   ) {
     const heroId: UnitId = `hero_${defA.heroKey}`;
     const fusedTier = Math.min(MAX_TILE_TIER, Math.max(a.tier, b.tier));
     return { mode: 'awaken', resultId: heroId, resultTier: fusedTier };
   }
 
-  // 2) Standard Same-Unit + Same-Tier Upgrade Merge
   if (a.unitId === b.unitId && a.tier === b.tier && a.tier < MAX_TILE_TIER) {
     return { mode: 'merge', resultId: a.unitId, resultTier: a.tier + 1 };
   }
@@ -302,15 +411,11 @@ export function checkTileCombine(
 }
 
 export function getTierDamageMultiplier(tier: number): number {
-  return Math.pow(1.92, tier - 1);
+  return Math.pow(1.85, tier - 1);
 }
 
 export function getTierSpeedMultiplier(tier: number): number {
-  return 1 + (tier - 1) * 0.14;
-}
-
-export function getTierRangeBonus(tier: number): number {
-  return (tier - 1) * 0.16;
+  return 1 + (tier - 1) * 0.13;
 }
 
 export function computeSynergies(boardUnits: (TileUnit | null)[]): {
@@ -327,6 +432,7 @@ export function computeSynergies(boardUnits: (TileUnit | null)[]): {
   for (const u of boardUnits) {
     if (!u) continue;
     const def = UNITS[u.unitId];
+    if (def.category === 'shard1' || def.category === 'shard2') continue;
     uniqueTypes.add(def.heroKey || def.id);
     if (def.category === 'awakened' && def.heroKey) {
       uniqueAwakenedHeroes.add(def.heroKey);

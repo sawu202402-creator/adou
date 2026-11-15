@@ -3,9 +3,10 @@ import {
   checkTileCombine,
   computeSynergies,
   getTierDamageMultiplier,
-  getTierRangeBonus,
   getTierSpeedMultiplier,
   HERO_KEYS,
+  isCellInUnitRange,
+  MAX_TILE_TIER,
   TROOP_KEYS,
   UNITS,
 } from '../data/units';
@@ -14,6 +15,7 @@ import { SaveManager } from '../meta/SaveManager';
 import { PlatformSDK } from '../platform/PlatformSDK';
 import {
   ActiveSynergyInfo,
+  BossArchetype,
   CellType,
   DuelLane,
   EnemyKind,
@@ -24,6 +26,7 @@ import {
   StageDef,
   TileUnit,
   UnitId,
+  WeaponId,
 } from '../types';
 
 export interface LaneBarricade {
@@ -39,16 +42,18 @@ export interface EnemyEntity {
   id: number;
   side: SideOwner;
   kind: EnemyKind;
+  bossType: BossArchetype;
   isBoss: boolean;
   isMiniBoss: boolean;
   waypointIndex: number;
-  segProgress: number; // 0..1 between waypoint[i] and waypoint[i+1]
-  x: number; // in grid space (col + 0.5)
-  y: number; // in grid space (row + 0.5)
+  segProgress: number;
+  x: number;
+  y: number;
   hp: number;
   maxHp: number;
-  speed: number; // grid cells per sec
-  armor: number; // flat dmg reduction ratio 0..0.42
+  speed: number;
+  armor: number;
+  armorBrokenTimer: number;
   rewardRations: number;
   hitFlash: number;
   slowTimer: number;
@@ -57,8 +62,10 @@ export interface EnemyEntity {
   burnTimer: number;
   burnDps: number;
   bashTimer: number;
-  auraTimer: number;
-  radius: number; // in grid units
+  bossSkillTimer: number;
+  healChantUsed: boolean;
+  regenTimer: number;
+  radius: number;
 }
 
 export interface ProjectileEntity {
@@ -74,7 +81,6 @@ export interface ProjectileEntity {
     | 'arrow'
     | 'lance'
     | 'mortar'
-    | 'frost'
     | 'spirit'
     | 'dragon'
     | 'glaive'
@@ -82,6 +88,7 @@ export interface ProjectileEntity {
     | 'phoenix';
   color: string;
   damage: number;
+  bossBonusMult: number;
   aoeRadius: number;
   pierceLeft: number;
   hitIds: Set<number>;
@@ -103,11 +110,10 @@ export interface VisualEffect {
     | 'merge_burst'
     | 'awaken_pillar'
     | 'dragon_ult'
-    | 'heal_ring';
+    | 'heal_ring'
+    | 'chest_drop';
   x: number;
   y: number;
-  x2?: number;
-  y2?: number;
   points?: { x: number; y: number }[];
   radius: number;
   color: string;
@@ -169,6 +175,7 @@ export interface BoardLayoutMetrics {
 interface SpawnOrder {
   delay: number;
   kind: EnemyKind;
+  bossType: BossArchetype;
   isBoss: boolean;
   isMiniBoss: boolean;
 }
@@ -182,15 +189,13 @@ export interface RunState {
   phaseTimer: number;
 
   cells: CellType[][];
-  board: (TileUnit | null)[][]; // [row][col]
-  bench: (TileUnit | null)[]; // 5 player camp slots
+  board: (TileUnit | null)[][];
+  bench: (TileUnit | null)[];
 
-  // Player stats
   hearts: number;
   maxHearts: number;
   playerBarricade: LaneBarricade;
 
-  // Rival AI stats
   aiHearts: number;
   aiMaxHearts: number;
   aiCollapsed: boolean;
@@ -199,23 +204,22 @@ export interface RunState {
   aiExcavated: number;
   aiFortifiedOnce: boolean;
 
-  // Economy & tools
   rations: number;
   passiveRationAcc: number;
   recruitCost: number;
   recruitCount: number;
   farmLevel: number;
-  decreeLevel: number;
+  exorciseCooldown: number;
   shovels: number;
   shovelMode: boolean;
+  talismanMode: boolean; // 神兵符 target selection mode!
+  meteorTimer: number;
 
-  // Ultimate & Ad flags
-  ultCharge: number; // 0..100
+  ultCharge: number; // 0..100 for 神兵符 (Divine Upgrade Talisman)
   reviveUsed: boolean;
   heroScrollAdUsed: boolean;
   supplyAdCooldown: number;
 
-  // Entities
   spawnQueue: SpawnOrder[];
   spawnTimer: number;
   enemies: EnemyEntity[];
@@ -223,14 +227,13 @@ export interface RunState {
   effects: VisualEffect[];
   floatTexts: FloatingText[];
 
-  // Synergies
   synergies: ActiveSynergyInfo[];
   synBonuses: ReturnType<typeof computeSynergies>;
   aiSynBonuses: ReturnType<typeof computeSynergies>;
 
-  // Telemetry & UI feedback
   kills: number;
   merges: number;
+  droppedShards: WeaponId[];
   bannerText: string;
   bannerTimer: number;
   screenShake: number;
@@ -307,8 +310,6 @@ export class GameEngine {
     }
 
     const baseBarricadeHp = Math.round(280 * meta.barricadeHpMult);
-    const aiBarricadeHp = 290;
-
     const emptySyn = computeSynergies([]);
 
     this.state = {
@@ -334,18 +335,18 @@ export class GameEngine {
         shakeTimer: 0,
       },
 
-      aiHearts: 10,
-      aiMaxHearts: 10,
+      aiHearts: 9,
+      aiMaxHearts: 9,
       aiCollapsed: false,
       aiBarricade: {
         side: 'ai',
         col: stage.aiLane.barricadeCell.col,
         row: stage.aiLane.barricadeCell.row,
-        hp: aiBarricadeHp,
-        maxHp: aiBarricadeHp,
+        hp: 290,
+        maxHp: 290,
         shakeTimer: 0,
       },
-      aiActionTimer: 1.6,
+      aiActionTimer: 1.8,
       aiExcavated: 0,
       aiFortifiedOnce: false,
 
@@ -354,11 +355,13 @@ export class GameEngine {
       recruitCost: 12,
       recruitCount: 0,
       farmLevel: 1,
-      decreeLevel: 1,
+      exorciseCooldown: 0,
       shovels: meta.startShovels,
       shovelMode: false,
+      talismanMode: false,
+      meteorTimer: 7.5,
 
-      ultCharge: 35,
+      ultCharge: 45,
       reviveUsed: false,
       heroScrollAdUsed: false,
       supplyAdCooldown: 0,
@@ -376,6 +379,7 @@ export class GameEngine {
 
       kills: 0,
       merges: 0,
+      droppedShards: [],
       bannerText: '',
       bannerTimer: 0,
       screenShake: 0,
@@ -383,17 +387,17 @@ export class GameEngine {
       selectedUnitInfo: null,
     };
 
-    // Give Player starter War-Camp tiles (including 1 Hero Soul so they immediately see the 2-piece crest system!)
-    const starterHero: HeroKey = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+    // Starter War-Camp tiles: 1 Blade (1-cell melee), 1 Hero Shard I (◐), 1 Archer (3-cell inner sniper)
+    const starterHero: HeroKey = 'zhaoyun';
     this.state.bench[0] = this.makeTile('blade', 1);
-    this.state.bench[1] = this.makeTile(`soul_${starterHero}`, 1);
+    this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
     this.state.bench[2] = this.makeTile('archer', 1);
 
-    // Seed Player 1 frontline guard on a deploy cell
+    // Place 1 starter Cavalry on a deploy pedestal adjacent to road
     const playerDeploys = this.getSideCells('player', 'deploy');
     if (playerDeploys.length > 0) {
-      const p0 = playerDeploys[1] || playerDeploys[0];
-      this.state.board[p0.row][p0.col] = this.makeTile('lancer', 1);
+      const roadAdj = playerDeploys[playerDeploys.length - 1];
+      this.state.board[roadAdj.row][roadAdj.col] = this.makeTile('lancer', 1);
     }
 
     // Seed Rival AI 2 starting tiles on Top Half deploy cells
@@ -412,11 +416,12 @@ export class GameEngine {
       uid: this.nextUid++,
       unitId,
       tier,
-      cooldown: Math.random() * 0.35,
+      cooldown: Math.random() * 0.3,
       attackCount: 0,
       recoilTimer: 0,
       recoilAngle: 0,
       mergeAnimTimer: 0.25,
+      frenzyTimer: 0,
     };
   }
 
@@ -448,7 +453,6 @@ export class GameEngine {
     const availH = Math.max(260, viewH - topHudH - bottomDockH);
     const availW = Math.max(260, viewW - 18);
 
-    // Reserve rows + 0.24 gap + 1.04 bench height
     const cellSize = Math.max(
       26,
       Math.min(64, Math.floor(Math.min(availW / cols, availH / (rows + 1.32))))
@@ -465,7 +469,6 @@ export class GameEngine {
     const boardY = topHudH + Math.floor(extraY * 0.42);
     const dividerY = boardY + dividerRow * cellSize;
 
-    // Tent + 5 bench slots centered under the board
     const tentW = benchTileSize;
     const totalBenchRowW = tentW + benchGap * 1.4 + 5 * benchTileSize + 4 * benchGap;
     const rowStartX = Math.floor((viewW - totalBenchRowW) / 2);
@@ -496,24 +499,19 @@ export class GameEngine {
     const s = this.state;
     if (!s) return;
 
-    if (s.bannerTimer > 0) {
-      s.bannerTimer = Math.max(0, s.bannerTimer - dt);
-    }
-    if (s.screenShake > 0) {
-      s.screenShake = Math.max(0, s.screenShake - dt * 2.8);
-    }
+    if (s.bannerTimer > 0) s.bannerTimer = Math.max(0, s.bannerTimer - dt);
+    if (s.screenShake > 0) s.screenShake = Math.max(0, s.screenShake - dt * 2.8);
 
     if (this.paused || this.modalPaused || s.wavePhase === 'ended' || s.wavePhase === 'revive_wait') {
       return;
     }
 
-    if (s.supplyAdCooldown > 0) {
-      s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
-    }
+    if (s.supplyAdCooldown > 0) s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
+    if (s.exorciseCooldown > 0) s.exorciseCooldown = Math.max(0, s.exorciseCooldown - dt);
 
-    // Passive Granary grain income
+    // Passive Granary Steamed Bun income
     const meta = SaveManager.getEffectiveBonuses();
-    const rationsPerSec = 1.05 + (s.farmLevel - 1) * 0.58 + meta.passiveRationBonus;
+    const rationsPerSec = 1.05 + (s.farmLevel - 1) * 0.62 + meta.passiveRationBonus;
     s.passiveRationAcc += rationsPerSec * dt;
     if (s.passiveRationAcc >= 1) {
       const whole = Math.floor(s.passiveRationAcc);
@@ -521,23 +519,27 @@ export class GameEngine {
       s.passiveRationAcc -= whole;
     }
 
-    // Passive Ultimate charge
-    s.ultCharge = Math.min(100, s.ultCharge + dt * 1.65);
+    // Passive 神兵符 charge
+    s.ultCharge = Math.min(100, s.ultCharge + dt * 2.1);
 
-    // Wave state machine
+    // Passive Meteor Tome Skill (天降陨石)
+    if (meta.meteorLevel > 0 && s.wavePhase === 'combat') {
+      s.meteorTimer -= dt;
+      if (s.meteorTimer <= 0) {
+        s.meteorTimer = 10.2;
+        this.triggerMeteorTome(s, meta.meteorLevel, meta.damageMult);
+      }
+    }
+
     this.updateWaveFlow(s, dt);
 
-    // Simulated Rival AI on Top Half (rows 0..4)
     if (!s.aiCollapsed) {
       this.updateRivalAI(s, dt);
     }
 
-    // Units fire on both halves
     this.updateBoardUnits(s, dt);
-
-    // Projectiles, Enemies, Effects
     this.updateProjectiles(s, dt);
-    this.updateEnemies(s, dt);
+    this.updateEnemies(s, dt, meta.roadSlowRatio);
     this.updateEffectsAndTexts(s, dt);
 
     if (s.playerBarricade.shakeTimer > 0) {
@@ -547,6 +549,34 @@ export class GameEngine {
       s.aiBarricade.shakeTimer = Math.max(0, s.aiBarricade.shakeTimer - dt);
     }
   }
+
+  private triggerMeteorTome(s: RunState, meteorLvl: number, dmgMult: number): void {
+    const playerFoes = s.enemies.filter((e) => e.side === 'player' && e.hp > 0);
+    if (playerFoes.length === 0) return;
+
+    SoundFX.attack('cannon');
+    const count = Math.min(meteorLvl, playerFoes.length);
+    for (let i = 0; i < count; i++) {
+      const tgt = playerFoes[Math.floor(Math.random() * playerFoes.length)];
+      const mDmg = (95 + s.wave * 26) * dmgMult * (1 + (meteorLvl - 1) * 0.2);
+      s.effects.push({
+        kind: 'explosion',
+        x: tgt.x,
+        y: tgt.y,
+        radius: 1.55,
+        color: '#f97316',
+        timer: 0,
+        duration: 0.42,
+      });
+      for (const e of s.enemies) {
+        if (e.side === 'player' && Math.hypot(e.x - tgt.x, e.y - tgt.y) <= 1.55) {
+          this.damageEnemy(s, e, mDmg, true, '#fb923c');
+        }
+      }
+    }
+  }
+
+  // ==================== WAVE & DISTINCT BOSS SPAWNING ====================
 
   private updateWaveFlow(s: RunState, dt: number): void {
     if (s.wavePhase === 'prep' || s.wavePhase === 'intermission') {
@@ -576,7 +606,7 @@ export class GameEngine {
           } else {
             s.rations += 14 + s.farmLevel * 3;
             s.wavePhase = 'intermission';
-            s.phaseTimer = 3.2;
+            s.phaseTimer = 3.0;
           }
         }
       }
@@ -592,8 +622,8 @@ export class GameEngine {
     }
 
     const w = s.wave;
-    const isBossWave = w % 10 === 0;
-    const isMiniBossWave = !isBossWave && w % 5 === 0;
+    const isFinalBossWave = w % 10 === 0;
+    const isEliteBossWave = !isFinalBossWave && w % 5 === 0;
 
     const queue: SpawnOrder[] = [];
     const totalCount = 6 + Math.floor(w * 2.1);
@@ -601,26 +631,48 @@ export class GameEngine {
     for (let i = 0; i < totalCount; i++) {
       let kind: EnemyKind = 'grunt';
       const roll = Math.random();
-      if (w >= 3 && roll < 0.24) {
-        kind = 'shield';
-      } else if (w >= 2 && roll < 0.54) {
-        kind = 'wolf';
-      }
-      const gap = Math.max(0.36, 1.08 - w * 0.032) * (kind === 'wolf' ? 0.78 : 1.0);
-      queue.push({ delay: i === 0 ? 0.2 : gap, kind, isBoss: false, isMiniBoss: false });
+      if (w >= 3 && roll < 0.25) kind = 'shield';
+      else if (w >= 2 && roll < 0.55) kind = 'wolf';
+
+      const gap = Math.max(0.36, 1.06 - w * 0.03) * (kind === 'wolf' ? 0.78 : 1.0);
+      queue.push({ delay: i === 0 ? 0.2 : gap, kind, bossType: 'none', isBoss: false, isMiniBoss: false });
     }
 
-    if (isMiniBossWave) {
-      queue.push({ delay: 1.1, kind: 'shield', isBoss: false, isMiniBoss: true });
-    }
+    const dict = t();
 
-    if (isBossWave) {
-      queue.push({ delay: 1.35, kind: 'lubu', isBoss: true, isMiniBoss: false });
+    if (isEliteBossWave) {
+      // Wave 5 / 15 / 25: Sorcerer Zhang Bao (summons Yellow Turban raiders & drops Weapon Shard!)
+      queue.push({
+        delay: 1.2,
+        kind: 'zhangjiao',
+        bossType: 'zhangbao',
+        isBoss: false,
+        isMiniBoss: true,
+      });
       SoundFX.alarm();
-      this.showBanner(t().bannerBoss, 3.2);
+      const bInfo = dict.bossNames.zhangbao;
+      this.showBanner(dict.bannerBossIncoming(bInfo.name, bInfo.trait), 3.4);
+    } else if (isFinalBossWave) {
+      // Wave 10 / 20 / 30: Stage Final Boss (Zhang Jiao on Stage 2 / even 20s, Lu Bu on Stage 1&3)
+      const bType: 'lubu' | 'zhangjiao' =
+        w === 10
+          ? s.stage.finalBoss
+          : (w / 10) % 2 === 0
+            ? 'zhangjiao'
+            : 'lubu';
+      queue.push({
+        delay: 1.4,
+        kind: bType,
+        bossType: bType,
+        isBoss: true,
+        isMiniBoss: false,
+      });
+      SoundFX.alarm();
+      const bInfo = dict.bossNames[bType];
+      this.showBanner(dict.bannerBossIncoming(bInfo.name, bInfo.trait), 3.6);
     } else {
       SoundFX.recruit();
-      this.showBanner(t().bannerWaveStart(w), 2.1);
+      this.showBanner(dict.bannerWaveStart(w), 2.0);
     }
 
     s.spawnQueue = queue;
@@ -641,40 +693,46 @@ export class GameEngine {
     order: SpawnOrder
   ): void {
     const w = s.wave;
-    const stageMult = 1 + s.stage.index * 0.2;
-    const waveMult = Math.pow(1.21, w - 1) * stageMult;
+    const stageMult = 1 + s.stage.index * 0.18;
+    const waveMult = Math.pow(1.2, w - 1) * stageMult;
 
-    let hp = 68 * waveMult;
+    let hp = 66 * waveMult;
     let speed = 0.92;
     let armor = 0;
     let reward = 3;
     let radius = 0.3;
 
     if (order.kind === 'wolf') {
-      hp = 46 * waveMult;
+      hp = 45 * waveMult;
       speed = 1.48;
       reward = 3;
       radius = 0.28;
     } else if (order.kind === 'shield') {
-      hp = 138 * waveMult;
+      hp = 136 * waveMult;
       speed = 0.68;
-      armor = 0.28;
+      armor = 0.3;
       reward = 5;
       radius = 0.34;
-    } else if (order.kind === 'lubu') {
-      hp = 820 * waveMult;
-      speed = 0.56;
-      armor = 0.22;
-      reward = 35;
-      radius = 0.44;
     }
 
-    if (order.isMiniBoss) {
-      hp *= 2.85;
-      speed = 0.58;
-      armor = 0.32;
-      reward = 18;
+    if (order.bossType === 'zhangbao') {
+      hp = 420 * waveMult;
+      speed = 0.56;
+      armor = 0.15;
+      reward = 22;
       radius = 0.4;
+    } else if (order.bossType === 'zhangjiao') {
+      hp = 760 * waveMult;
+      speed = 0.54;
+      armor = 0.18;
+      reward = 40;
+      radius = 0.44;
+    } else if (order.bossType === 'lubu') {
+      hp = 880 * waveMult;
+      speed = 0.58;
+      armor = 0.36;
+      reward = 45;
+      radius = 0.45;
     }
 
     const wp0 = lane.waypoints[0];
@@ -682,6 +740,7 @@ export class GameEngine {
       id: this.nextEnemyId++,
       side,
       kind: order.kind,
+      bossType: order.bossType,
       isBoss: order.isBoss,
       isMiniBoss: order.isMiniBoss,
       waypointIndex: 0,
@@ -692,6 +751,7 @@ export class GameEngine {
       maxHp: hp,
       speed,
       armor,
+      armorBrokenTimer: 0,
       rewardRations: reward,
       hitFlash: 0,
       slowTimer: 0,
@@ -700,7 +760,9 @@ export class GameEngine {
       burnTimer: 0,
       burnDps: 0,
       bashTimer: 0,
-      auraTimer: 0,
+      bossSkillTimer: 4.5,
+      healChantUsed: false,
+      regenTimer: 0,
       radius,
     });
   }
@@ -710,8 +772,6 @@ export class GameEngine {
   private updateRivalAI(s: RunState, dt: number): void {
     s.aiActionTimer -= dt;
     if (s.aiActionTimer > 0) return;
-
-    // Pace AI actions naturally (every 2.4s .. 3.5s)
     s.aiActionTimer = 2.4 + Math.random() * 1.1;
 
     const rMax = s.stage.dividerRow;
@@ -728,7 +788,7 @@ export class GameEngine {
       }
     }
 
-    // 1) Priority: Fuse matching Soul + Weapon into Awakened General!
+    // 1) Fuse matching Shard I + Shard II into Awakened General
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
@@ -737,16 +797,16 @@ export class GameEngine {
         if (res && res.mode === 'awaken') {
           s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier);
           s.board[a.row][a.col] = null;
-          this.spawnCombineFX(b.col + 0.5, b.row + 0.5, res.mode, res.resultId);
+          this.spawnCombineFX(b.col + 0.5, b.row + 0.5, 'awaken', res.resultId);
           const heroTxt = getUnitDisplayText(res.resultId);
-          this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.4);
+          this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.3);
           this.recalcSynergies();
           return;
         }
       }
     }
 
-    // 2) Priority: Merge identical same-tier units!
+    // 2) Merge identical same-tier units
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
@@ -762,8 +822,8 @@ export class GameEngine {
       }
     }
 
-    // 3) Occasionally excavate a locked cell on AI side as waves progress
-    const targetExcavations = Math.min(4, Math.floor(s.wave / 2));
+    // 3) Excavate outer-ring locked cells so AI melee units reach the road too!
+    const targetExcavations = Math.min(4, Math.floor((s.wave + 1) / 2));
     if (s.aiExcavated < targetExcavations) {
       const lockedCells = this.getSideCells('ai', 'locked');
       if (lockedCells.length > 0) {
@@ -783,37 +843,27 @@ export class GameEngine {
       }
     }
 
-    // 4) Emergency AI barricade repair once per match
-    if (
-      !s.aiFortifiedOnce &&
-      s.aiBarricade.hp < s.aiBarricade.maxHp * 0.3 &&
-      s.aiHearts <= 6
-    ) {
+    // 4) Emergency AI barricade repair once
+    if (!s.aiFortifiedOnce && s.aiBarricade.hp < s.aiBarricade.maxHp * 0.3 && s.aiHearts <= 5) {
       s.aiFortifiedOnce = true;
-      s.aiBarricade.hp = Math.min(s.aiBarricade.maxHp, s.aiBarricade.hp + s.aiBarricade.maxHp * 0.65);
+      s.aiBarricade.hp = Math.min(s.aiBarricade.maxHp, s.aiBarricade.hp + s.aiBarricade.maxHp * 0.6);
       s.aiHearts = Math.min(s.aiMaxHearts, s.aiHearts + 1);
-      s.effects.push({
-        kind: 'heal_ring',
-        x: s.stage.aiLane.vipCell.col + 0.5,
-        y: s.stage.aiLane.vipCell.row + 0.5,
-        radius: 0.9,
-        color: '#52b788',
-        timer: 0,
-        duration: 0.6,
-      });
       return;
     }
 
-    // 5) Conscript onto an empty AI deploy pedestal
+    // 5) Conscript smartly onto empty deploy cell (avoid placing 1-cell Blade far from road!)
     if (emptyDeploys.length > 0) {
       const slot = emptyDeploys[Math.floor(Math.random() * emptyDeploys.length)];
-      const unitId = this.rollUnitForSide('ai');
+      let unitId = this.rollUnitForSide('ai');
+      if (unitId === 'blade' && !this.cellHasRoadInMelee(s, 'ai', slot.col, slot.row)) {
+        unitId = 'archer';
+      }
       s.board[slot.row][slot.col] = this.makeTile(unitId, 1);
       this.recalcSynergies();
       return;
     }
 
-    // 6) If all AI deploy slots are full and deadlocked, cycle weakest T1 tile into a matching partner!
+    // 6) Anti-deadlock partner cycle
     const lowTiles = occupied.filter(
       (o) => o.unit.tier === 1 && UNITS[o.unit.unitId].category !== 'awakened'
     );
@@ -822,37 +872,46 @@ export class GameEngine {
       const partnerTarget = lowTiles[1].unit;
       const partnerDef = UNITS[partnerTarget.unitId];
       let replacementId: UnitId = partnerTarget.unitId;
-      if (partnerDef.category === 'soul' && partnerDef.heroKey) {
-        replacementId = `weap_${partnerDef.heroKey}`;
-      } else if (partnerDef.category === 'weapon' && partnerDef.heroKey) {
-        replacementId = `soul_${partnerDef.heroKey}`;
+      if (partnerDef.category === 'shard1' && partnerDef.heroKey) {
+        replacementId = `shard2_${partnerDef.heroKey}`;
+      } else if (partnerDef.category === 'shard2' && partnerDef.heroKey) {
+        replacementId = `shard1_${partnerDef.heroKey}`;
       }
       s.board[victim.row][victim.col] = this.makeTile(replacementId, 1);
       this.recalcSynergies();
     }
   }
 
-  // ==================== DRAFTING & SMART 2-TILE PAIRING ====================
-
-  public getHeroDraftChance(): number {
-    const s = this.state;
-    const meta = SaveManager.getEffectiveBonuses();
-    const decreeBonus = s ? (s.decreeLevel - 1) * 0.055 : 0;
-    return Math.min(0.58, 0.22 + meta.heroChanceBonus + decreeBonus);
+  private cellHasRoadInMelee(s: RunState, side: SideOwner, col: number, row: number): boolean {
+    const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
+    const rEnd = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
+    for (let r = Math.max(rStart, row - 1); r < Math.min(rEnd, row + 2); r++) {
+      for (let c = Math.max(0, col - 1); c < Math.min(s.stage.cols, col + 2); c++) {
+        if (s.cells[r][c] === 'path') return true;
+      }
+    }
+    return false;
   }
 
-  private findUnmatchedHeroPieces(side: SideOwner): { heroKey: HeroKey; missingId: UnitId }[] {
+  // ==================== DRAFTING & 2-SHARD HERO PAIRING ====================
+
+  public getHeroDraftChance(): number {
+    const meta = SaveManager.getEffectiveBonuses();
+    return Math.min(0.55, 0.24 + meta.heroChanceBonus);
+  }
+
+  private findUnmatchedHeroShards(side: SideOwner): { heroKey: HeroKey; missingId: UnitId }[] {
     const s = this.state;
     if (!s) return [];
 
-    const hasSoul = new Set<HeroKey>();
-    const hasWeap = new Set<HeroKey>();
+    const hasS1 = new Set<HeroKey>();
+    const hasS2 = new Set<HeroKey>();
 
     const scanUnit = (u: TileUnit | null) => {
       if (!u) return;
       const def = UNITS[u.unitId];
-      if (def.category === 'soul' && def.heroKey) hasSoul.add(def.heroKey);
-      else if (def.category === 'weapon' && def.heroKey) hasWeap.add(def.heroKey);
+      if (def.category === 'shard1' && def.heroKey) hasS1.add(def.heroKey);
+      else if (def.category === 'shard2' && def.heroKey) hasS2.add(def.heroKey);
     };
 
     const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
@@ -869,30 +928,30 @@ export class GameEngine {
 
     const unmatched: { heroKey: HeroKey; missingId: UnitId }[] = [];
     for (const h of HERO_KEYS) {
-      if (hasSoul.has(h) && !hasWeap.has(h)) {
-        unmatched.push({ heroKey: h, missingId: `weap_${h}` });
-      } else if (hasWeap.has(h) && !hasSoul.has(h)) {
-        unmatched.push({ heroKey: h, missingId: `soul_${h}` });
+      if (hasS1.has(h) && !hasS2.has(h)) {
+        unmatched.push({ heroKey: h, missingId: `shard2_${h}` });
+      } else if (hasS2.has(h) && !hasS1.has(h)) {
+        unmatched.push({ heroKey: h, missingId: `shard1_${h}` });
       }
     }
     return unmatched;
   }
 
   private rollUnitForSide(side: SideOwner): UnitId {
-    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.25;
+    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.24;
     if (Math.random() < heroChance) {
-      const unmatched = this.findUnmatchedHeroPieces(side);
-      // Smart Pity: 44% chance to roll the exact missing partner so 2-tile Hero Fusion feels rewarding!
-      if (unmatched.length > 0 && Math.random() < 0.44) {
+      const unmatched = this.findUnmatchedHeroShards(side);
+      // 46% smart pity to roll the missing second shard of an already-held Hero shard!
+      if (unmatched.length > 0 && Math.random() < 0.46) {
         return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
       }
       const h = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
-      return Math.random() < 0.5 ? `soul_${h}` : `weap_${h}`;
+      return Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
     }
     return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
   }
 
-  // ==================== PLAYER COMMANDS & ECONOMY ====================
+  // ==================== PLAYER COMMANDS & TACTICAL SKILLS ====================
 
   public recruitBench(): void {
     const s = this.state;
@@ -915,13 +974,13 @@ export class GameEngine {
         }
       }
     } else {
-      // Bench full -> Refresh all 5 bench slots!
       for (let i = 0; i < s.bench.length; i++) {
         s.bench[i] = this.makeTile(this.rollUnitForSide('player'), 1);
       }
     }
 
     s.selectedSource = null;
+    s.talismanMode = false;
     SoundFX.recruit();
   }
 
@@ -929,9 +988,8 @@ export class GameEngine {
     const s = this.state;
     if (!s) return;
 
-    const unmatched = this.findUnmatchedHeroPieces('player');
+    const unmatched = this.findUnmatchedHeroShards('player');
     if (unmatched.length > 0) {
-      // Spawn the exact missing counterpart so the player can immediately fuse!
       const pair = unmatched[0];
       const emptyIdx = s.bench.findIndex((b) => b === null);
       const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
@@ -942,7 +1000,6 @@ export class GameEngine {
       return;
     }
 
-    // Otherwise grant a matched [Soul + Weapon] pair onto the bench!
     const h = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
     const slots: number[] = [];
     for (let i = 0; i < s.bench.length; i++) {
@@ -951,8 +1008,8 @@ export class GameEngine {
     for (let i = 0; i < s.bench.length && slots.length < 2; i++) {
       if (!slots.includes(i)) slots.push(i);
     }
-    s.bench[slots[0]] = this.makeTile(`soul_${h}`, 1);
-    s.bench[slots[1]] = this.makeTile(`weap_${h}`, 1);
+    s.bench[slots[0]] = this.makeTile(`shard1_${h}`, 1);
+    s.bench[slots[1]] = this.makeTile(`shard2_${h}`, 1);
     SoundFX.merge(3, true);
     const hName = getUnitDisplayText(`hero_${h}`).name;
     this.showBanner(`◈ ${hName}`, 2.4);
@@ -981,27 +1038,127 @@ export class GameEngine {
     SoundFX.tileClack(true);
   }
 
-  public getDecreeCost(): number {
-    const s = this.state;
-    if (!s) return 24;
-    return 24 + (s.decreeLevel - 1) * 18;
+  public getExorciseCost(): number {
+    return 20;
   }
 
-  public upgradeDecree(): void {
+  /**
+   * Bottom Green Talisman Button: 【降妖】 (Exorcism Thunder — Boss Bane & Armor Shred!)
+   */
+  public castExorcism(): void {
     const s = this.state;
-    if (!s) return;
-    if (s.decreeLevel >= 5) {
-      this.showBanner(t().bannerMaxLevel, 1.4);
-      return;
-    }
-    const cost = this.getDecreeCost();
+    if (!s || s.exorciseCooldown > 0) return;
+
+    const cost = this.getExorciseCost();
     if (s.rations < cost) {
       this.showBanner(t().bannerNeedRations, 1.4);
       return;
     }
+
+    const foes = s.enemies
+      .filter((e) => e.side === 'player' && e.hp > 0)
+      .sort((a, b) => b.hp - a.hp);
+    if (foes.length === 0) return;
+
     s.rations -= cost;
-    s.decreeLevel += 1;
+    s.exorciseCooldown = 7.5;
+    s.screenShake = 0.4;
+    SoundFX.attack('thunder');
+    this.showBanner(t().bannerExorciseCast, 2.2);
+
+    const meta = SaveManager.getEffectiveBonuses();
+    const baseStrike = (145 + s.wave * 38) * meta.damageMult * meta.bossDmgMult;
+
+    const targets = foes.slice(0, 4);
+    const pts: { x: number; y: number }[] = [];
+    for (const foe of targets) {
+      pts.push({ x: foe.x, y: foe.y });
+      const mult = foe.isBoss || foe.isMiniBoss ? 1.55 : 1.0;
+      this.damageEnemy(s, foe, baseStrike * mult, true, '#4ade80');
+      foe.armorBrokenTimer = 6.0;
+      foe.stunTimer = Math.max(foe.stunTimer, 1.05);
+      // Interrupt Zhang Jiao's low-HP heal chant!
+      foe.regenTimer = 0;
+    }
+
+    if (pts.length >= 1) {
+      s.effects.push({
+        kind: 'awaken_pillar',
+        x: pts[0].x,
+        y: pts[0].y,
+        radius: 1.4,
+        color: '#22c55e',
+        timer: 0,
+        duration: 0.55,
+      });
+    }
+  }
+
+  /**
+   * Left Circle Orb: 【神兵符】 (Divine Upgrade Talisman — +1 Tier to chosen unit + Global Haste!)
+   */
+  public activateDivineTalisman(): void {
+    const s = this.state;
+    if (!s || s.ultCharge < 100) return;
+
+    // If clicked a second time while already in talismanMode, auto-apply to strongest board unit!
+    if (s.talismanMode) {
+      let best: { r: number; c: number; u: TileUnit } | null = null;
+      for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+        for (let c = 0; c < s.stage.cols; c++) {
+          const u = s.board[r][c];
+          if (!u) continue;
+          const isHero = UNITS[u.unitId].category === 'awakened';
+          if (
+            !best ||
+            (isHero && UNITS[best.u.unitId].category !== 'awakened') ||
+            (u.tier < MAX_TILE_TIER && u.tier > best.u.tier)
+          ) {
+            best = { r, c, u };
+          }
+        }
+      }
+      if (best) {
+        this.applyDivineTalismanToUnit(best.u, best.c + 0.5, best.r + 0.5);
+      } else {
+        s.talismanMode = false;
+      }
+      return;
+    }
+
+    s.talismanMode = true;
+    s.shovelMode = false;
+    s.selectedSource = null;
     SoundFX.tileClack(true);
+    this.showBanner(t().bannerTalismanPick, 2.8);
+  }
+
+  private applyDivineTalismanToUnit(u: TileUnit, gx: number, gy: number): void {
+    const s = this.state;
+    if (!s) return;
+
+    s.ultCharge = 0;
+    s.talismanMode = false;
+    s.screenShake = 0.45;
+
+    if (u.tier < MAX_TILE_TIER) {
+      u.tier += 1;
+      s.merges += 1;
+    }
+    u.mergeAnimTimer = 0.3;
+
+    // Grant 7s Attack Speed Frenzy to ALL player units (神兵符 + 攻速符 burst!)
+    for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        const ally = s.board[r][c];
+        if (ally) ally.frenzyTimer = 7.0;
+      }
+    }
+
+    SoundFX.dragonUlt();
+    this.spawnCombineFX(gx, gy, 'awaken', u.unitId);
+    const txt = getUnitDisplayText(u.unitId);
+    this.showBanner(t().bannerTalismanUpgraded(txt.name, u.tier), 2.5);
   }
 
   public toggleShovelMode(): void {
@@ -1018,6 +1175,8 @@ export class GameEngine {
       s.shovelMode = false;
       return;
     }
+
+    s.talismanMode = false;
 
     if (s.shovels > 0) {
       s.shovelMode = true;
@@ -1056,7 +1215,7 @@ export class GameEngine {
     s.hearts = Math.min(s.maxHearts, s.hearts + 2);
     s.playerBarricade.hp = Math.min(
       s.playerBarricade.maxHp,
-      s.playerBarricade.hp + Math.round(s.playerBarricade.maxHp * 0.55)
+      s.playerBarricade.hp + Math.round(s.playerBarricade.maxHp * 0.6)
     );
     s.effects.push({
       kind: 'heal_ring',
@@ -1071,35 +1230,6 @@ export class GameEngine {
     this.showBanner(t().bannerFortified, 1.8);
   }
 
-  public castDragonUlt(): void {
-    const s = this.state;
-    if (!s || s.ultCharge < 100) return;
-
-    s.ultCharge = 0;
-    s.screenShake = 0.65;
-    SoundFX.dragonUlt();
-    this.showBanner(t().bannerUltCast, 2.2);
-
-    s.effects.push({
-      kind: 'dragon_ult',
-      x: s.stage.cols * 0.5,
-      y: s.stage.dividerRow + (s.stage.rows - s.stage.dividerRow) * 0.5,
-      radius: 4.5,
-      color: '#38bdf8',
-      timer: 0,
-      duration: 0.85,
-    });
-
-    const meta = SaveManager.getEffectiveBonuses();
-    const ultDmg = (210 + s.wave * 48) * meta.damageMult;
-
-    for (const e of s.enemies) {
-      if (e.side !== 'player') continue;
-      this.damageEnemy(s, e, ultDmg, true, '#38bdf8');
-      e.stunTimer = Math.max(e.stunTimer, 1.35);
-    }
-  }
-
   public applyDragonRevive(): void {
     const s = this.state;
     if (!s) return;
@@ -1111,10 +1241,9 @@ export class GameEngine {
     s.screenShake = 0.7;
     SoundFX.dragonUlt();
 
-    // Wipe non-boss enemies on player side and heavily damage bosses
     for (const e of s.enemies) {
       if (e.side !== 'player') continue;
-      if (e.isBoss) {
+      if (e.isBoss || e.isMiniBoss) {
         this.damageEnemy(s, e, e.maxHp * 0.35, true, '#fbbf24');
         e.waypointIndex = Math.max(0, e.waypointIndex - 3);
         e.segProgress = 0;
@@ -1164,7 +1293,7 @@ export class GameEngine {
     s.aiSynBonuses = computeSynergies(aiUnits);
   }
 
-  // ==================== COMBAT: UNITS, PROJECTILES & ENEMIES ====================
+  // ==================== COMBAT: STRICT GRID-CELL TARGETING & WEAPON SKILLS ====================
 
   private updateBoardUnits(s: RunState, dt: number): void {
     const meta = SaveManager.getEffectiveBonuses();
@@ -1175,6 +1304,7 @@ export class GameEngine {
 
       const syn = side === 'player' ? s.synBonuses : s.aiSynBonuses;
       const sideDmgScale = side === 'player' ? meta.damageMult : 0.88;
+      const sideAspdScale = side === 'player' ? meta.aspdMult : 1.0;
 
       for (let c = 0; c < s.stage.cols; c++) {
         const u = s.board[r][c];
@@ -1182,10 +1312,11 @@ export class GameEngine {
 
         if (u.recoilTimer > 0) u.recoilTimer = Math.max(0, u.recoilTimer - dt);
         if (u.mergeAnimTimer > 0) u.mergeAnimTimer = Math.max(0, u.mergeAnimTimer - dt);
+        if (u.frenzyTimer > 0) u.frenzyTimer = Math.max(0, u.frenzyTimer - dt);
 
-        // Skip attacking if currently dragged by player
         if (
           this.drag?.active &&
+          this.drag.movedEnough &&
           this.drag.sourceType === 'board' &&
           this.drag.col === c &&
           this.drag.row === r
@@ -1194,23 +1325,36 @@ export class GameEngine {
         }
 
         const def = UNITS[u.unitId];
-        const speedMult = getTierSpeedMultiplier(u.tier) * syn.globalAspdMult;
+
+        // Check equipped Divine Weapon bonus if Awakened Hero on Player side!
+        const weapBonus =
+          side === 'player' && def.category === 'awakened' && def.heroKey
+            ? SaveManager.getHeroWeaponBonus(def.heroKey)
+            : { weaponId: null, star: 0, isSignature: false, dmgMult: 1, aspdMult: 1 };
+
+        const frenzyMult = u.frenzyTimer > 0 ? 1.75 : 1.0;
+        const speedMult =
+          getTierSpeedMultiplier(u.tier) *
+          syn.globalAspdMult *
+          sideAspdScale *
+          weapBonus.aspdMult *
+          frenzyMult;
+
         u.cooldown -= dt * speedMult;
         if (u.cooldown > 0) continue;
 
-        const range = def.rangeCells + getTierRangeBonus(u.tier);
-        const ux = c + 0.5;
-        const uy = r + 0.5;
-
-        const target = this.pickTarget(s, side, ux, uy, range);
+        // Pick target strictly inside this unit's exact Grid-Cell Attack Range!
+        const target = this.pickTargetInGridRange(s, side, def, u.tier, c, r);
         if (!target) {
-          u.cooldown = 0.12;
+          u.cooldown = 0.1;
           continue;
         }
 
         u.cooldown = def.attackInterval;
         u.attackCount += 1;
 
+        const ux = c + 0.5;
+        const uy = r + 0.5;
         const angle = Math.atan2(target.y - uy, target.x - ux);
         u.recoilAngle = angle;
         u.recoilTimer = 0.14;
@@ -1219,7 +1363,8 @@ export class GameEngine {
           def.baseDamage *
           getTierDamageMultiplier(u.tier) *
           syn.globalDmgMult *
-          sideDmgScale;
+          sideDmgScale *
+          weapBonus.dmgMult;
 
         if (def.synergy === 'mystic') {
           dmg *= syn.mysticPowerMult;
@@ -1229,34 +1374,46 @@ export class GameEngine {
         }
 
         const skillPeriod = def.skillEveryN
-          ? Math.max(2, def.skillEveryN - (syn.heroSkillFaster ? 1 : 0))
+          ? Math.max(2, def.skillEveryN - (syn.heroSkillFaster || weapBonus.weaponId ? 1 : 0))
           : 0;
         const isSkillStrike = skillPeriod > 0 && u.attackCount % skillPeriod === 0;
 
-        this.executeUnitAttack(s, side, u, def, ux, uy, target, angle, dmg, isSkillStrike);
+        this.executeUnitAttack(
+          s,
+          side,
+          u,
+          def,
+          ux,
+          uy,
+          target,
+          angle,
+          dmg,
+          isSkillStrike,
+          weapBonus.isSignature
+        );
       }
     }
   }
 
-  private pickTarget(
+  private pickTargetInGridRange(
     s: RunState,
     side: SideOwner,
-    ux: number,
-    uy: number,
-    range: number
+    def: (typeof UNITS)[UnitId],
+    tier: number,
+    uCol: number,
+    uRow: number
   ): EnemyEntity | null {
-    const r2 = range * range;
     let best: EnemyEntity | null = null;
-    let bestScore = -1;
+    let bestProgress = -1;
 
     for (const e of s.enemies) {
       if (e.side !== side || e.hp <= 0) continue;
-      const dx = e.x - ux;
-      const dy = e.y - uy;
-      if (dx * dx + dy * dy <= r2) {
+      const eCol = Math.floor(e.x);
+      const eRow = Math.floor(e.y);
+      if (isCellInUnitRange(def, tier, uCol, uRow, eCol, eRow)) {
         const progress = e.waypointIndex + e.segProgress;
-        if (progress > bestScore) {
-          bestScore = progress;
+        if (progress > bestProgress) {
+          bestProgress = progress;
           best = e;
         }
       }
@@ -1274,36 +1431,30 @@ export class GameEngine {
     target: EnemyEntity,
     angle: number,
     dmg: number,
-    isSkill: boolean
+    isSkill: boolean,
+    hasSigWeapon: boolean
   ): void {
     const playSfx = side === 'player';
 
     switch (def.pattern) {
       case 'cleave': {
-        const aoe = def.aoeRadiusCells || 1.45;
         if (playSfx) SoundFX.attack('slash');
         s.effects.push({
           kind: 'slash',
           x: ux,
           y: uy,
-          radius: aoe,
+          radius: 1.25,
           color: def.accentColor,
           timer: 0,
-          duration: 0.22,
+          duration: 0.2,
           angle,
         });
         for (const e of s.enemies) {
           if (e.side !== side) continue;
-          if (Math.hypot(e.x - ux, e.y - uy) <= aoe + e.radius) {
+          if (Math.hypot(e.x - target.x, e.y - target.y) <= 0.95) {
             this.damageEnemy(s, e, dmg, false, def.accentColor);
           }
         }
-        break;
-      }
-
-      case 'arrow': {
-        if (playSfx) SoundFX.attack('bow');
-        this.spawnProj(s, side, ux, uy, target, 'arrow', def.accentColor, dmg, def.projectileSpeed);
         break;
       }
 
@@ -1318,10 +1469,11 @@ export class GameEngine {
           tx: target.x,
           ty: target.y,
           kind: 'lance',
-          color: '#e07a5f',
+          color: '#dc2626',
           damage: dmg,
+          bossBonusMult: 1.0,
           aoeRadius: 0,
-          pierceLeft: 3 + Math.floor(u.tier / 2),
+          pierceLeft: 4 + Math.floor(u.tier / 2),
           hitIds: new Set(),
           slowFactor: 0,
           slowDur: 0,
@@ -1331,6 +1483,43 @@ export class GameEngine {
           life: 0,
           maxLife: 0.42,
         });
+        break;
+      }
+
+      case 'cavalry_slash': {
+        if (playSfx) SoundFX.attack('slash');
+        s.effects.push({
+          kind: 'slash',
+          x: target.x,
+          y: target.y,
+          radius: 0.95,
+          color: '#38bdf8',
+          timer: 0,
+          duration: 0.18,
+          angle,
+        });
+        for (const e of s.enemies) {
+          if (e.side === side && Math.hypot(e.x - target.x, e.y - target.y) <= 1.05) {
+            this.damageEnemy(s, e, dmg, false, '#38bdf8');
+          }
+        }
+        break;
+      }
+
+      case 'arrow': {
+        if (playSfx) SoundFX.attack('bow');
+        const p = this.spawnProj(
+          s,
+          side,
+          ux,
+          uy,
+          target,
+          'arrow',
+          def.accentColor,
+          dmg,
+          def.projectileSpeed
+        );
+        p.bossBonusMult = 1.3; // Archer Boss-Slayer trait!
         break;
       }
 
@@ -1347,7 +1536,8 @@ export class GameEngine {
           kind: 'mortar',
           color: '#d97706',
           damage: dmg,
-          aoeRadius: def.aoeRadiusCells || 1.38,
+          bossBonusMult: 1.15,
+          aoeRadius: def.aoeRadiusCells || 1.35,
           pierceLeft: 1,
           hitIds: new Set(),
           slowFactor: 0,
@@ -1361,37 +1551,9 @@ export class GameEngine {
         break;
       }
 
-      case 'frost_bolt': {
-        if (playSfx) SoundFX.attack('frost');
-        const p = this.spawnProj(
-          s,
-          side,
-          ux,
-          uy,
-          target,
-          'frost',
-          '#38bdf8',
-          dmg,
-          def.projectileSpeed
-        );
-        p.slowFactor = def.slowFactor || 0.42;
-        p.slowDur = def.slowDuration || 2.2;
-        break;
-      }
-
       case 'spirit_strike': {
         if (playSfx) SoundFX.attack('bow');
-        this.spawnProj(
-          s,
-          side,
-          ux,
-          uy,
-          target,
-          'spirit',
-          def.accentColor,
-          dmg,
-          def.projectileSpeed
-        );
+        this.spawnProj(s, side, ux, uy, target, 'spirit', def.accentColor, dmg, def.projectileSpeed);
         break;
       }
 
@@ -1401,60 +1563,68 @@ export class GameEngine {
           kind: 'slash',
           x: ux,
           y: uy,
-          radius: 1.75,
+          radius: 1.7,
           color: '#38bdf8',
           timer: 0,
-          duration: 0.25,
+          duration: 0.24,
           angle,
         });
         for (const e of s.enemies) {
           if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.85) {
-            this.damageEnemy(s, e, dmg, false, '#38bdf8');
+            this.damageEnemy(s, e, dmg, true, '#38bdf8');
           }
         }
         if (isSkill) {
-          s.projectiles.push({
-            side,
-            x: ux,
-            y: uy,
-            vx: Math.cos(angle) * 10.5,
-            vy: Math.sin(angle) * 10.5,
-            tx: target.x,
-            ty: target.y,
-            kind: 'dragon',
-            color: '#38bdf8',
-            damage: dmg * 1.65,
-            aoeRadius: 0.75,
-            pierceLeft: 8,
-            hitIds: new Set(),
-            slowFactor: 0,
-            slowDur: 0,
-            stunDur: 0.35,
-            executeRatio: 0,
-            burnDps: 0,
-            life: 0,
-            maxLife: 0.65,
-          });
+          const spearCount = hasSigWeapon ? 3 : 1;
+          const allSideFoes = s.enemies.filter((e) => e.side === side && e.hp > 0);
+          for (let k = 0; k < spearCount; k++) {
+            const spTarget = allSideFoes[k % Math.max(1, allSideFoes.length)] || target;
+            const spAng = Math.atan2(spTarget.y - uy, spTarget.x - ux);
+            s.projectiles.push({
+              side,
+              x: ux,
+              y: uy,
+              vx: Math.cos(spAng) * 11.5,
+              vy: Math.sin(spAng) * 11.5,
+              tx: spTarget.x,
+              ty: spTarget.y,
+              kind: 'dragon',
+              color: '#38bdf8',
+              damage: dmg * 1.65,
+              bossBonusMult: 1.2,
+              aoeRadius: 0.75,
+              pierceLeft: 8,
+              hitIds: new Set(),
+              slowFactor: 0,
+              slowDur: 0,
+              stunDur: 0.35,
+              executeRatio: 0,
+              burnDps: 0,
+              life: 0,
+              maxLife: 0.72,
+            });
+          }
         }
         break;
       }
 
       case 'jade_execute': {
         if (playSfx) SoundFX.attack('slash');
+        const execThresh = hasSigWeapon ? 0.3 : 0.22;
         s.effects.push({
           kind: 'slash',
           x: ux,
           y: uy,
           radius: 1.75,
-          color: '#2dd4bf',
+          color: '#10b981',
           timer: 0,
           duration: 0.26,
           angle,
         });
         for (const e of s.enemies) {
-          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.8) {
-            if (!e.isBoss && e.hp / e.maxHp <= 0.22) {
-              this.damageEnemy(s, e, e.hp * 2, true, '#10b981');
+          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.85) {
+            if (!e.isBoss && e.hp / e.maxHp <= execThresh) {
+              this.damageEnemy(s, e, e.hp * 2.5, true, '#10b981');
             } else {
               this.damageEnemy(s, e, dmg, false, '#10b981');
             }
@@ -1465,30 +1635,31 @@ export class GameEngine {
             side,
             x: ux,
             y: uy,
-            vx: Math.cos(angle) * 9.0,
-            vy: Math.sin(angle) * 9.0,
+            vx: Math.cos(angle) * 9.2,
+            vy: Math.sin(angle) * 9.2,
             tx: target.x,
             ty: target.y,
             kind: 'glaive',
             color: '#10b981',
-            damage: dmg * 1.5,
-            aoeRadius: 0.7,
+            damage: dmg * 1.55,
+            bossBonusMult: 1.2,
+            aoeRadius: 0.75,
             pierceLeft: 6,
             hitIds: new Set(),
             slowFactor: 0,
             slowDur: 0,
             stunDur: 0,
-            executeRatio: 0.22,
+            executeRatio: execThresh,
             burnDps: 0,
             life: 0,
-            maxLife: 0.58,
+            maxLife: 0.62,
           });
         }
         break;
       }
 
       case 'roar_quake': {
-        const rad = (def.aoeRadiusCells || 2.15) * (isSkill ? 1.25 : 1.0);
+        const rad = (def.aoeRadiusCells || 2.15) * (isSkill ? (hasSigWeapon ? 1.4 : 1.2) : 1.0);
         if (playSfx) SoundFX.attack(isSkill ? 'cannon' : 'slash');
         s.effects.push({
           kind: 'ring',
@@ -1504,7 +1675,8 @@ export class GameEngine {
           if (Math.hypot(e.x - ux, e.y - uy) <= rad) {
             this.damageEnemy(s, e, dmg * (isSkill ? 1.45 : 1.0), isSkill, '#f97316');
             if (isSkill) {
-              e.stunTimer = Math.max(e.stunTimer, def.stunDuration || 1.1);
+              e.stunTimer = Math.max(e.stunTimer, (def.stunDuration || 1.15) + (hasSigWeapon ? 0.45 : 0));
+              if (hasSigWeapon) e.armorBrokenTimer = 5.0;
             }
           }
         }
@@ -1513,7 +1685,7 @@ export class GameEngine {
 
       case 'chain_lightning': {
         if (playSfx) SoundFX.attack('thunder');
-        const maxJumps = isSkill ? 6 : 3;
+        const maxJumps = (isSkill ? 5 : 3) + (hasSigWeapon ? 3 : 0);
         const visited = new Set<number>();
         const pts: { x: number; y: number }[] = [{ x: ux, y: uy }];
         let cur: EnemyEntity | null = target;
@@ -1523,10 +1695,11 @@ export class GameEngine {
           visited.add(cur.id);
           pts.push({ x: cur.x, y: cur.y });
           this.damageEnemy(s, cur, curDmg, true, '#eab308');
-          curDmg *= 0.86;
+          if (hasSigWeapon && isSkill) cur.stunTimer = Math.max(cur.stunTimer, 0.35);
+          curDmg *= 0.88;
 
           let nextEnemy: EnemyEntity | null = null;
-          let bestD = 2.6;
+          let bestD = 2.8;
           for (const cand of s.enemies) {
             if (cand.side !== side || visited.has(cand.id) || cand.hp <= 0) continue;
             const d = Math.hypot(cand.x - cur.x, cand.y - cur.y);
@@ -1565,17 +1738,16 @@ export class GameEngine {
           def.projectileSpeed
         );
         p.aoeRadius = def.aoeRadiusCells || 1.55;
-        p.slowFactor = def.slowFactor || 0.52;
+        p.slowFactor = def.slowFactor || 0.5;
         p.slowDur = def.slowDuration || 2.6;
-        if (isSkill) p.stunDur = def.stunDuration || 0.85;
+        if (isSkill) p.stunDur = hasSigWeapon ? 1.25 : def.stunDuration || 0.85;
         break;
       }
 
       case 'phoenix_volley': {
         if (playSfx) SoundFX.attack('bow');
-        const targets = s.enemies
-          .filter((e) => e.side === side && Math.hypot(e.x - ux, e.y - uy) <= def.rangeCells + 0.4)
-          .slice(0, isSkill ? 4 : 2);
+        const maxArrows = (isSkill ? 4 : 2) + (hasSigWeapon ? 2 : 0);
+        const targets = s.enemies.filter((e) => e.side === side && e.hp > 0).slice(0, maxArrows);
         if (targets.length === 0) targets.push(target);
         for (const tEnemy of targets) {
           const p = this.spawnProj(
@@ -1586,10 +1758,10 @@ export class GameEngine {
             tEnemy,
             'phoenix',
             '#ef4444',
-            dmg * (isSkill ? 1.25 : 0.92),
+            dmg * (isSkill ? 1.25 : 0.95),
             def.projectileSpeed
           );
-          p.burnDps = dmg * 0.32;
+          p.burnDps = dmg * (hasSigWeapon ? 0.55 : 0.3);
         }
         break;
       }
@@ -1620,6 +1792,7 @@ export class GameEngine {
       kind,
       color,
       damage,
+      bossBonusMult: 1.0,
       aoeRadius: 0,
       pierceLeft: 1,
       hitIds: new Set(),
@@ -1665,7 +1838,6 @@ export class GameEngine {
         continue;
       }
 
-      // Homing adjustment for single-target bolts
       if (p.targetId !== undefined && p.pierceLeft === 1) {
         const tgt = s.enemies.find((e) => e.id === p.targetId && e.hp > 0);
         if (tgt) {
@@ -1696,8 +1868,7 @@ export class GameEngine {
               duration: 0.3,
             });
             for (const sub of s.enemies) {
-              if (sub.side !== p.side) continue;
-              if (Math.hypot(sub.x - e.x, sub.y - e.y) <= p.aoeRadius) {
+              if (sub.side === p.side && Math.hypot(sub.x - e.x, sub.y - e.y) <= p.aoeRadius) {
                 this.applyProjHit(s, p, sub);
               }
             }
@@ -1713,17 +1884,22 @@ export class GameEngine {
         }
       }
 
-      if (remove) {
-        s.projectiles.splice(i, 1);
-      }
+      if (remove) s.projectiles.splice(i, 1);
     }
   }
 
   private applyProjHit(s: RunState, p: ProjectileEntity, e: EnemyEntity): void {
+    const bossScale = e.isBoss || e.isMiniBoss ? p.bossBonusMult : 1.0;
     if (p.executeRatio > 0 && !e.isBoss && e.hp / e.maxHp <= p.executeRatio) {
-      this.damageEnemy(s, e, e.hp * 2, true, p.color);
+      this.damageEnemy(s, e, e.hp * 2.5, true, p.color);
     } else {
-      this.damageEnemy(s, e, p.damage, p.kind === 'dragon' || p.kind === 'phoenix', p.color);
+      this.damageEnemy(
+        s,
+        e,
+        p.damage * bossScale,
+        p.kind === 'dragon' || p.kind === 'phoenix',
+        p.color
+      );
     }
     if (p.slowFactor > 0) {
       e.slowPower = Math.max(e.slowPower, p.slowFactor);
@@ -1746,8 +1922,16 @@ export class GameEngine {
     floatColor: string
   ): void {
     if (e.hp <= 0) return;
-    const effArmor = armorPiercing ? e.armor * 0.25 : e.armor;
-    const finalDmg = Math.max(1, rawDmg * (1 - effArmor));
+
+    const meta = SaveManager.getEffectiveBonuses();
+    let scaled = rawDmg;
+    if (e.side === 'player' && (e.isBoss || e.isMiniBoss)) {
+      scaled *= meta.bossDmgMult;
+    }
+
+    const baseArmor = e.armorBrokenTimer > 0 ? 0 : e.armor;
+    const effArmor = armorPiercing ? baseArmor * 0.25 : baseArmor;
+    const finalDmg = Math.max(1, scaled * (1 - effArmor));
     e.hp -= finalDmg;
     e.hitFlash = 0.11;
 
@@ -1758,7 +1942,7 @@ export class GameEngine {
         vy: -0.9,
         text: `${Math.round(finalDmg)}`,
         color: floatColor,
-        scale: finalDmg > 95 ? 1.15 : 0.92,
+        scale: finalDmg > 110 ? 1.15 : 0.92,
         timer: 0,
         duration: 0.52,
       });
@@ -1768,8 +1952,30 @@ export class GameEngine {
       if (e.side === 'player') {
         s.kills += 1;
         s.rations += e.rewardRations;
-        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 25 : 2.1));
+        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 35 : e.isMiniBoss ? 20 : 2.4));
         SoundFX.enemyKill();
+
+        // Boss / Elite Boss Death -> Guaranteed Divine Weapon Shard Chest Drop!!
+        if (e.isBoss || e.isMiniBoss) {
+          const dropCount = e.isBoss ? 2 : 1;
+          let lastShard: WeaponId = 'weap_zhaoyun';
+          for (let d = 0; d < dropCount; d++) {
+            lastShard = SaveManager.grantRandomWeaponShard('weap_zhaoyun');
+            s.droppedShards.push(lastShard);
+          }
+          SoundFX.fanfare();
+          s.effects.push({
+            kind: 'chest_drop',
+            x: e.x,
+            y: e.y,
+            radius: 1.1,
+            color: '#fde047',
+            timer: 0,
+            duration: 1.25,
+          });
+          const wName = t().weapons[lastShard].name;
+          this.showBanner(t().bannerWeaponShardDrop(wName), 2.8);
+        }
       }
       s.effects.push({
         kind: 'ring',
@@ -1783,7 +1989,9 @@ export class GameEngine {
     }
   }
 
-  private updateEnemies(s: RunState, dt: number): void {
+  // ==================== ENEMY MOVEMENT & DISTINCT BOSS AI ====================
+
+  private updateEnemies(s: RunState, dt: number, playerRoadSlow: number): void {
     for (let i = s.enemies.length - 1; i >= 0; i--) {
       const e = s.enemies[i];
       if (e.hp <= 0) {
@@ -1792,6 +2000,7 @@ export class GameEngine {
       }
 
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
+      if (e.armorBrokenTimer > 0) e.armorBrokenTimer = Math.max(0, e.armorBrokenTimer - dt);
       if (e.slowTimer > 0) {
         e.slowTimer = Math.max(0, e.slowTimer - dt);
         if (e.slowTimer <= 0) e.slowPower = 0;
@@ -1804,6 +2013,32 @@ export class GameEngine {
           continue;
         }
       }
+
+      // Boss Special Mechanics!
+      if (e.bossType === 'zhangbao' && e.stunTimer <= 0) {
+        e.bossSkillTimer -= dt;
+        if (e.bossSkillTimer <= 0) {
+          e.bossSkillTimer = 5.8;
+          this.summonZhangBaoMinion(s, e);
+          if (e.side === 'player') {
+            this.showBanner(t().bannerZhangBaoSummon, 1.8);
+          }
+        }
+      } else if (e.bossType === 'zhangjiao') {
+        if (!e.healChantUsed && e.hp / e.maxHp <= 0.38) {
+          e.healChantUsed = true;
+          e.regenTimer = 3.2;
+          if (e.side === 'player') {
+            SoundFX.alarm();
+            this.showBanner(t().bannerZhangJiaoHeal, 2.8);
+          }
+        }
+        if (e.regenTimer > 0 && e.stunTimer <= 0) {
+          e.regenTimer = Math.max(0, e.regenTimer - dt);
+          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.075 * dt);
+        }
+      }
+
       if (e.stunTimer > 0) {
         e.stunTimer = Math.max(0, e.stunTimer - dt);
         continue;
@@ -1812,7 +2047,6 @@ export class GameEngine {
       const lane = e.side === 'ai' ? s.stage.aiLane : s.stage.playerLane;
       const barricade = e.side === 'ai' ? s.aiBarricade : s.playerBarricade;
 
-      // Check if blocked by Spike Barricade
       if (barricade.hp > 0) {
         const bx = barricade.col + 0.5;
         const by = barricade.row + 0.5;
@@ -1820,7 +2054,8 @@ export class GameEngine {
           e.bashTimer -= dt;
           if (e.bashTimer <= 0) {
             e.bashTimer = 0.65;
-            const bashDmg = e.isBoss ? 85 : e.isMiniBoss ? 42 : e.kind === 'shield' ? 24 : 15;
+            const bashDmg =
+              e.bossType === 'lubu' ? 95 : e.isBoss ? 70 : e.isMiniBoss ? 40 : e.kind === 'shield' ? 24 : 15;
             barricade.hp = Math.max(0, barricade.hp - bashDmg);
             barricade.shakeTimer = 0.16;
           }
@@ -1828,7 +2063,9 @@ export class GameEngine {
         }
       }
 
-      const effSpeed = e.speed * (1 - e.slowPower);
+      const passiveSlow = e.side === 'player' ? playerRoadSlow : 0;
+      const totalSlow = Math.min(0.72, Math.max(e.slowPower, passiveSlow));
+      const effSpeed = e.speed * (1 - totalSlow);
       const wps = lane.waypoints;
 
       if (e.waypointIndex >= wps.length - 1) {
@@ -1862,6 +2099,48 @@ export class GameEngine {
     }
   }
 
+  private summonZhangBaoMinion(s: RunState, boss: EnemyEntity): void {
+    const minionHp = boss.maxHp * 0.11;
+    s.enemies.push({
+      id: this.nextEnemyId++,
+      side: boss.side,
+      kind: 'wolf',
+      bossType: 'none',
+      isBoss: false,
+      isMiniBoss: false,
+      waypointIndex: boss.waypointIndex,
+      segProgress: Math.min(0.95, boss.segProgress + 0.08),
+      x: boss.x,
+      y: boss.y,
+      hp: minionHp,
+      maxHp: minionHp,
+      speed: 1.35,
+      armor: 0,
+      armorBrokenTimer: 0,
+      rewardRations: 2,
+      hitFlash: 0,
+      slowTimer: 0,
+      slowPower: 0,
+      stunTimer: 0,
+      burnTimer: 0,
+      burnDps: 0,
+      bashTimer: 0,
+      bossSkillTimer: 99,
+      healChantUsed: false,
+      regenTimer: 0,
+      radius: 0.28,
+    });
+    s.effects.push({
+      kind: 'ring',
+      x: boss.x,
+      y: boss.y,
+      radius: 0.85,
+      color: '#eab308',
+      timer: 0,
+      duration: 0.35,
+    });
+  }
+
   private handleEnemyBreachVip(s: RunState, e: EnemyEntity): void {
     const heartLoss = e.isBoss ? 5 : e.isMiniBoss ? 3 : 1;
 
@@ -1884,10 +2163,8 @@ export class GameEngine {
         s.projectiles = s.projectiles.filter((pr) => pr.side !== 'ai');
 
         if (s.mode === 'standard') {
-          // Player outlasted the Rival Warlord in Standard 10-Wave Duel!
           this.finishRun(true, true);
         } else {
-          // Endless mode: award spoils & let player keep climbing waves!
           s.rations += 45;
           SoundFX.fanfare();
           this.showBanner(t().bannerRivalFallen, 3.0);
@@ -1896,7 +2173,6 @@ export class GameEngine {
       return;
     }
 
-    // Player VIP breached
     s.hearts = Math.max(0, s.hearts - heartLoss);
     s.screenShake = 0.45;
     SoundFX.alarm();
@@ -1929,6 +2205,9 @@ export class GameEngine {
 
     if (victory) {
       SaveManager.markStageCleared(s.stage.id);
+      // Victory Chest guarantees +1 extra Weapon Shard!
+      const bonusShard = SaveManager.grantRandomWeaponShard();
+      s.droppedShards.push(bonusShard);
       PlatformSDK.happyTime();
       SoundFX.fanfare();
     }
@@ -1944,6 +2223,7 @@ export class GameEngine {
       merges: s.merges,
       victory,
       aiDefeated,
+      droppedShards: [...s.droppedShards],
     });
   }
 
@@ -2011,8 +2291,10 @@ export class GameEngine {
         if (e.key === ' ' || e.key === 'r' || e.key === 'R') {
           e.preventDefault();
           this.recruitBench();
-        } else if (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E') {
-          this.castDragonUlt();
+        } else if (e.key === 'q' || e.key === 'Q') {
+          this.activateDivineTalisman();
+        } else if (e.key === 'e' || e.key === 'E') {
+          this.castExorcism();
         }
       }
     });
@@ -2051,8 +2333,26 @@ export class GameEngine {
     const sy = e.clientY - rect.top;
 
     const cellHit = this.hitTestBoard(sx, sy);
+    const benchIdx = this.hitTestBench(sx, sy);
 
-    // 1) Golden Shovel Excavation (Strictly Player's Bottom Half: row >= stage.dividerRow)
+    // 0) 神兵符 (Divine Upgrade Talisman) Target Pick!
+    if (s.talismanMode) {
+      if (cellHit && cellHit.row >= s.stage.dividerRow) {
+        const u = s.board[cellHit.row][cellHit.col];
+        if (u) {
+          this.applyDivineTalismanToUnit(u, cellHit.col + 0.5, cellHit.row + 0.5);
+          return;
+        }
+      }
+      if (benchIdx >= 0 && s.bench[benchIdx]) {
+        this.applyDivineTalismanToUnit(s.bench[benchIdx]!, 3.5, 7.5);
+        return;
+      }
+      s.talismanMode = false;
+      return;
+    }
+
+    // 1) Golden Shovel Excavation + Tomb Raider (摸金校尉) Passive!
     if (s.shovelMode && cellHit) {
       if (
         cellHit.row >= s.stage.dividerRow &&
@@ -2072,14 +2372,36 @@ export class GameEngine {
           timer: 0,
           duration: 0.45,
         });
-        this.showBanner(t().bannerTileUnlocked, 1.8);
+
+        const meta = SaveManager.getEffectiveBonuses();
+        if (meta.tombRaiderLevel > 0) {
+          const bonusBuns = 12 + meta.tombRaiderLevel * 6;
+          s.rations += bonusBuns;
+          const gotShard = Math.random() < 0.28;
+          if (gotShard) {
+            const sh = SaveManager.grantRandomWeaponShard();
+            s.droppedShards.push(sh);
+            s.effects.push({
+              kind: 'chest_drop',
+              x: cellHit.col + 0.5,
+              y: cellHit.row + 0.5,
+              radius: 0.9,
+              color: '#fde047',
+              timer: 0,
+              duration: 1.1,
+            });
+          }
+          this.showBanner(t().bannerTombRaiderBonus(bonusBuns, gotShard), 2.5);
+        } else {
+          this.showBanner(t().bannerTileUnlocked, 1.8);
+        }
       } else {
         s.shovelMode = false;
       }
       return;
     }
 
-    // 2) Inspect AI Top Half unit if tapped (read-only!)
+    // 2) Read-only inspect AI Top Half unit
     if (cellHit && cellHit.row < s.stage.dividerRow) {
       const aiUnit = s.board[cellHit.row][cellHit.col];
       s.selectedUnitInfo = aiUnit ? { unitId: aiUnit.unitId, tier: aiUnit.tier } : null;
@@ -2088,7 +2410,6 @@ export class GameEngine {
     }
 
     // 3) Player Bench or Player Bottom Half Board Tile
-    const benchIdx = this.hitTestBench(sx, sy);
     if (benchIdx >= 0) {
       const unit = s.bench[benchIdx];
       if (unit) {
@@ -2137,10 +2458,7 @@ export class GameEngine {
         SoundFX.tileClack(false);
         return;
       } else if (s.cells[cellHit.row][cellHit.col] === 'locked') {
-        // Quick tap on locked basalt cell offers Shovel if available
-        if (s.shovels > 0) {
-          this.toggleShovelMode();
-        }
+        if (s.shovels > 0) this.toggleShovelMode();
         return;
       } else if (s.selectedSource && s.cells[cellHit.row][cellHit.col] === 'deploy') {
         this.tryMoveOrCombine(s.selectedSource, {
@@ -2185,7 +2503,6 @@ export class GameEngine {
       row: d.row,
     };
 
-    // Tap without drag -> support click-to-select & tap-to-merge!
     if (!d.movedEnough) {
       if (
         s.selectedSource &&
@@ -2205,7 +2522,6 @@ export class GameEngine {
       return;
     }
 
-    // Drag drop target
     const benchHit = this.hitTestBench(d.screenX, d.screenY);
     if (benchHit >= 0) {
       this.tryMoveOrCombine(src, { type: 'bench', benchIdx: benchHit, col: -1, row: -1 });
@@ -2262,7 +2578,6 @@ export class GameEngine {
 
     const dstUnit = this.getUnitAt(dst);
 
-    // 1) Empty destination -> Move!
     if (!dstUnit) {
       this.setUnitAt(dst, srcUnit);
       this.setUnitAt(src, null);
@@ -2272,7 +2587,6 @@ export class GameEngine {
       return true;
     }
 
-    // 2) Check 2-Tile Hero Awakening OR Same-Tier Upgrade Merge!
     const combo = checkTileCombine(srcUnit, dstUnit);
     if (combo) {
       const created = this.makeTile(combo.resultId, combo.resultTier);
@@ -2283,13 +2597,13 @@ export class GameEngine {
       s.selectedUnitInfo = { unitId: created.unitId, tier: created.tier };
 
       if (combo.mode === 'awaken') {
-        s.ultCharge = Math.min(100, s.ultCharge + 18);
+        s.ultCharge = Math.min(100, s.ultCharge + 22);
         s.screenShake = 0.32;
         SoundFX.dragonUlt();
         const heroTxt = getUnitDisplayText(combo.resultId);
         this.showBanner(t().bannerHeroAwakened(heroTxt.name), 2.6);
       } else {
-        s.ultCharge = Math.min(100, s.ultCharge + 6);
+        s.ultCharge = Math.min(100, s.ultCharge + 7);
         SoundFX.merge(combo.resultTier, UNITS[combo.resultId].category === 'awakened');
       }
 
@@ -2301,7 +2615,6 @@ export class GameEngine {
       return true;
     }
 
-    // 3) Otherwise swap positions cleanly!
     this.setUnitAt(dst, srcUnit);
     this.setUnitAt(src, dstUnit);
     SoundFX.tileClack(false);

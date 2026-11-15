@@ -1,9 +1,9 @@
-import { checkTileCombine, getTierRangeBonus, UNITS } from '../data/units';
+import { checkTileCombine, getTargetableGridCells, UNITS } from '../data/units';
 import { t } from '../i18n/locale';
+import { SaveManager } from '../meta/SaveManager';
 import { CellType, DuelLane, TileUnit } from '../types';
 import { Assets } from './AssetLoader';
 import {
-  EnemyEntity,
   GameEngine,
   LaneBarricade,
   ProjectileEntity,
@@ -29,29 +29,31 @@ export class BoardRenderer {
 
     ctx.save();
 
-    // Screen shake on Ultimate / Boss breach / Awakening
     if (s.screenShake > 0) {
       const mag = s.screenShake * 7;
       ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
     }
 
-    // 1. Qinglu Shanshui & Xuan-paper atmospheric background
+    // 1. Qinglu Shanshui & Xuan-paper backdrop
     this.drawBackdrop(ctx, s, viewW, viewH);
 
     // 2. 8x10 Fortress Duel Board
     this.drawBoardFrameAndCells(ctx, engine, s);
 
-    // 3. Entry chevron markers & VIP Royal Heirs + Heart clusters
+    // 3. Exact Grid-Cell Attack Range Highlight (drawn over cells before units/enemies!)
+    this.drawActiveGridRangePreview(ctx, engine, s);
+
+    // 4. Entry arrows & VIP Royal Heirs + Heart clusters
     this.drawLaneSpawnArrow(ctx, engine, s.stage.aiLane, '#b91c1c');
     this.drawLaneSpawnArrow(ctx, engine, s.stage.playerLane, '#b91c1c');
     this.drawVipHeirAndHearts(ctx, engine, s, 'ai');
     this.drawVipHeirAndHearts(ctx, engine, s, 'player');
 
-    // 4. Spike Barricades
+    // 5. Spike Barricades
     this.drawBarricade(ctx, engine, s.aiBarricade);
     this.drawBarricade(ctx, engine, s.playerBarricade);
 
-    // 5. Deployed Board War-Tiles (AI Top Half + Player Bottom Half)
+    // 6. Deployed Board War-Tiles
     const activeUnit = this.getActiveHeldUnit(engine, s);
     for (let r = 0; r < s.stage.rows; r++) {
       for (let c = 0; c < s.stage.cols; c++) {
@@ -71,8 +73,10 @@ export class BoardRenderer {
         const y = L.boardY + r * L.cellSize;
         const isPlayerSide = r >= s.stage.dividerRow;
 
-        let highlight: 'none' | 'merge' | 'awaken' | 'selected' = 'none';
-        if (
+        let highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman' = 'none';
+        if (isPlayerSide && s.talismanMode) {
+          highlight = 'talisman';
+        } else if (
           s.selectedSource?.type === 'board' &&
           s.selectedSource.col === c &&
           s.selectedSource.row === r
@@ -83,34 +87,37 @@ export class BoardRenderer {
           if (combo) highlight = combo.mode;
         }
 
-        this.drawWarTile(ctx, u, x + 2, y + 2, L.cellSize - 4, highlight, !isPlayerSide && s.aiCollapsed);
+        this.drawWarTile(
+          ctx,
+          u,
+          x + 2,
+          y + 2,
+          L.cellSize - 4,
+          highlight,
+          !isPlayerSide && s.aiCollapsed,
+          isPlayerSide
+        );
       }
     }
 
-    // Dim AI top half slightly if AI Rival has already collapsed in Endless mode
     if (s.aiCollapsed) {
       ctx.fillStyle = 'rgba(20, 18, 16, 0.42)';
       ctx.fillRect(L.boardX, L.boardY, L.boardW, s.stage.dividerRow * L.cellSize);
     }
 
-    // 6. Central Great Wall Crenellated Divider between AI (rows 0..4) & Player (rows 5..9)
+    // 7. Central Great Wall Divider
     this.drawGreatWallDivider(ctx, engine, s);
 
-    // 7. Attack Range Preview Circle when dragging/selecting
-    this.drawActiveRangePreview(ctx, engine, s);
-
-    // 8. Enemies
+    // 8. Enemies, Projectiles, VFX & Floating Damage
     this.drawEnemies(ctx, engine, s);
-
-    // 9. Projectiles & Ink/Dragon VFX + Floating Damage Numbers
     this.drawProjectiles(ctx, engine, s.projectiles);
     this.drawEffects(ctx, engine, s.effects);
     this.drawFloatingTexts(ctx, engine, s);
 
-    // 10. Player War-Camp Tent & 5-Slot Bench Row
+    // 9. Player War-Camp Tent & 5-Slot Bench Row
     this.drawCampBench(ctx, engine, s, activeUnit);
 
-    // 11. Floating Dragged Tile under cursor/finger
+    // 10. Floating Dragged Tile
     if (engine.drag && engine.drag.active && engine.drag.movedEnough) {
       const sz = L.cellSize * 1.06;
       ctx.save();
@@ -124,7 +131,8 @@ export class BoardRenderer {
         engine.drag.screenY - sz * 0.55,
         sz,
         'selected',
-        false
+        false,
+        true
       );
       ctx.restore();
     }
@@ -168,7 +176,6 @@ export class BoardRenderer {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, viewW, viewH);
 
-    // Distant ink-wash mountain silhouettes & watchtower at top
     ctx.save();
     ctx.fillStyle = 'rgba(42, 48, 44, 0.16)';
     ctx.beginPath();
@@ -179,20 +186,6 @@ export class BoardRenderer {
     ctx.lineTo(0, 85);
     ctx.closePath();
     ctx.fill();
-
-    // Subtle ink grass tufts near top & bottom borders
-    ctx.strokeStyle = 'rgba(38, 44, 38, 0.25)';
-    ctx.lineWidth = 1.4;
-    const step = Math.max(28, Math.floor(viewW / 16));
-    for (let x = 14; x < viewW; x += step) {
-      const sway = Math.sin(this.animClock * 1.4 + x * 0.05) * 2;
-      ctx.beginPath();
-      ctx.moveTo(x, 60);
-      ctx.quadraticCurveTo(x - 3 + sway, 51, x - 5 + sway, 47);
-      ctx.moveTo(x + 4, 61);
-      ctx.quadraticCurveTo(x + 6 + sway, 52, x + 8 + sway, 48);
-      ctx.stroke();
-    }
     ctx.restore();
   }
 
@@ -205,8 +198,8 @@ export class BoardRenderer {
   ): void {
     const L = engine.layout;
     const cs = L.cellSize;
+    const hasFrostInk = SaveManager.get().skills.frost_inkstone > 0;
 
-    // Heavy Rosewood & Iron Outer Frame
     ctx.save();
     ctx.fillStyle = '#241f1c';
     this.roundRect(ctx, L.boardX - 5, L.boardY - 5, L.boardW + 10, L.boardH + 10, 6);
@@ -223,7 +216,18 @@ export class BoardRenderer {
         const cell = s.cells[r][c];
         const x = L.boardX + c * cs;
         const y = L.boardY + r * cs;
-        this.drawSingleCell(ctx, cell, x, y, cs, c, r, isPlayerHalf, s.shovelMode);
+        this.drawSingleCell(
+          ctx,
+          cell,
+          x,
+          y,
+          cs,
+          c,
+          r,
+          isPlayerHalf,
+          s.shovelMode,
+          isPlayerHalf && hasFrostInk
+        );
       }
     }
   }
@@ -237,10 +241,10 @@ export class BoardRenderer {
     col: number,
     row: number,
     isPlayerHalf: boolean,
-    shovelMode: boolean
+    shovelMode: boolean,
+    frostRoad: boolean
   ): void {
     if (cell === 'wall') {
-      // Weathered dark bluestone rampart block
       ctx.fillStyle = (col + row) % 2 === 0 ? '#5c6159' : '#535850';
       ctx.fillRect(x, y, cs, cs);
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
@@ -254,9 +258,12 @@ export class BoardRenderer {
     }
 
     if (cell === 'path' || cell === 'vip') {
-      // Pale limestone flagstone road
       ctx.fillStyle = (col + row) % 2 === 0 ? '#ccc9be' : '#c3c0b4';
       ctx.fillRect(x, y, cs, cs);
+      if (frostRoad && cell === 'path') {
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.13)';
+        ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+      }
       ctx.strokeStyle = 'rgba(65, 62, 55, 0.28)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, cs - 1, cs - 1);
@@ -264,18 +271,14 @@ export class BoardRenderer {
     }
 
     if (cell === 'locked') {
-      // Deep slate-basalt locked slot (excavatable with Golden Shovel!)
       ctx.fillStyle = (col + row) % 2 === 0 ? '#6e726b' : '#666a63';
       ctx.fillRect(x, y, cs, cs);
       ctx.strokeStyle = '#3b3e39';
       ctx.lineWidth = 1.25;
       ctx.strokeRect(x + 1, y + 1, cs - 2, cs - 2);
-
-      // Subtle inner stone bevel
       ctx.strokeStyle = 'rgba(255,255,255,0.1)';
       ctx.strokeRect(x + 4, y + 4, cs - 8, cs - 8);
 
-      // Highlight player's locked cells when Shovel Mode is toggled!
       if (shovelMode && isPlayerHalf) {
         const pulse = 0.55 + 0.4 * Math.sin(this.animClock * 6.5);
         ctx.save();
@@ -284,7 +287,7 @@ export class BoardRenderer {
         ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
         const shImg = Assets.get('icon_shovel');
         if (shImg) {
-          ctx.globalAlpha = 0.72;
+          ctx.globalAlpha = 0.75;
           ctx.drawImage(shImg, x + cs * 0.24, y + cs * 0.24, cs * 0.52, cs * 0.52);
         }
         ctx.restore();
@@ -293,7 +296,6 @@ export class BoardRenderer {
     }
 
     if (cell === 'deploy') {
-      // Mutton-Fat White Jade Pedestal (羊脂白玉阵位)
       const jGrad = ctx.createLinearGradient(x, y, x, y + cs);
       jGrad.addColorStop(0, '#fbf8ef');
       jGrad.addColorStop(1, '#ebe3d1');
@@ -304,7 +306,6 @@ export class BoardRenderer {
       ctx.lineWidth = 1.2;
       ctx.strokeRect(x + 1.5, y + 1.5, cs - 3, cs - 3);
 
-      // Subtle classical jade fretwork corner ticks
       ctx.strokeStyle = 'rgba(156, 138, 104, 0.42)';
       ctx.lineWidth = 1;
       const m = 5;
@@ -329,7 +330,72 @@ export class BoardRenderer {
     }
   }
 
-  // ==================== 3. ENTRY ARROWS, VIP HEIR & GREAT WALL DIVIDER ====================
+  // ==================== 3. EXACT GRID-CELL ATTACK RANGE PREVIEW ====================
+
+  private drawActiveGridRangePreview(
+    ctx: CanvasRenderingContext2D,
+    engine: GameEngine,
+    s: RunState
+  ): void {
+    const L = engine.layout;
+    const cs = L.cellSize;
+
+    let uCol = -1;
+    let uRow = -1;
+    let unit: TileUnit | null = null;
+    let rStart = s.stage.dividerRow;
+    let rEnd = s.stage.rows;
+
+    if (engine.drag?.active && engine.drag.movedEnough) {
+      const col = Math.floor((engine.drag.screenX - L.boardX) / cs);
+      const row = Math.floor((engine.drag.screenY - L.boardY) / cs);
+      if (col >= 0 && col < s.stage.cols && row >= s.stage.dividerRow && row < s.stage.rows) {
+        uCol = col;
+        uRow = row;
+        unit = engine.drag.unit;
+      }
+    } else if (s.selectedSource?.type === 'board') {
+      uCol = s.selectedSource.col;
+      uRow = s.selectedSource.row;
+      unit = s.board[uRow]?.[uCol] ?? null;
+      if (uRow < s.stage.dividerRow) {
+        rStart = 0;
+        rEnd = s.stage.dividerRow;
+      }
+    }
+
+    if (!unit || uCol < 0) return;
+
+    const def = UNITS[unit.unitId];
+    const cells = getTargetableGridCells(def, unit.tier, uCol, uRow, s.stage.cols, rStart, rEnd);
+    const hitsAnyRoad = cells.some((pt) => s.cells[pt.row][pt.col] === 'path');
+
+    ctx.save();
+    for (const pt of cells) {
+      const x = L.boardX + pt.col * cs;
+      const y = L.boardY + pt.row * cs;
+      const isRoad = s.cells[pt.row][pt.col] === 'path';
+
+      if (!hitsAnyRoad) {
+        // Warn player when e.g. 1-cell Blade is hovered on an inner cell that reaches NO road!
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.68)';
+      } else if (isRoad) {
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.34)';
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.9)';
+      } else {
+        ctx.fillStyle = 'rgba(250, 204, 21, 0.14)';
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
+      }
+
+      ctx.fillRect(x + 2, y + 2, cs - 4, cs - 4);
+      ctx.lineWidth = isRoad ? 1.8 : 1;
+      ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
+    }
+    ctx.restore();
+  }
+
+  // ==================== 4. ENTRY ARROWS, VIP HEIR & GREAT WALL DIVIDER ====================
 
   private drawLaneSpawnArrow(
     ctx: CanvasRenderingContext2D,
@@ -378,7 +444,6 @@ export class BoardRenderer {
     const vx = L.boardX + lane.vipCell.col * cs;
     const vy = L.boardY + lane.vipCell.row * cs;
 
-    // Royal silk mat glow
     ctx.save();
     const glow = ctx.createRadialGradient(
       vx + cs * 0.5,
@@ -399,8 +464,6 @@ export class BoardRenderer {
       ctx.drawImage(vipImg, vx + cs * 0.06, vy + cs * 0.06 + bob, cs * 0.88, cs * 0.88);
     }
 
-    // Draw miniature Crimson Heart Grid on the adjacent wall cell (just like reference image!)
-    // For AI (vip at row 4, col 0), heart cluster sits at top of VIP or row 3/4 border
     const heartAnchorY = side === 'ai' ? vy - cs * 0.32 : vy - cs * 0.28;
     const colsPerRow = 4;
     const hSize = Math.max(6, cs * 0.16);
@@ -446,7 +509,6 @@ export class BoardRenderer {
     const y = L.boardY + bar.row * cs;
 
     ctx.save();
-    // Rosewood spiked gate planks (referencing the iconic wooden spike barricade)
     const pad = cs * 0.08;
     ctx.fillStyle = '#9c5a49';
     this.roundRect(ctx, x + pad, y + pad, cs - pad * 2, cs - pad * 2, 4);
@@ -455,13 +517,11 @@ export class BoardRenderer {
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
-    // Vertical plank seam + rivets
     ctx.beginPath();
     ctx.moveTo(x + cs * 0.5, y + pad);
     ctx.lineTo(x + cs * 0.5, y + cs - pad);
     ctx.stroke();
 
-    // Ivory/Iron spikes along outer edge
     ctx.fillStyle = '#f5efe0';
     ctx.strokeStyle = '#3b1d16';
     ctx.lineWidth = 1.1;
@@ -478,7 +538,6 @@ export class BoardRenderer {
       ctx.stroke();
     }
 
-    // Durability bar if damaged
     if (bar.hp < bar.maxHp) {
       const bw = cs * 0.78;
       const bx = x + (cs - bw) * 0.5;
@@ -500,11 +559,9 @@ export class BoardRenderer {
     const y = L.dividerY;
 
     ctx.save();
-    // Stone parapet band
     ctx.fillStyle = '#363833';
     ctx.fillRect(L.boardX - 2, y - 4, L.boardW + 4, 8);
 
-    // Crenellated battlements (城垛齿纹)
     ctx.fillStyle = '#4e524b';
     ctx.strokeStyle = '#1f211e';
     ctx.lineWidth = 1;
@@ -514,12 +571,10 @@ export class BoardRenderer {
       ctx.strokeRect(mx, y - 4, merlonW, 8);
     }
 
-    // Subtle Rival & Player badges on the parapet edges
     const dict = t();
     ctx.font = '700 10px "STKaiti", "KaiTi", "Noto Serif SC", Georgia, serif';
     ctx.textBaseline = 'middle';
 
-    // Left badge: Rival AI status
     const aiLabel = s.aiCollapsed
       ? `${dict.rivalTag} ✕`
       : `${dict.rivalTag} ♥${s.aiHearts}`;
@@ -533,7 +588,6 @@ export class BoardRenderer {
     ctx.fillStyle = s.aiCollapsed ? '#9ca3af' : '#fca5a5';
     ctx.fillText(aiLabel, L.boardX + L.cellSize + 10, y + 0.5);
 
-    // Right badge: Player status
     const plLabel = `${dict.playerTag} ♥${s.hearts}`;
     const rw = ctx.measureText(plLabel).width + 12;
     const rx = L.boardX + L.boardW - L.cellSize - rw - 4;
@@ -548,7 +602,7 @@ export class BoardRenderer {
     ctx.restore();
   }
 
-  // ==================== 5. JADE & XUAN-PAPER MAHJONG WAR-TILES ====================
+  // ==================== 6. MAHJONG WAR-TILES + EQUIPPED WEAPON BADGE ====================
 
   public drawWarTile(
     ctx: CanvasRenderingContext2D,
@@ -556,17 +610,17 @@ export class BoardRenderer {
     x: number,
     y: number,
     size: number,
-    highlight: 'none' | 'merge' | 'awaken' | 'selected',
-    dimmed: boolean
+    highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman',
+    dimmed: boolean,
+    isPlayerSide: boolean
   ): void {
     const def = UNITS[u.unitId];
     const isAwakened = def.category === 'awakened';
-    const isPart = def.category === 'soul' || def.category === 'weapon';
+    const isShard = def.category === 'shard1' || def.category === 'shard2';
 
     ctx.save();
     if (dimmed) ctx.globalAlpha = 0.52;
 
-    // Pop-in / attack recoil transform
     let cx = x + size * 0.5;
     let cy = y + size * 0.5;
     let scale = 1;
@@ -586,30 +640,30 @@ export class BoardRenderer {
     const rad = Math.max(5, size * 0.13);
     const lip = Math.max(3, size * 0.085);
 
-    // Interactive Merge / 2-Tile Awakening Halo
-    if (highlight !== 'none') {
+    if (highlight !== 'none' || u.frenzyTimer > 0) {
       const pulse = 0.65 + 0.35 * Math.sin(this.animClock * 7.5);
       ctx.save();
       ctx.strokeStyle =
-        highlight === 'awaken'
+        highlight === 'awaken' || highlight === 'talisman'
           ? `rgba(250, 204, 21, ${pulse})`
           : highlight === 'merge'
             ? `rgba(52, 211, 153, ${pulse})`
-            : 'rgba(251, 191, 36, 0.95)';
-      ctx.lineWidth = highlight === 'awaken' ? 3.2 : 2.4;
-      ctx.shadowColor = highlight === 'awaken' ? '#facc15' : '#34d399';
-      ctx.shadowBlur = highlight === 'awaken' ? 14 : 8;
+            : u.frenzyTimer > 0
+              ? 'rgba(192, 132, 252, 0.9)'
+              : 'rgba(251, 191, 36, 0.95)';
+      ctx.lineWidth = highlight === 'awaken' || highlight === 'talisman' ? 3.2 : 2.4;
+      ctx.shadowColor = highlight === 'merge' ? '#34d399' : '#facc15';
+      ctx.shadowBlur = 11;
       this.roundRect(ctx, tx - 2, ty - 2, size + 4, size + 4, rad + 2);
       ctx.stroke();
       ctx.restore();
     }
 
-    // 3D Carved Mahjong Block Base Lip
-    ctx.fillStyle = isAwakened ? '#784b08' : isPart ? def.frameColor : '#b5aa94';
+    // 3D Carved Mahjong Lip
+    ctx.fillStyle = isAwakened ? '#784b08' : isShard ? def.frameColor : '#b5aa94';
     this.roundRect(ctx, tx, ty + lip, size, size - lip, rad);
     ctx.fill();
 
-    // Upper Tile Face
     const faceH = size - lip;
     if (isAwakened) {
       const g = ctx.createLinearGradient(tx, ty, tx + size, ty + faceH);
@@ -626,31 +680,28 @@ export class BoardRenderer {
     this.roundRect(ctx, tx, ty, size, faceH, rad);
     ctx.fill();
 
-    // Clipped Inner Gongbi Artwork Painting
+    // Clipped Inner Gongbi Painting
     const pad = isAwakened ? Math.max(3, size * 0.075) : Math.max(2.5, size * 0.06);
     ctx.save();
     this.roundRect(ctx, tx + pad, ty + pad, size - pad * 2, faceH - pad * 2, Math.max(3, rad - 2));
     ctx.clip();
-
     const sprite = Assets.get(def.spriteKey);
     if (sprite) {
       ctx.drawImage(sprite, tx + pad, ty + pad, size - pad * 2, faceH - pad * 2);
     }
     ctx.restore();
 
-    // Category-Specific Inner & Outer Borders
+    // Borders
     if (isAwakened) {
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 1.6;
       this.roundRect(ctx, tx + pad, ty + pad, size - pad * 2, faceH - pad * 2, Math.max(3, rad - 2));
       ctx.stroke();
-
       ctx.strokeStyle = '#784b08';
       ctx.lineWidth = 1.5;
       this.roundRect(ctx, tx, ty, size, faceH, rad);
       ctx.stroke();
-    } else if (isPart) {
-      // Color-coded Silk Frame linking [General Soul] <-> [Divine Weapon]
+    } else if (isShard) {
       ctx.strokeStyle = def.accentColor;
       ctx.lineWidth = 2.2;
       this.roundRect(ctx, tx + 1, ty + 1, size - 2, faceH - 2, rad);
@@ -662,7 +713,7 @@ export class BoardRenderer {
       ctx.stroke();
     }
 
-    // Top-Left Non-Hanzi Pairing Crest Badge for Souls, Weapons & Awakened Generals
+    // Top-Left Non-Hanzi Pairing Crest
     if (def.crestSymbol) {
       const bR = Math.max(6.5, size * 0.16);
       const bx = tx + bR + 2;
@@ -682,21 +733,20 @@ export class BoardRenderer {
       ctx.fillText(def.crestSymbol, bx, by + 0.5);
     }
 
-    // Bottom-Center Split-Jade Tally Indicator (◐ on Soul + ◑ on Weapon = ● Awakened!)
-    if (isPart) {
-      const tallyR = Math.max(4.5, size * 0.105);
+    // Bottom Split-Jade Tally Seal on Shards (◐ for Shard I, ◑ for Shard II!)
+    if (isShard) {
+      const tallyR = Math.max(4.8, size * 0.115);
       const jx = 0;
       const jy = ty + faceH - tallyR - 2;
 
       ctx.save();
       ctx.beginPath();
       ctx.arc(jx, jy, tallyR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(28, 25, 23, 0.78)';
+      ctx.fillStyle = 'rgba(28, 25, 23, 0.82)';
       ctx.fill();
 
-      // Lit half of the jade seal (Left half for Soul, Right half for Weapon!)
       ctx.beginPath();
-      if (def.category === 'soul') {
+      if (def.category === 'shard1') {
         ctx.arc(jx, jy, tallyR - 1, Math.PI * 0.5, Math.PI * 1.5);
       } else {
         ctx.arc(jx, jy, tallyR - 1, -Math.PI * 0.5, Math.PI * 0.5);
@@ -706,29 +756,43 @@ export class BoardRenderer {
       ctx.fill();
 
       ctx.strokeStyle = def.accentColor;
-      ctx.lineWidth = 1.1;
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.arc(jx, jy, tallyR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Awakened Hero Skill Pips at bottom of tile
-    if (isAwakened && def.skillEveryN) {
-      const n = def.skillEveryN;
-      const cur = u.attackCount % n;
-      const pipW = Math.min(8, (size - 14) / n - 2);
-      const totalW = n * pipW + (n - 1) * 2;
-      let px = -totalW * 0.5;
-      const py = ty + faceH - 5.5;
-      for (let i = 0; i < n; i++) {
-        ctx.fillStyle = i < cur ? '#fde047' : 'rgba(28,25,23,0.55)';
-        ctx.fillRect(px, py, pipW, 3);
-        px += pipW + 2;
+    // Inlaid Equipped Weapon Badge on Awakened Generals (matches reference screenshot!)
+    if (isAwakened && def.heroKey) {
+      const eqWeapon = isPlayerSide
+        ? SaveManager.get().equippedWeapons[def.heroKey]
+        : null;
+      if (eqWeapon) {
+        const wSz = Math.max(12, size * 0.32);
+        const wx = tx + size - wSz - 2;
+        const wy = ty + faceH - wSz - 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
+        ctx.fillStyle = '#291d16';
+        ctx.fill();
+        ctx.clip();
+        const wImg = Assets.get(eqWeapon);
+        if (wImg) {
+          ctx.drawImage(wImg, wx, wy, wSz, wSz);
+        }
+        ctx.restore();
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
 
-    // Top-Right Universal Arabic Tier Numeral (1..4)
+    // 5-Color Rarity Tier Numeral (1=White/Ink, 2=Green, 3=Blue, 4=Purple, 5=Orange-Gold)
+    const tierColors = ['#1c1917', '#15803d', '#1d4ed8', '#7e22ce', '#c2410c'];
     const tierFont = Math.max(9, Math.round(size * 0.22));
     const numX = tx + size - Math.max(7, size * 0.16);
     const numY = ty + Math.max(8, size * 0.18);
@@ -736,58 +800,15 @@ export class BoardRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 2.6;
-    ctx.strokeStyle = 'rgba(252, 249, 240, 0.92)';
+    ctx.strokeStyle = 'rgba(252, 249, 240, 0.95)';
     ctx.strokeText(`${u.tier}`, numX, numY);
-    ctx.fillStyle = u.tier >= 3 ? '#b91c1c' : '#1c1917';
+    ctx.fillStyle = tierColors[Math.min(4, u.tier - 1)];
     ctx.fillText(`${u.tier}`, numX, numY);
 
     ctx.restore();
   }
 
-  // ==================== 7. RANGE PREVIEW & CAMP BENCH ====================
-
-  private drawActiveRangePreview(
-    ctx: CanvasRenderingContext2D,
-    engine: GameEngine,
-    s: RunState
-  ): void {
-    const L = engine.layout;
-    const cs = L.cellSize;
-
-    let gx = -1;
-    let gy = -1;
-    let unit: TileUnit | null = null;
-
-    if (engine.drag?.active && engine.drag.movedEnough) {
-      const col = Math.floor((engine.drag.screenX - L.boardX) / cs);
-      const row = Math.floor((engine.drag.screenY - L.boardY) / cs);
-      if (col >= 0 && col < s.stage.cols && row >= s.stage.dividerRow && row < s.stage.rows) {
-        gx = L.boardX + (col + 0.5) * cs;
-        gy = L.boardY + (row + 0.5) * cs;
-        unit = engine.drag.unit;
-      }
-    } else if (s.selectedSource?.type === 'board') {
-      gx = L.boardX + (s.selectedSource.col + 0.5) * cs;
-      gy = L.boardY + (s.selectedSource.row + 0.5) * cs;
-      unit = s.board[s.selectedSource.row][s.selectedSource.col];
-    }
-
-    if (!unit || gx < 0) return;
-
-    const def = UNITS[unit.unitId];
-    const rPx = (def.rangeCells + getTierRangeBonus(unit.tier)) * cs;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(gx, gy, rPx, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(212, 175, 55, 0.1)';
-    ctx.fill();
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-    ctx.restore();
-  }
+  // ==================== 8. ENEMIES, BOSSES, PROJECTILES & VFX ====================
 
   private drawCampBench(
     ctx: CanvasRenderingContext2D,
@@ -798,13 +819,11 @@ export class BoardRenderer {
     const L = engine.layout;
     const bs = L.benchTileSize;
 
-    // War-Camp Tent Emblem on the left (Zero Hanzi!)
     const tentImg = Assets.get('icon_tent');
     if (tentImg) {
       ctx.drawImage(tentImg, L.tentX - 2, L.tentY - 3, bs + 4, bs + 6);
     }
 
-    // 5 Carved Stone/Jade Bench Slots
     for (let i = 0; i < 5; i++) {
       const sx = L.benchX + i * (bs + L.benchGap);
       const sy = L.benchY;
@@ -815,11 +834,6 @@ export class BoardRenderer {
       ctx.fill();
       ctx.strokeStyle = '#3b3731';
       ctx.lineWidth = 1.6;
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1;
-      this.roundRect(ctx, sx + 3, sy + 3, bs - 6, bs - 6, 4);
       ctx.stroke();
       ctx.restore();
 
@@ -834,19 +848,19 @@ export class BoardRenderer {
         continue;
       }
 
-      let highlight: 'none' | 'merge' | 'awaken' | 'selected' = 'none';
-      if (s.selectedSource?.type === 'bench' && s.selectedSource.benchIdx === i) {
+      let highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman' = 'none';
+      if (s.talismanMode) {
+        highlight = 'talisman';
+      } else if (s.selectedSource?.type === 'bench' && s.selectedSource.benchIdx === i) {
         highlight = 'selected';
       } else if (activeUnit && activeUnit.uid !== u.uid) {
         const combo = checkTileCombine(activeUnit, u);
         if (combo) highlight = combo.mode;
       }
 
-      this.drawWarTile(ctx, u, sx + 2, sy + 2, bs - 4, highlight, false);
+      this.drawWarTile(ctx, u, sx + 2, sy + 2, bs - 4, highlight, false, true);
     }
   }
-
-  // ==================== 8. ENEMIES, PROJECTILES & GUOFENG VFX ====================
 
   private drawEnemies(
     ctx: CanvasRenderingContext2D,
@@ -855,29 +869,25 @@ export class BoardRenderer {
   ): void {
     const L = engine.layout;
     const cs = L.cellSize;
-
-    // Sort by Y so depth overlaps cleanly
     const sorted = [...s.enemies].sort((a, b) => a.y - b.y);
 
     for (const e of sorted) {
       const px = L.boardX + e.x * cs;
       const py = L.boardY + e.y * cs;
-      const scaleMult = e.isBoss ? 1.38 : e.isMiniBoss ? 1.18 : e.kind === 'shield' ? 1.02 : 0.92;
+      const scaleMult = e.isBoss ? 1.42 : e.isMiniBoss ? 1.24 : e.kind === 'shield' ? 1.02 : 0.92;
       const drawSz = cs * scaleMult;
       const bob = e.stunTimer > 0 ? 0 : Math.abs(Math.sin(this.animClock * 8 + e.id)) * 2.5;
 
       ctx.save();
 
-      // Ground ink shadow
       ctx.fillStyle = 'rgba(15, 14, 12, 0.34)';
       ctx.beginPath();
       ctx.ellipse(px, py + drawSz * 0.32, drawSz * 0.28, drawSz * 0.11, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Boss / Mini-boss crimson-gold aura ring
       if (e.isBoss || e.isMiniBoss) {
-        ctx.strokeStyle = e.isBoss ? 'rgba(220, 38, 38, 0.7)' : 'rgba(217, 119, 6, 0.6)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = e.regenTimer > 0 ? '#22c55e' : e.isBoss ? '#dc2626' : '#eab308';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
         ctx.ellipse(px, py + drawSz * 0.3, drawSz * 0.36, drawSz * 0.15, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -897,13 +907,19 @@ export class BoardRenderer {
         }
       }
 
-      // Status overlays (Frost / Stun)
-      if (e.slowTimer > 0) {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
-        ctx.lineWidth = 1.6;
+      // Zhang Jiao Heal Chant emerald aura
+      if (e.regenTimer > 0) {
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(px, py - drawSz * 0.1, drawSz * 0.32, 0, Math.PI * 2);
+        ctx.arc(px, py - drawSz * 0.15, drawSz * 0.38, 0, Math.PI * 2);
         ctx.stroke();
+      }
+      if (e.armorBrokenTimer > 0) {
+        ctx.fillStyle = '#4ade80';
+        ctx.font = '700 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('▾', px + drawSz * 0.3, py - drawSz * 0.45);
       }
       if (e.stunTimer > 0) {
         ctx.fillStyle = '#facc15';
@@ -912,14 +928,13 @@ export class BoardRenderer {
         ctx.fillText('✦', px, py - drawSz * 0.58);
       }
 
-      // Crisp Enemy HP Bar
-      const hpW = cs * (e.isBoss ? 1.05 : 0.68);
-      const hpH = e.isBoss ? 5 : 3.5;
+      const hpW = cs * (e.isBoss ? 1.1 : e.isMiniBoss ? 0.92 : 0.68);
+      const hpH = e.isBoss ? 5.5 : 3.5;
       const hx = px - hpW * 0.5;
       const hy = py - drawSz * 0.56 - 5;
-      ctx.fillStyle = 'rgba(18, 16, 14, 0.78)';
+      ctx.fillStyle = 'rgba(18, 16, 14, 0.8)';
       ctx.fillRect(hx, hy, hpW, hpH);
-      ctx.fillStyle = e.side === 'ai' ? '#f59e0b' : '#ef4444';
+      ctx.fillStyle = e.regenTimer > 0 ? '#22c55e' : e.side === 'ai' ? '#f59e0b' : '#ef4444';
       ctx.fillRect(hx, hy, hpW * Math.max(0, e.hp / e.maxHp), hpH);
 
       ctx.restore();
@@ -990,7 +1005,14 @@ export class BoardRenderer {
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      if (fx.kind === 'slash') {
+      if (fx.kind === 'chest_drop') {
+        const chest = Assets.get('icon_chest');
+        const sz = cs * 1.15;
+        const lift = tNorm * cs * 0.8;
+        if (chest) {
+          ctx.drawImage(chest, px - sz * 0.5, py - sz * 0.5 - lift, sz, sz);
+        }
+      } else if (fx.kind === 'slash') {
         ctx.translate(px, py);
         ctx.rotate(fx.angle || 0);
         ctx.strokeStyle = fx.color;
@@ -1006,7 +1028,6 @@ export class BoardRenderer {
         ctx.arc(px, py, fx.radius * cs * (0.25 + tNorm * 0.75), 0, Math.PI * 2);
         ctx.stroke();
       } else if (fx.kind === 'awaken_pillar') {
-        // Golden Hero Synthesis Pillar of Light!
         const radPx = fx.radius * cs * (0.3 + tNorm * 0.7);
         const pGrad = ctx.createLinearGradient(px, py - cs * 2.2, px, py + cs * 0.4);
         pGrad.addColorStop(0, 'rgba(250, 204, 21, 0)');
@@ -1048,7 +1069,8 @@ export class BoardRenderer {
         g.addColorStop(0.45, fx.color);
         g.addColorStop(1, 'rgba(56, 189, 248, 0)');
         ctx.fillStyle = g;
-        ctx.fillRect(L.boardX, L.dividerY, L.boardW, L.boardH - sStageHalfH(engine));
+        const halfH = sStageHalfH(engine);
+        ctx.fillRect(L.boardX, L.dividerY, L.boardW, L.boardH - halfH);
       }
 
       ctx.restore();

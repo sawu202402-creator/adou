@@ -10,31 +10,63 @@ export type AdPlacement =
   | 'settlement_multiplier';
 
 export type HeroKey = 'zhaoyun' | 'guanyu' | 'zhangfei' | 'zhuge' | 'zhenji' | 'shangxiang';
-export type TroopKey = 'blade' | 'archer' | 'lancer' | 'mortar' | 'frostbow';
+export type TroopKey = 'blade' | 'spear' | 'lancer' | 'archer' | 'mortar';
+export type WeaponId = `weap_${HeroKey}`;
+
+export type SkillId =
+  | 'rank_up'
+  | 'haste_scroll'
+  | 'meteor_art'
+  | 'tomb_raider'
+  | 'exorcist_seal'
+  | 'hero_decree'
+  | 'granary_art'
+  | 'frost_inkstone';
 
 /**
- * Tile IDs:
- * - 5 Base Troops: 'blade' | 'archer' | 'lancer' | 'mortar' | 'frostbow'
- * - 6 Hero Souls (Part A): 'soul_zhaoyun' | ...
- * - 6 Divine Weapons (Part B): 'weap_zhaoyun' | ...
- * - 6 Awakened True Heroes (Fused A+B): 'hero_zhaoyun' | ...
+ * Tile IDs on Board & Bench (Zero Hanzi):
+ * - 5 Base Troops: 'blade' (刀) | 'spear' (枪) | 'lancer' (骑) | 'archer' (弓) | 'mortar' (炮)
+ * - 6 Hero Shard I (Left Portrait Tally ◐): 'shard1_<hero>'
+ * - 6 Hero Shard II (Right Totem Tally ◑): 'shard2_<hero>'
+ * - 6 Awakened Generals (Fused I + II): 'hero_<hero>'
  */
 export type UnitId =
   | TroopKey
-  | `soul_${HeroKey}`
-  | `weap_${HeroKey}`
+  | `shard1_${HeroKey}`
+  | `shard2_${HeroKey}`
   | `hero_${HeroKey}`;
 
-export type TileCategory = 'troop' | 'soul' | 'weapon' | 'awakened';
+export type TileCategory = 'troop' | 'shard1' | 'shard2' | 'awakened';
 
 export type SynergyTag = 'vanguard' | 'marksman' | 'mystic';
 
+/**
+ * Grid-Cell Range Archetypes (faithful to 赵云与阿斗 tactical positioning):
+ * - 'melee_1': Adjacent 3x3 cells only (Chebyshev <= 1) — high damage, must hug the road!
+ * - 'spear_line_2': Straight/cross 2-cell corridors + line pierce!
+ * - 'cavalry_2': Agile 2-cell diamond/square around unit!
+ * - 'archer_3': Long 3-cell inner-core sniper coverage!
+ * - 'mortar_ring_3': Siege 1.2..3.2 cell ring (1-cell melee blindspot, heavy AoE)!
+ * - 'shard_sentry': 1.8-cell weak sentry while waiting for partner shard!
+ * - 'hero_2' / 'hero_3' / 'hero_full': Hero-specific tactical grids!
+ */
+export type RangeShape =
+  | 'melee_1'
+  | 'spear_line_2'
+  | 'cavalry_2'
+  | 'archer_3'
+  | 'mortar_ring_3'
+  | 'shard_sentry'
+  | 'hero_melee_2'
+  | 'hero_caster_3'
+  | 'hero_global_4';
+
 export type AttackPattern =
   | 'cleave'
-  | 'arrow'
   | 'pierce_lance'
+  | 'cavalry_slash'
+  | 'arrow'
   | 'mortar_aoe'
-  | 'frost_bolt'
   | 'spirit_strike'
   | 'dragon_sweep'
   | 'jade_execute'
@@ -46,15 +78,17 @@ export type AttackPattern =
 export interface UnitDef {
   id: UnitId;
   category: TileCategory;
-  heroKey?: HeroKey; // links soul_<x>, weap_<x>, and hero_<x>
+  heroKey?: HeroKey;
   spriteKey: string;
   accentColor: string;
   frameColor: string;
-  crestSymbol: string; // non-text geometric/elemental mark for instant visual pairing
+  crestSymbol: string;
   synergy: SynergyTag;
+  rangeShape: RangeShape;
   pattern: AttackPattern;
   baseDamage: number;
   attackInterval: number;
+  minRangeCells: number;
   rangeCells: number;
   projectileSpeed: number;
   aoeRadiusCells?: number;
@@ -67,12 +101,13 @@ export interface UnitDef {
 export interface TileUnit {
   uid: number;
   unitId: UnitId;
-  tier: number; // 1..4
+  tier: number; // 1..5
   cooldown: number;
   attackCount: number;
   recoilTimer: number;
   recoilAngle: number;
   mergeAnimTimer: number;
+  frenzyTimer: number; // boosted by 神兵符 / 攻速符
 }
 
 export type SideOwner = 'ai' | 'player';
@@ -98,29 +133,27 @@ export interface StageDef {
   index: number;
   theme: MapTheme;
   cols: number; // 8
-  rows: number; // 10 (rows 0..4 = AI Top Half, rows 5..9 = Player Bottom Half)
-  dividerRow: number; // 5 (horizontal Great Wall between row 4 and row 5)
+  rows: number; // 10
+  dividerRow: number; // 5
   layout: string[];
   aiLane: DuelLane;
   playerLane: DuelLane;
+  finalBoss: 'lubu' | 'zhangjiao';
 }
 
-export type EnemyKind = 'grunt' | 'wolf' | 'shield' | 'lubu';
+export type EnemyKind = 'grunt' | 'wolf' | 'shield' | 'zhangjiao' | 'lubu';
 
-export interface MetaUpgradeLevels {
-  hearts: number;
-  granary: number;
-  might: number;
-  decree: number;
-  shovels: number;
-}
+export type BossArchetype = 'none' | 'zhangbao' | 'zhangjiao' | 'lubu';
 
 export interface SaveData {
   lang?: Lang;
   commanderLevel: number;
   commanderXp: number;
   gold: number;
-  upgrades: MetaUpgradeLevels;
+  skills: Record<SkillId, number>;
+  weaponShards: Record<WeaponId, number>;
+  weapons: Record<WeaponId, number>; // 0 = locked, 1..5 = star rank
+  equippedWeapons: Partial<Record<HeroKey, WeaponId>>;
   clearedStages: string[];
   endlessBestWave: Record<string, number>;
   totalRuns: number;
@@ -141,4 +174,5 @@ export interface RunSummary {
   merges: number;
   victory: boolean;
   aiDefeated: boolean;
+  droppedShards: WeaponId[];
 }

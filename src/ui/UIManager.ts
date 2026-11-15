@@ -1,16 +1,17 @@
 import { SoundFX } from '../audio/SoundFX';
 import { STAGES } from '../data/stages';
-import { HERO_KEYS, TROOP_KEYS, UNITS } from '../data/units';
+import { HERO_KEYS, isCellInUnitRange, TROOP_KEYS, UNITS } from '../data/units';
+import { SKILL_SPECS, WEAPON_IDS, WEAPON_SPECS } from '../data/weaponsAndSkills';
 import { GameEngine } from '../game/GameEngine';
 import { getLang, getUnitDisplayText, t } from '../i18n/locale';
-import { SaveManager, UPGRADE_TRACKS } from '../meta/SaveManager';
+import { SaveManager } from '../meta/SaveManager';
 import { PlatformSDK } from '../platform/PlatformSDK';
-import { GameMode, MetaUpgradeLevels, RunSummary, StageDef } from '../types';
+import { GameMode, HeroKey, RunSummary, SkillId, StageDef, TroopKey, WeaponId } from '../types';
 
 export class UIManager {
   private hudRoot: HTMLElement | null = null;
   private modalRoot: HTMLElement;
-  private hubTab: 'stages' | 'codex' | 'upgrades' = 'stages';
+  private hubTab: 'stages' | 'armory' | 'skills' | 'codex' = 'stages';
   private selectedMode: GameMode = 'standard';
   private pauseOpen = false;
   private needleAnimId = 0;
@@ -39,13 +40,22 @@ export class UIManager {
     const dict = t();
     const save = SaveManager.get();
     const langLabel = getLang() === 'en' ? 'EN / 中文' : '中文 / EN';
+    const rankIdx = Math.min(dict.rankTitles.length - 1, Math.max(0, save.skills.rank_up - 1));
+    const rankTitle = dict.rankTitles[rankIdx];
+
+    const readyWeaponCount = WEAPON_IDS.filter((wId) => {
+      const need = SaveManager.getShardsNeededForNextStar(wId);
+      return need !== null && (save.weaponShards[wId] || 0) >= need;
+    }).length;
 
     const tabContent =
       this.hubTab === 'stages'
         ? this.renderStagesTab()
-        : this.hubTab === 'codex'
-          ? this.renderCodexTab()
-          : this.renderUpgradesTab();
+        : this.hubTab === 'armory'
+          ? this.renderArmoryTab()
+          : this.hubTab === 'skills'
+            ? this.renderSkillsTab()
+            : this.renderCodexTab();
 
     this.modalRoot.innerHTML = `
       <div class="hub-screen" style="background-image: url('./assets/hub_scroll_bg.jpg')">
@@ -63,12 +73,15 @@ export class UIManager {
 
           <div class="hub-nav-tabs">
             <button class="seg-btn ${this.hubTab === 'stages' ? 'active' : ''}" data-hub-tab="stages">${dict.tabStages}</button>
+            <button class="seg-btn ${this.hubTab === 'armory' ? 'active' : ''}" data-hub-tab="armory">
+              ${dict.tabArmory}${readyWeaponCount > 0 ? `<span class="nav-dot">${readyWeaponCount}</span>` : ''}
+            </button>
+            <button class="seg-btn ${this.hubTab === 'skills' ? 'active' : ''}" data-hub-tab="skills">${dict.tabSkills}</button>
             <button class="seg-btn ${this.hubTab === 'codex' ? 'active' : ''}" data-hub-tab="codex">${dict.tabCodex}</button>
-            <button class="seg-btn ${this.hubTab === 'upgrades' ? 'active' : ''}" data-hub-tab="upgrades">${dict.tabUpgrades}</button>
           </div>
 
           <div class="commander-bar">
-            <span class="rank-pill">Lv.${save.commanderLevel}</span>
+            <span class="rank-pill">${rankTitle} · Lv.${save.commanderLevel}</span>
             <span class="gold-pill">◈ ${save.gold}</span>
             <button class="btn-guofeng btn-mini btn-jade" id="btn-hub-lang">${langLabel}</button>
           </div>
@@ -85,7 +98,7 @@ export class UIManager {
     this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-hub-tab]').forEach((btn) => {
       btn.onclick = () => {
         SoundFX.tileClack(true);
-        this.hubTab = btn.dataset.hubTab as 'stages' | 'codex' | 'upgrades';
+        this.hubTab = btn.dataset.hubTab as 'stages' | 'armory' | 'skills' | 'codex';
         this.showHomeHub();
       };
     });
@@ -115,13 +128,42 @@ export class UIManager {
       };
     });
 
-    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-upg]').forEach((btn) => {
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-buy-skill]').forEach((btn) => {
       btn.onclick = () => {
-        const key = btn.dataset.upg as keyof MetaUpgradeLevels;
-        if (SaveManager.buyUpgrade(key)) {
+        const id = btn.dataset.buySkill as SkillId;
+        if (SaveManager.buySkill(id)) {
           SoundFX.fanfare();
           this.showHomeHub();
         }
+      };
+    });
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-forge-weapon]').forEach((btn) => {
+      btn.onclick = () => {
+        const wId = btn.dataset.forgeWeapon as WeaponId;
+        if (SaveManager.forgeOrUpgradeWeapon(wId)) {
+          SoundFX.dragonUlt();
+          this.showHomeHub();
+        }
+      };
+    });
+
+    this.modalRoot.querySelectorAll<HTMLSelectElement>('[data-equip-select]').forEach((sel) => {
+      sel.onchange = () => {
+        const wId = sel.dataset.equipSelect as WeaponId;
+        const val = sel.value;
+        // Detach weapon if user picked 'none'
+        const saveNow = SaveManager.get();
+        (Object.keys(saveNow.equippedWeapons) as HeroKey[]).forEach((h) => {
+          if (saveNow.equippedWeapons[h] === wId) {
+            SaveManager.equipWeapon(h, null);
+          }
+        });
+        if (val !== 'none') {
+          SaveManager.equipWeapon(val as HeroKey, wId);
+        }
+        SoundFX.tileClack(true);
+        this.showHomeHub();
       };
     });
   }
@@ -130,6 +172,10 @@ export class UIManager {
     const dict = t();
     const save = SaveManager.get();
     const stagePreviewSprites = ['hero_zhaoyun', 'hero_guanyu', 'hero_zhuge'];
+    const bossSprites: Record<string, string> = {
+      lubu: 'enemy_lubu',
+      zhangjiao: 'enemy_zhangjiao',
+    };
 
     const cards = STAGES.map((st, idx) => {
       const info = dict.stages[st.id];
@@ -147,12 +193,18 @@ export class UIManager {
       return `
         <div class="stage-card">
           <div class="stage-card-top">
-            <div class="stage-emblem-frame">
-              <img src="./assets/${stagePreviewSprites[idx] || 'hero_zhaoyun'}.png" alt="" />
+            <div class="stage-emblem-group">
+              <div class="stage-emblem-frame">
+                <img src="./assets/${stagePreviewSprites[idx] || 'hero_zhaoyun'}.png" alt="" />
+              </div>
+              <div class="stage-boss-avatar" title="Stage Boss">
+                <img src="./assets/${bossSprites[st.finalBoss]}.png" alt="" />
+              </div>
             </div>
             <span class="stage-tag ${cleared ? 'cleared' : ''}">${badge}</span>
           </div>
           <h3>${info.name}</h3>
+          <div class="stage-boss-pill">☠ ${info.bossHint}</div>
           <p>${info.subtitle}</p>
           <button class="btn-guofeng ${this.selectedMode === 'standard' ? 'btn-cinnabar' : 'btn-gilt'} stage-go-btn" data-stage-go="${st.id}">
             ${this.selectedMode === 'standard' ? dict.btnPlayStandard : dict.btnPlayEndless}
@@ -172,39 +224,186 @@ export class UIManager {
     `;
   }
 
+  private renderArmoryTab(): string {
+    const dict = t();
+    const save = SaveManager.get();
+
+    const cards = WEAPON_IDS.map((wId) => {
+      const spec = WEAPON_SPECS[wId];
+      const wTxt = dict.weapons[wId];
+      const star = save.weapons[wId] || 0;
+      const have = save.weaponShards[wId] || 0;
+      const need = SaveManager.getShardsNeededForNextStar(wId);
+      const canForge = need !== null && have >= need;
+      const sigHeroName = dict.heroes[spec.signatureHero].heroName;
+
+      // Find which hero currently holds this weapon
+      const holder: HeroKey | null =
+        HERO_KEYS.find((h) => save.equippedWeapons[h] === wId) ?? null;
+
+      const pct = need === null ? 100 : Math.min(100, Math.round((have / need) * 100));
+      const starStr = star > 0 ? '★'.repeat(star) + '☆'.repeat(5 - star) : '☆☆☆☆☆';
+
+      const heroOptions = HERO_KEYS.map((h) => {
+        const hName = dict.heroes[h].heroName;
+        const isSig = h === spec.signatureHero;
+        return `<option value="${h}" ${holder === h ? 'selected' : ''}>${hName}${isSig ? ' ★' : ''}</option>`;
+      }).join('');
+
+      return `
+        <div class="weapon-card ${star > 0 ? 'unlocked' : ''}">
+          <div class="weap-top">
+            <div class="mini-war-tile weap-icon-tile" style="border-color:${spec.accentColor}">
+              <img src="./assets/${spec.spriteKey}.png" alt="" />
+              ${star > 0 ? `<span class="weap-star-pill">${star}★</span>` : ''}
+            </div>
+            <div class="weap-meta">
+              <div class="weap-title-row">
+                <strong>${wTxt.name}</strong>
+                <span class="weap-stars">${starStr}</span>
+              </div>
+              <div class="weap-desc">${wTxt.desc}</div>
+              <div class="weap-sig">${wTxt.sigBonus}</div>
+            </div>
+          </div>
+
+          <div class="shard-progress-row">
+            <div class="shard-bar-track">
+              <div class="shard-bar-fill" style="width:${pct}%"></div>
+              <span class="shard-bar-txt">
+                <img src="./assets/icon_chest.png" alt="" />
+                ${dict.shardCount(have, need)}
+              </span>
+            </div>
+            <button class="btn-guofeng btn-mini ${need === null ? 'btn-stone' : canForge ? 'btn-cinnabar' : 'btn-disabled'}"
+              data-forge-weapon="${wId}" ${!canForge ? 'disabled' : ''}>
+              ${need === null ? dict.maxLevel : star === 0 ? dict.btnForgeWeapon(need) : dict.btnStarUpWeapon(need)}
+            </button>
+          </div>
+
+          <div class="equip-bar">
+            ${
+              star > 0
+                ? `
+                  <span class="equip-label">${holder ? dict.equippedOn(dict.heroes[holder].heroName) : dict.btnEquipTo(sigHeroName)}</span>
+                  <select class="equip-select" data-equip-select="${wId}">
+                    <option value="none" ${holder === null ? 'selected' : ''}>— ${dict.unequippedLabel} —</option>
+                    ${heroOptions}
+                  </select>
+                `
+                : `<span class="equip-locked-hint">✦ ${dict.btnForgeWeapon(spec.unlockShards)} -> ${sigHeroName}</span>`
+            }
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="codex-wrap">
+        <div class="codex-tip-box">
+          <strong>${dict.armoryTitle}</strong><br/>
+          ${dict.armoryTip}
+        </div>
+        <div class="armory-grid">${cards}</div>
+      </div>
+    `;
+  }
+
+  private renderSkillsTab(): string {
+    const dict = t();
+    const save = SaveManager.get();
+    const rankIdx = Math.min(dict.rankTitles.length - 1, Math.max(0, save.skills.rank_up - 1));
+    const rankTitle = dict.rankTitles[rankIdx];
+    const bonusPct = Math.round(((SaveManager.getEffectiveBonuses().damageMult - 1) * 100));
+
+    const cards = SKILL_SPECS.map((spec) => {
+      const lvl = save.skills[spec.id];
+      const isMax = lvl >= spec.maxLevel;
+      const cost = SaveManager.getSkillCost(spec.id);
+      const canBuy = !isMax && save.gold >= cost;
+      const skTxt = dict.skills[spec.id];
+
+      return `
+        <div class="upgrade-card skill-shop-card">
+          <div class="upg-left">
+            <div class="upg-icon-box" style="border-color:${spec.badgeColor}">
+              <img src="./assets/${spec.spriteKey}.png" alt="" />
+              <span class="skill-corner-seal" style="background:${spec.badgeColor}">${spec.badgeSymbol}</span>
+            </div>
+            <div>
+              <div class="upg-title">${skTxt.name} <small>Lv.${lvl}/${spec.maxLevel}</small></div>
+              <div class="upg-desc">${skTxt.desc}</div>
+              <div class="upg-val">${skTxt.val(lvl)}</div>
+            </div>
+          </div>
+          <button class="btn-guofeng btn-mini ${isMax ? 'btn-stone' : canBuy ? 'btn-gilt' : 'btn-disabled'}"
+            data-buy-skill="${spec.id}" ${!canBuy ? 'disabled' : ''}>
+            ${isMax ? dict.maxLevel : dict.upgradeBtn(cost)}
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="upg-summary">${dict.commanderRank(save.commanderLevel, rankTitle, bonusPct)}</div>
+      <div class="skill-shop-grid">${cards}</div>
+    `;
+  }
+
+  private renderMiniRangeDiagram(unitId: TroopKey): string {
+    // 7x7 mini grid centered at (3,3) showing exact reachable cells!
+    const def = UNITS[unitId];
+    const cells: string[] = [];
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        if (r === 3 && c === 3) {
+          cells.push('<span class="rg-c center">★</span>');
+        } else if (isCellInUnitRange(def, 1, 3, 3, c, r)) {
+          cells.push('<span class="rg-c hit"></span>');
+        } else {
+          cells.push('<span class="rg-c"></span>');
+        }
+      }
+    }
+    return `<div class="mini-range-grid">${cells.join('')}</div>`;
+  }
+
   private renderCodexTab(): string {
     const dict = t();
+    const save = SaveManager.get();
 
-    // 6 Two-Tile Hero Awakening Equations: [Soul ◐] + [Weapon ◑] -> [Awakened Hero ★]
+    // 6 Two-Shard Hero Summoning Equations: [Shard I ◐] + [Shard II ◑] -> [Awakened General]
     const fusionCards = HERO_KEYS.map((hKey) => {
-      const soulDef = UNITS[`soul_${hKey}`];
-      const weapDef = UNITS[`weap_${hKey}`];
+      const s1Def = UNITS[`shard1_${hKey}`];
+      const s2Def = UNITS[`shard2_${hKey}`];
       const heroDef = UNITS[`hero_${hKey}`];
       const hTxt = dict.heroes[hKey];
+      const eqWeap = save.equippedWeapons[hKey];
 
       return `
         <div class="codex-card fusion-card">
           <div class="fusion-equation">
-            <div class="mini-war-tile part-tile" style="border-color:${soulDef.accentColor}">
-              <img src="./assets/${soulDef.spriteKey}.png" alt="" />
-              <span class="mini-crest" style="background:${soulDef.frameColor}">${soulDef.crestSymbol}</span>
+            <div class="mini-war-tile part-tile" style="border-color:${s1Def.accentColor}">
+              <img src="./assets/${s1Def.spriteKey}.png" alt="" />
+              <span class="mini-crest" style="background:${s1Def.frameColor}">${s1Def.crestSymbol}</span>
               <span class="mini-half">◐</span>
             </div>
             <span class="eq-op">+</span>
-            <div class="mini-war-tile part-tile" style="border-color:${weapDef.accentColor}">
-              <img src="./assets/${weapDef.spriteKey}.png" alt="" />
-              <span class="mini-crest" style="background:${weapDef.frameColor}">${weapDef.crestSymbol}</span>
+            <div class="mini-war-tile part-tile" style="border-color:${s2Def.accentColor}">
+              <img src="./assets/${s2Def.spriteKey}.png" alt="" />
+              <span class="mini-crest" style="background:${s2Def.frameColor}">${s2Def.crestSymbol}</span>
               <span class="mini-half">◑</span>
             </div>
             <span class="eq-arrow">➔</span>
             <div class="mini-war-tile awakened-tile">
               <img src="./assets/${heroDef.spriteKey}.png" alt="" />
               <span class="mini-crest gold">${heroDef.crestSymbol}</span>
+              ${eqWeap ? `<img class="mini-eq-weap" src="./assets/${eqWeap}.png" alt="" />` : ''}
             </div>
           </div>
           <div class="codex-info">
             <div class="codex-name">${hTxt.heroName}</div>
-            <div class="codex-role">${hTxt.soulName} + ${hTxt.weapName}</div>
+            <div class="codex-role">${hTxt.role}</div>
             <div class="codex-desc">${hTxt.desc}</div>
           </div>
         </div>
@@ -215,7 +414,7 @@ export class UIManager {
       const def = UNITS[id];
       const txt = dict.troops[id];
       return `
-        <div class="codex-card">
+        <div class="codex-card troop-range-card">
           <div class="mini-war-tile troop-tile">
             <img src="./assets/${def.spriteKey}.png" alt="" />
             <span class="mini-tier">1</span>
@@ -225,6 +424,7 @@ export class UIManager {
             <div class="codex-role">${txt.role}</div>
             <div class="codex-desc">${txt.desc}</div>
           </div>
+          ${this.renderMiniRangeDiagram(id)}
         </div>
       `;
     }).join('');
@@ -250,59 +450,13 @@ export class UIManager {
     return `
       <div class="codex-wrap">
         <div class="codex-tip-box">${dict.codexRuleTip}</div>
-        <h3 class="codex-sec-title">${dict.codexFusionTitle}</h3>
-        <div class="codex-grid fusion-grid">${fusionCards}</div>
         <h3 class="codex-sec-title">${dict.codexTroopsTitle}</h3>
         <div class="codex-grid">${troopCards}</div>
+        <h3 class="codex-sec-title">${dict.codexFusionTitle}</h3>
+        <div class="codex-grid fusion-grid">${fusionCards}</div>
         <h3 class="codex-sec-title">${dict.codexSynergyTitle}</h3>
         <div class="syn-grid">${synHtml}</div>
       </div>
-    `;
-  }
-
-  private renderUpgradesTab(): string {
-    const dict = t();
-    const save = SaveManager.get();
-    const nextXp = SaveManager.xpForNextLevel(save.commanderLevel);
-    const bonusPct = (save.commanderLevel - 1) * 3 + save.upgrades.might * 8;
-    const upgSprites: Record<keyof MetaUpgradeLevels, string> = {
-      hearts: './assets/vip_lord.png',
-      granary: './assets/icon_rice.png',
-      might: './assets/unit_blade.png',
-      decree: './assets/weap_zhuge.png',
-      shovels: './assets/icon_shovel.png',
-    };
-
-    const list = UPGRADE_TRACKS.map((spec) => {
-      const lvl = save.upgrades[spec.key];
-      const isMax = lvl >= spec.maxLevel;
-      const cost = SaveManager.getUpgradeCost(spec.key);
-      const canBuy = !isMax && save.gold >= cost;
-      const metaTxt = dict.upgrades[spec.key];
-
-      return `
-        <div class="upgrade-card">
-          <div class="upg-left">
-            <div class="upg-icon-box">
-              <img src="${upgSprites[spec.key]}" alt="" />
-            </div>
-            <div>
-              <div class="upg-title">${metaTxt.name} <small>Lv.${lvl}/${spec.maxLevel}</small></div>
-              <div class="upg-desc">${metaTxt.desc}</div>
-              <div class="upg-val">${metaTxt.val(lvl)}</div>
-            </div>
-          </div>
-          <button class="btn-guofeng btn-mini ${isMax ? 'btn-stone' : canBuy ? 'btn-gilt' : 'btn-disabled'}"
-            data-upg="${spec.key}" ${!canBuy ? 'disabled' : ''}>
-            ${isMax ? dict.maxLevel : dict.upgradeBtn(cost)}
-          </button>
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <div class="upg-summary">${dict.commanderRank(save.commanderLevel, bonusPct, save.commanderXp, nextXp)}</div>
-      <div class="upgrade-list">${list}</div>
     `;
   }
 
@@ -352,9 +506,9 @@ export class UIManager {
 
       <div class="hud-bottom-dock">
         <div class="recruit-row">
-          <button class="ult-orb-btn" id="btn-ult" title="Azure Dragon Sweep (Q)">
-            <img src="./assets/hero_zhaoyun.png" alt="" />
-            <span class="ult-pct" id="hud-ult-pct">35%</span>
+          <button class="ult-orb-btn" id="btn-ult" title="${dict.talismanLabel} (Q)">
+            <img src="./assets/weap_zhaoyun.png" alt="" />
+            <span class="ult-pct" id="hud-ult-pct">45%</span>
           </button>
 
           <button class="recruit-main-btn" id="btn-recruit">
@@ -377,11 +531,11 @@ export class UIManager {
             </div>
           </button>
 
-          <button class="tac-btn" id="btn-tac-decree">
-            <img src="./assets/weap_zhuge.png" alt="" />
+          <button class="tac-btn talisman-green" id="btn-tac-exorcise" title="Exorcism (E)">
+            <img src="./assets/crest_zhuge.png" alt="" />
             <div class="tac-meta">
-              <span class="tac-name">${dict.actDecree} <em id="hud-decree-lv">22%</em></span>
-              <span class="tac-sub" id="hud-decree-cost">24</span>
+              <span class="tac-name">${dict.actExorcise}</span>
+              <span class="tac-sub" id="hud-exorcise-sub">20</span>
             </div>
           </button>
 
@@ -409,7 +563,7 @@ export class UIManager {
 
     (hud.querySelector('#btn-pause') as HTMLButtonElement).onclick = () => this.togglePauseModal();
     (hud.querySelector('#btn-ult') as HTMLButtonElement).onclick = () => {
-      this.engine.castDragonUlt();
+      this.engine.activateDivineTalisman();
       this.syncHUD();
     };
     (hud.querySelector('#btn-recruit') as HTMLButtonElement).onclick = () => {
@@ -420,8 +574,8 @@ export class UIManager {
       this.engine.upgradeFarm();
       this.syncHUD();
     };
-    (hud.querySelector('#btn-tac-decree') as HTMLButtonElement).onclick = () => {
-      this.engine.upgradeDecree();
+    (hud.querySelector('#btn-tac-exorcise') as HTMLButtonElement).onclick = () => {
+      this.engine.castExorcism();
       this.syncHUD();
     };
     (hud.querySelector('#btn-tac-shovel') as HTMLButtonElement).onclick = () => {
@@ -443,7 +597,7 @@ export class UIManager {
     const dict = t();
     const save = SaveManager.get();
 
-    // 1st career Tiger Tally is completely FREE!
+    // 1st career Hero Shard is completely FREE!
     if (!save.freeHeroScrollUsed) {
       save.freeHeroScrollUsed = true;
       SaveManager.save();
@@ -452,7 +606,7 @@ export class UIManager {
       return;
     }
 
-    // 1x per run Matching Hero Partner Summon via Rewarded Ad
+    // 1x per run Matching Hero Partner Shard via Rewarded Ad
     if (!s.heroScrollAdUsed) {
       const ok = await PlatformSDK.showRewardedAd('hero_scroll_summon', dict.adRewardHero);
       if (ok && this.engine.state) {
@@ -463,7 +617,7 @@ export class UIManager {
       return;
     }
 
-    // Otherwise Ration + Golden Shovel Supply Drop
+    // Otherwise Steamed Buns + Golden Shovel Supply Drop
     if (s.supplyAdCooldown <= 0) {
       const ok = await PlatformSDK.showRewardedAd('free_rations_supply', dict.adRewardSupply);
       if (ok && this.engine.state) {
@@ -479,6 +633,7 @@ export class UIManager {
     const s = this.engine.state;
     if (!s || !this.hudRoot) return;
     const dict = t();
+    const save = SaveManager.get();
 
     const setIf = (key: string, val: string, apply: () => void) => {
       if (this.hudCache[key] !== val) {
@@ -501,34 +656,50 @@ export class UIManager {
       (this.hudRoot!.querySelector('#hud-rations') as HTMLElement).textContent = `${s.rations}`;
     });
 
-    // Boss HP Bar
-    const boss = s.enemies.find((e) => e.side === 'player' && e.isBoss);
-    const bossSig = boss ? `${boss.id}:${Math.ceil(boss.hp)}` : 'none';
+    // Boss & Elite Boss HP Bar (Zhang Bao W5, Zhang Jiao / Lu Bu W10)
+    const boss = s.enemies.find(
+      (e) => e.side === 'player' && (e.isBoss || e.isMiniBoss) && e.bossType !== 'none'
+    );
+    const bossSig = boss ? `${boss.id}:${Math.ceil(boss.hp)}:${boss.regenTimer > 0 ? 1 : 0}` : 'none';
     setIf('boss', bossSig, () => {
       const wrap = this.hudRoot!.querySelector('#hud-boss-wrap') as HTMLElement;
-      if (!boss) {
+      if (!boss || boss.bossType === 'none') {
         wrap.style.display = 'none';
       } else {
         wrap.style.display = 'block';
         const pct = Math.max(0, (boss.hp / boss.maxHp) * 100);
-        (this.hudRoot!.querySelector('#hud-boss-fill') as HTMLElement).style.width = `${pct}%`;
+        const fill = this.hudRoot!.querySelector('#hud-boss-fill') as HTMLElement;
+        fill.style.width = `${pct}%`;
+        fill.classList.toggle('healing', boss.regenTimer > 0);
+        const bInfo = dict.bossNames[boss.bossType];
         (this.hudRoot!.querySelector('#hud-boss-label') as HTMLElement).textContent =
-          `${dict.bossName} ${Math.ceil(boss.hp)}`;
+          `${bInfo.name} · ${Math.ceil(boss.hp)}`;
       }
     });
 
-    // Synergy Seals
+    // Top-Right Skill Seals (matching screenshot's 升职 / 攻速 / 秘籍 stamps) + Formation Synergies
+    const skillSig = SKILL_SPECS.map((sp) => `${sp.id}:${save.skills[sp.id]}`).join(',');
     const synSig = s.synergies.map((item) => `${item.id}:${item.tier}:${item.count}`).join('|');
-    setIf('syn', synSig, () => {
+    setIf('syn', `${skillSig}#${synSig}`, () => {
+      const skillBadges = SKILL_SPECS.filter((sp) => save.skills[sp.id] > 0)
+        .slice(0, 5)
+        .map((sp) => {
+          const skTxt = dict.skills[sp.id];
+          return `<span class="skill-seal-chip" style="background:${sp.badgeColor}" title="${skTxt.name}: ${skTxt.val(save.skills[sp.id])}">${skTxt.shortTag}<em>Lv.${save.skills[sp.id]}</em></span>`;
+        })
+        .join('');
+
       const symbols = { vanguard: '◈', marksman: '✦', mystic: '☯', dragon_guard: '❖' };
-      const html = s.synergies
+      const synBadges = s.synergies
         .filter((x) => x.tier > 0)
         .map(
           (x) =>
             `<span class="syn-chip tier-${x.tier}" title="${dict.synergyNames[x.id]}: ${dict.synergyDescs[x.id]}">${symbols[x.id]}${x.count}</span>`
         )
         .join('');
-      (this.hudRoot!.querySelector('#hud-synergies') as HTMLElement).innerHTML = html;
+
+      (this.hudRoot!.querySelector('#hud-synergies') as HTMLElement).innerHTML =
+        skillBadges + synBadges;
     });
 
     // Banner & Selected Unit Info Toast
@@ -548,18 +719,23 @@ export class UIManager {
         el.classList.remove('visible');
       } else {
         const uTxt = getUnitDisplayText(s.selectedUnitInfo.unitId);
-        el.textContent = `${uTxt.name} [T${s.selectedUnitInfo.tier}] · ${uTxt.role}`;
+        el.textContent = `${uTxt.name} [Lv.${s.selectedUnitInfo.tier}] · ${uTxt.role}`;
         el.classList.add('visible');
       }
     });
 
-    // Ultimate Orb
+    // Divine Talisman Orb (神兵符)
     const ultPct = Math.floor(s.ultCharge);
-    setIf('ult', `${ultPct}`, () => {
+    setIf('ult', `${ultPct}:${s.talismanMode ? 1 : 0}`, () => {
       const btn = this.hudRoot!.querySelector('#btn-ult') as HTMLButtonElement;
       const lbl = this.hudRoot!.querySelector('#hud-ult-pct') as HTMLElement;
       btn.classList.toggle('ready', ultPct >= 100);
-      lbl.textContent = ultPct >= 100 ? dict.ultReady : `${ultPct}%`;
+      btn.classList.toggle('active-pick', s.talismanMode);
+      lbl.textContent = s.talismanMode
+        ? dict.talismanReady
+        : ultPct >= 100
+          ? dict.talismanLabel
+          : `${ultPct}%`;
     });
 
     // Conscript / Refresh Button
@@ -574,8 +750,7 @@ export class UIManager {
       btn.classList.toggle('affordable', s.rations >= s.recruitCost);
     });
 
-    // Tiger Tally / Supply Boost Button
-    const save = SaveManager.get();
+    // Partner Shard / Supply Boost Button
     const boostMode = !save.freeHeroScrollUsed
       ? 'free_hero'
       : !s.heroScrollAdUsed
@@ -604,7 +779,7 @@ export class UIManager {
       }
     });
 
-    // 4 Tactical Buttons
+    // 4 Tactical Buttons: Farm, Exorcise (绿符降妖), Shovel, Fortify
     const farmCost = this.engine.getFarmCost();
     setIf('farm', `${s.farmLevel}:${s.rations >= farmCost ? 1 : 0}`, () => {
       (this.hudRoot!.querySelector('#hud-farm-lv') as HTMLElement).textContent =
@@ -613,12 +788,13 @@ export class UIManager {
         s.farmLevel >= 6 ? dict.maxLevel : `${farmCost}`;
     });
 
-    const decCost = this.engine.getDecreeCost();
-    const heroRatePct = Math.round(this.engine.getHeroDraftChance() * 100);
-    setIf('dec', `${s.decreeLevel}:${heroRatePct}:${s.rations >= decCost ? 1 : 0}`, () => {
-      (this.hudRoot!.querySelector('#hud-decree-lv') as HTMLElement).textContent = `${heroRatePct}%`;
-      (this.hudRoot!.querySelector('#hud-decree-cost') as HTMLElement).textContent =
-        s.decreeLevel >= 5 ? dict.maxLevel : `${decCost}`;
+    const exCost = this.engine.getExorciseCost();
+    const exCd = Math.ceil(s.exorciseCooldown);
+    setIf('exorcise', `${exCd}:${s.rations >= exCost ? 1 : 0}`, () => {
+      const btn = this.hudRoot!.querySelector('#btn-tac-exorcise') as HTMLButtonElement;
+      const sub = this.hudRoot!.querySelector('#hud-exorcise-sub') as HTMLElement;
+      btn.classList.toggle('on-cd', exCd > 0);
+      sub.textContent = exCd > 0 ? `${exCd}s` : `${exCost}`;
     });
 
     const hasPlayerLocked = s.cells
@@ -637,7 +813,7 @@ export class UIManager {
     });
   }
 
-  // ==================== PAUSE, SHOVEL AD, REVIVE & SETTLEMENT MODALS ====================
+  // ==================== PAUSE, SHOVEL AD, REVIVE & POST-VICTORY SETTLEMENT ====================
 
   public togglePauseModal(): void {
     if (!this.engine.state || this.engine.state.wavePhase === 'ended') return;
@@ -718,6 +894,7 @@ export class UIManager {
         merges: s.merges,
         victory: false,
         aiDefeated: false,
+        droppedShards: [...s.droppedShards],
       });
       return;
     }
@@ -765,104 +942,229 @@ export class UIManager {
         merges: s.merges,
         victory: false,
         aiDefeated: false,
+        droppedShards: [...s.droppedShards],
       });
     };
   }
 
   public showSettlementModal(victory: boolean, sum: RunSummary): void {
+    cancelAnimationFrame(this.needleAnimId);
     this.pauseOpen = false;
     this.engine.modalPaused = true;
     const dict = t();
 
     const baseGold = Math.round(
-      30 + sum.wave * 16 + Math.min(220, sum.kills * 0.55) + sum.merges * 3 + (victory ? 130 : 0)
+      40 + sum.wave * 17 + Math.min(230, sum.kills * 0.55) + sum.merges * 3 + (victory ? 140 : 0)
     );
     const baseXp = Math.round(
       35 + sum.wave * 17 + Math.min(240, sum.kills * 0.65) + (victory ? 115 : 0)
     );
-    const zones = [2, 3, 5, 3, 2];
 
+    // Credit base Gold & XP immediately so the player can shop for Skills right here!
+    SaveManager.addRewards(baseGold, baseXp);
+    let bonusAdClaimed = false;
+
+    const zones = [2, 3, 5, 3, 2];
     const heading = victory
       ? sum.aiDefeated
         ? dict.victoryRivalKoTitle
         : dict.victoryTitle
       : dict.defeatTitle;
 
-    this.modalRoot.innerHTML = `
-      <div class="popup-backdrop">
-        <div class="popup-box">
-          <h2>${heading}</h2>
-          <p class="popup-sub">${dict.settleSub(sum.wave, sum.kills, sum.merges)}</p>
+    // Count dropped shards by weaponId
+    const dropCounts: Partial<Record<WeaponId, number>> = {};
+    for (const wId of sum.droppedShards) {
+      dropCounts[wId] = (dropCounts[wId] || 0) + 1;
+    }
 
-          <div class="reward-preview">
-            <span>◈ <strong id="rew-gold">+${baseGold}</strong></span>
-            <span>✦ <strong id="rew-xp">+${baseXp} XP</strong></span>
+    let curMult = 3;
+
+    const renderSettleInner = () => {
+      const save = SaveManager.get();
+
+      const dropChipsHtml =
+        sum.droppedShards.length > 0
+          ? (Object.keys(dropCounts) as WeaponId[])
+              .map((wId) => {
+                const cnt = dropCounts[wId]!;
+                const wTxt = dict.weapons[wId];
+                const have = save.weaponShards[wId] || 0;
+                const need = SaveManager.getShardsNeededForNextStar(wId);
+                const canForge = need !== null && have >= need;
+                return `
+                  <div class="drop-shard-pill">
+                    <img src="./assets/${wId}.png" alt="" />
+                    <div class="drop-shard-txt">
+                      <strong>${wTxt.name} +${cnt}</strong>
+                      <span>${dict.shardCount(have, need)}</span>
+                    </div>
+                    ${
+                      canForge
+                        ? `<button class="btn-guofeng btn-mini btn-cinnabar" data-settle-forge="${wId}">
+                            ${(save.weapons[wId] || 0) === 0 ? dict.btnForgeWeapon(need!) : dict.btnStarUpWeapon(need!)}
+                          </button>`
+                        : ''
+                    }
+                  </div>
+                `;
+              })
+              .join('')
+          : `<div class="no-drops-note"><img src="./assets/icon_chest.png" alt=""/> ${dict.armoryTip}</div>`;
+
+      const inlineSkillsHtml = SKILL_SPECS.map((sp) => {
+        const lvl = save.skills[sp.id];
+        const isMax = lvl >= sp.maxLevel;
+        const cost = SaveManager.getSkillCost(sp.id);
+        const canBuy = !isMax && save.gold >= cost;
+        const skTxt = dict.skills[sp.id];
+        return `
+          <div class="settle-skill-item">
+            <div class="ss-left">
+              <span class="ss-badge" style="background:${sp.badgeColor}">${sp.badgeSymbol}</span>
+              <div>
+                <div class="ss-name">${skTxt.name} <small>Lv.${lvl}/${sp.maxLevel}</small></div>
+                <div class="ss-val">${skTxt.val(lvl)}</div>
+              </div>
+            </div>
+            <button class="btn-guofeng btn-mini ${isMax ? 'btn-stone' : canBuy ? 'btn-gilt' : 'btn-disabled'}"
+              data-settle-skill="${sp.id}" ${!canBuy ? 'disabled' : ''}>
+              ${isMax ? dict.maxLevel : dict.upgradeBtn(cost)}
+            </button>
           </div>
+        `;
+      }).join('');
 
-          <div class="meter-wrap">
-            <div class="meter-bar">
-              <span class="m-z z2">x2</span>
-              <span class="m-z z3">x3</span>
-              <span class="m-z z5">x5</span>
-              <span class="m-z z3">x3</span>
-              <span class="m-z z2">x2</span>
-              <div class="meter-needle" id="settle-needle"></div>
+      const shownGold = bonusAdClaimed ? baseGold * curMult : baseGold;
+
+      this.modalRoot.innerHTML = `
+        <div class="popup-backdrop">
+          <div class="popup-box settle-wide">
+            <h2>${heading}</h2>
+            <p class="popup-sub">${dict.settleSub(sum.wave, sum.kills, sum.merges)}</p>
+
+            <div class="reward-preview">
+              <span>◈ <strong id="rew-gold">+${shownGold}</strong></span>
+              <span>✦ <strong id="rew-xp">+${baseXp} XP</strong></span>
+              <span class="wallet-tag">◈ ${save.gold}G</span>
+            </div>
+
+            ${
+              !bonusAdClaimed
+                ? `
+                  <div class="meter-wrap">
+                    <div class="meter-bar">
+                      <div class="m-z z2">x2</div>
+                      <div class="m-z z3">x3</div>
+                      <div class="m-z z5">x5</div>
+                      <div class="m-z z3">x3</div>
+                      <div class="m-z z2">x2</div>
+                      <div class="meter-needle" id="settle-needle" style="left:50%"></div>
+                    </div>
+                  </div>
+                `
+                : ''
+            }
+
+            <div class="settle-section">
+              <div class="settle-sec-head">${dict.settleDropsTitle}</div>
+              <div class="settle-drops-list">${dropChipsHtml}</div>
+            </div>
+
+            <div class="settle-section">
+              <div class="settle-sec-head">${dict.settleSkillShopTitle}</div>
+              <div class="settle-skill-list">${inlineSkillsHtml}</div>
+            </div>
+
+            <div class="popup-footer">
+              ${
+                !bonusAdClaimed
+                  ? `<button class="btn-guofeng btn-cinnabar" id="btn-mult-claim">🎬 x3 (+${baseGold * 2}G) · ${dict.btnMultClaim}</button>`
+                  : ''
+              }
+              <button class="btn-guofeng btn-gilt" id="btn-normal-claim">${dict.btnNormalClaim}</button>
             </div>
           </div>
-
-          <div class="popup-footer">
-            <button class="btn-guofeng btn-gilt" id="btn-mult-claim">
-              ${dict.btnMultClaim} (<span id="mult-live">x5</span>)
-            </button>
-            <button class="btn-guofeng btn-stone" id="btn-normal-claim">${dict.btnNormalClaim}</button>
-          </div>
         </div>
-      </div>
-    `;
+      `;
 
-    const needle = this.modalRoot.querySelector('#settle-needle') as HTMLElement;
-    const multLive = this.modalRoot.querySelector('#mult-live') as HTMLElement;
-    const goldEl = this.modalRoot.querySelector('#rew-gold') as HTMLElement;
-    const xpEl = this.modalRoot.querySelector('#rew-xp') as HTMLElement;
+      // Bind Forge Weapon inside settlement
+      this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-settle-forge]').forEach((btn) => {
+        btn.onclick = () => {
+          const wId = btn.dataset.settleForge as WeaponId;
+          if (SaveManager.forgeOrUpgradeWeapon(wId)) {
+            SoundFX.dragonUlt();
+            renderSettleInner();
+            startNeedleLoop();
+          }
+        };
+      });
 
-    let currentMult = 5;
-    let stopped = false;
+      // Bind Skill Purchase inside settlement
+      this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-settle-skill]').forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.settleSkill as SkillId;
+          if (SaveManager.buySkill(id)) {
+            SoundFX.fanfare();
+            renderSettleInner();
+            startNeedleLoop();
+          }
+        };
+      });
 
-    const tickNeedle = (now: number) => {
-      if (stopped) return;
-      const pos = (Math.sin(now * 0.0042) + 1) / 2;
-      needle.style.left = `${pos * 100}%`;
-      const idx = Math.min(4, Math.floor(pos * 5));
-      currentMult = zones[idx];
-      multLive.textContent = `x${currentMult}`;
-      this.needleAnimId = requestAnimationFrame(tickNeedle);
-    };
-    this.needleAnimId = requestAnimationFrame(tickNeedle);
-
-    (this.modalRoot.querySelector('#btn-mult-claim') as HTMLButtonElement).onclick = async () => {
-      stopped = true;
-      cancelAnimationFrame(this.needleAnimId);
-      const locked = currentMult;
-      const ok = await PlatformSDK.showRewardedAd(
-        'settlement_multiplier',
-        dict.adRewardSettle(locked)
-      );
-      if (ok) {
-        goldEl.textContent = `+${baseGold * locked}`;
-        xpEl.textContent = `+${baseXp * locked} XP`;
-        SaveManager.addRewards(baseGold * locked, baseXp * locked);
-        this.showHomeHub();
-      } else {
-        stopped = false;
-        this.needleAnimId = requestAnimationFrame(tickNeedle);
+      const multBtn = this.modalRoot.querySelector('#btn-mult-claim') as HTMLButtonElement | null;
+      if (multBtn) {
+        multBtn.onclick = async () => {
+          cancelAnimationFrame(this.needleAnimId);
+          const locked = curMult;
+          multBtn.disabled = true;
+          const ok = await PlatformSDK.showRewardedAd(
+            'settlement_multiplier',
+            dict.adRewardSettle(locked)
+          );
+          if (ok) {
+            bonusAdClaimed = true;
+            curMult = locked;
+            SaveManager.addRewards(baseGold * (locked - 1), baseXp * (locked - 1));
+            SoundFX.fanfare();
+            renderSettleInner();
+          } else {
+            multBtn.disabled = false;
+            startNeedleLoop();
+          }
+        };
       }
+
+      const normalBtn = this.modalRoot.querySelector('#btn-normal-claim') as HTMLButtonElement;
+      normalBtn.onclick = () => {
+        cancelAnimationFrame(this.needleAnimId);
+        this.showHomeHub();
+      };
     };
 
-    (this.modalRoot.querySelector('#btn-normal-claim') as HTMLButtonElement).onclick = () => {
-      stopped = true;
+    const startNeedleLoop = () => {
       cancelAnimationFrame(this.needleAnimId);
-      SaveManager.addRewards(baseGold, baseXp);
-      this.showHomeHub();
+      if (bonusAdClaimed) return;
+      const needle = this.modalRoot.querySelector('#settle-needle') as HTMLElement | null;
+      const multBtn = this.modalRoot.querySelector('#btn-mult-claim') as HTMLButtonElement | null;
+      if (!needle || !multBtn) return;
+
+      const t0 = performance.now();
+      const tick = (now: number) => {
+        const elapsed = (now - t0) / 1000;
+        const pos = (Math.sin(elapsed * 3.4) + 1) * 0.5;
+        needle.style.left = `${(pos * 100).toFixed(1)}%`;
+        const idx = Math.min(4, Math.floor(pos * 5));
+        const m = zones[idx];
+        if (m !== curMult) {
+          curMult = m;
+          multBtn.textContent = `🎬 x${curMult} (+${baseGold * (curMult - 1)}G) · ${dict.btnMultClaim}`;
+        }
+        this.needleAnimId = requestAnimationFrame(tick);
+      };
+      this.needleAnimId = requestAnimationFrame(tick);
     };
+
+    renderSettleInner();
+    startNeedleLoop();
   }
 }
