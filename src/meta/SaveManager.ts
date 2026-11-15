@@ -252,7 +252,8 @@ class SaveService {
       bossDmgMult: 1 + sk.exorcist_seal * 0.25,
       heroChanceBonus: sk.hero_decree * 0.045,
       roadSlowRatio: sk.frost_inkstone > 0 ? Math.min(0.36, 0.1 + sk.frost_inkstone * 0.045) : 0,
-      startShovels: 1 + (sk.tomb_raider >= 2 ? 1 : 0) + (sk.tomb_raider >= 4 ? 1 : 0),
+      startShovels: 0,
+      benchShovelChanceBonus: sk.tomb_raider * 0.025,
     };
   }
 }

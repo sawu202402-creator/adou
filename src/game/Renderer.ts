@@ -1,7 +1,12 @@
-import { checkTileCombine, getTargetableGridCells, UNITS } from '../data/units';
+import {
+  checkTileCombine,
+  getUnitCircleRange,
+  MAX_HERO_COMBAT_LEVEL,
+  UNITS,
+} from '../data/units';
 import { t } from '../i18n/locale';
 import { SaveManager } from '../meta/SaveManager';
-import { CellType, DuelLane, TileUnit } from '../types';
+import { CellType, DuelLane, HeroKey, TileUnit } from '../types';
 import { Assets } from './AssetLoader';
 import {
   GameEngine,
@@ -26,6 +31,7 @@ export class BoardRenderer {
     if (!s) return;
 
     const L = engine.layout;
+    const readyPuzzles = engine.getReadyPuzzleHeroKeys();
 
     ctx.save();
 
@@ -40,20 +46,17 @@ export class BoardRenderer {
     // 2. 8x10 Fortress Duel Board
     this.drawBoardFrameAndCells(ctx, engine, s);
 
-    // 3. Exact Grid-Cell Attack Range Highlight (drawn over cells before units/enemies!)
-    this.drawActiveGridRangePreview(ctx, engine, s);
-
-    // 4. Entry arrows & VIP Royal Heirs + Heart clusters
+    // 3. Entry arrows & VIP Royal Heirs + Heart clusters
     this.drawLaneSpawnArrow(ctx, engine, s.stage.aiLane, '#b91c1c');
     this.drawLaneSpawnArrow(ctx, engine, s.stage.playerLane, '#b91c1c');
     this.drawVipHeirAndHearts(ctx, engine, s, 'ai');
     this.drawVipHeirAndHearts(ctx, engine, s, 'player');
 
-    // 5. Spike Barricades
+    // 4. Spike Barricades
     this.drawBarricade(ctx, engine, s.aiBarricade);
     this.drawBarricade(ctx, engine, s.playerBarricade);
 
-    // 6. Deployed Board War-Tiles
+    // 5. Deployed Board War-Tiles
     const activeUnit = this.getActiveHeldUnit(engine, s);
     for (let r = 0; r < s.stage.rows; r++) {
       for (let c = 0; c < s.stage.cols; c++) {
@@ -74,7 +77,7 @@ export class BoardRenderer {
         const isPlayerSide = r >= s.stage.dividerRow;
 
         let highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman' = 'none';
-        if (isPlayerSide && s.talismanMode) {
+        if (isPlayerSide && s.talismanMode && getUnitCircleRange(u).canAttack) {
           highlight = 'talisman';
         } else if (
           s.selectedSource?.type === 'board' &&
@@ -85,6 +88,15 @@ export class BoardRenderer {
         } else if (isPlayerSide && activeUnit && activeUnit.uid !== u.uid) {
           const combo = checkTileCombine(activeUnit, u);
           if (combo) highlight = combo.mode;
+        } else if (isPlayerSide) {
+          const def = UNITS[u.unitId];
+          if (
+            (def.category === 'shard1' || def.category === 'shard2') &&
+            def.heroKey &&
+            readyPuzzles.has(def.heroKey)
+          ) {
+            highlight = 'awaken';
+          }
         }
 
         this.drawWarTile(
@@ -105,8 +117,11 @@ export class BoardRenderer {
       ctx.fillRect(L.boardX, L.boardY, L.boardW, s.stage.dividerRow * L.cellSize);
     }
 
-    // 7. Central Great Wall Divider
+    // 6. Central Great Wall Divider
     this.drawGreatWallDivider(ctx, engine, s);
+
+    // 7. Circular Attack Range Ring (drawn crisply above board & units!)
+    this.drawActiveCircleRangePreview(ctx, engine, s);
 
     // 8. Enemies, Projectiles, VFX & Floating Damage
     this.drawEnemies(ctx, engine, s);
@@ -115,7 +130,7 @@ export class BoardRenderer {
     this.drawFloatingTexts(ctx, engine, s);
 
     // 9. Player War-Camp Tent & 5-Slot Bench Row
-    this.drawCampBench(ctx, engine, s, activeUnit);
+    this.drawCampBench(ctx, engine, s, activeUnit, readyPuzzles);
 
     // 10. Floating Dragged Tile
     if (engine.drag && engine.drag.active && engine.drag.movedEnough) {
@@ -199,6 +214,7 @@ export class BoardRenderer {
     const L = engine.layout;
     const cs = L.cellSize;
     const hasFrostInk = SaveManager.get().skills.frost_inkstone > 0;
+    const digHighlight = s.shovelMode || engine.isBenchShovelSelected();
 
     ctx.save();
     ctx.fillStyle = '#241f1c';
@@ -225,7 +241,7 @@ export class BoardRenderer {
           c,
           r,
           isPlayerHalf,
-          s.shovelMode,
+          digHighlight,
           isPlayerHalf && hasFrostInk
         );
       }
@@ -241,7 +257,7 @@ export class BoardRenderer {
     col: number,
     row: number,
     isPlayerHalf: boolean,
-    shovelMode: boolean,
+    digHighlight: boolean,
     frostRoad: boolean
   ): void {
     if (cell === 'wall') {
@@ -279,7 +295,7 @@ export class BoardRenderer {
       ctx.strokeStyle = 'rgba(255,255,255,0.1)';
       ctx.strokeRect(x + 4, y + 4, cs - 8, cs - 8);
 
-      if (shovelMode && isPlayerHalf) {
+      if (digHighlight && isPlayerHalf) {
         const pulse = 0.55 + 0.4 * Math.sin(this.animClock * 6.5);
         ctx.save();
         ctx.strokeStyle = `rgba(250, 204, 21, ${pulse})`;
@@ -287,7 +303,7 @@ export class BoardRenderer {
         ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
         const shImg = Assets.get('icon_shovel');
         if (shImg) {
-          ctx.globalAlpha = 0.75;
+          ctx.globalAlpha = 0.78;
           ctx.drawImage(shImg, x + cs * 0.24, y + cs * 0.24, cs * 0.52, cs * 0.52);
         }
         ctx.restore();
@@ -330,9 +346,9 @@ export class BoardRenderer {
     }
   }
 
-  // ==================== 3. EXACT GRID-CELL ATTACK RANGE PREVIEW ====================
+  // ==================== 3. CIRCULAR ATTACK RANGE RING PREVIEW ====================
 
-  private drawActiveGridRangePreview(
+  private drawActiveCircleRangePreview(
     ctx: CanvasRenderingContext2D,
     engine: GameEngine,
     s: RunState
@@ -347,6 +363,7 @@ export class BoardRenderer {
     let rEnd = s.stage.rows;
 
     if (engine.drag?.active && engine.drag.movedEnough) {
+      if (engine.drag.unit.unitId === 'shovel') return;
       const col = Math.floor((engine.drag.screenX - L.boardX) / cs);
       const row = Math.floor((engine.drag.screenY - L.boardY) / cs);
       if (col >= 0 && col < s.stage.cols && row >= s.stage.dividerRow && row < s.stage.rows) {
@@ -366,32 +383,84 @@ export class BoardRenderer {
 
     if (!unit || uCol < 0) return;
 
-    const def = UNITS[unit.unitId];
-    const cells = getTargetableGridCells(def, unit.tier, uCol, uRow, s.stage.cols, rStart, rEnd);
-    const hitsAnyRoad = cells.some((pt) => s.cells[pt.row][pt.col] === 'path');
+    const cx = L.boardX + (uCol + 0.5) * cs;
+    const cy = L.boardY + (uRow + 0.5) * cs;
+    const rangeInfo = getUnitCircleRange(unit);
 
     ctx.save();
-    for (const pt of cells) {
-      const x = L.boardX + pt.col * cs;
-      const y = L.boardY + pt.row * cs;
-      const isRoad = s.cells[pt.row][pt.col] === 'path';
+    // Clip circle to that player's/AI's half-board so the circle stays tidy inside the battlefield!
+    const clipY = rStart === 0 ? L.boardY : L.dividerY;
+    const clipH = (rEnd - rStart) * cs;
+    ctx.beginPath();
+    ctx.rect(L.boardX, clipY, L.boardW, clipH);
+    ctx.clip();
 
-      if (!hitsAnyRoad) {
-        // Warn player when e.g. 1-cell Blade is hovered on an inner cell that reaches NO road!
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.68)';
-      } else if (isRoad) {
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.34)';
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.9)';
-      } else {
-        ctx.fillStyle = 'rgba(250, 204, 21, 0.14)';
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
-      }
-
-      ctx.fillRect(x + 2, y + 2, cs - 4, cs - 4);
-      ctx.lineWidth = isRoad ? 1.8 : 1;
-      ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
+    // Unfused Puzzle Piece -> show compact dashed amber ring indicating 0 attack range!
+    if (!rangeInfo.canAttack) {
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, cs * 0.62, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      return;
     }
+
+    // Check if circle reaches at least one road cell on this side
+    let hitsRoad = false;
+    for (let r = rStart; r < rEnd && !hitsRoad; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        if (s.cells[r][c] !== 'path') continue;
+        const d = Math.hypot(c - uCol, r - uRow);
+        if (d + 0.35 >= rangeInfo.minR && d - 0.35 <= rangeInfo.maxR) {
+          hitsRoad = true;
+          break;
+        }
+      }
+    }
+
+    const maxPx = rangeInfo.maxR * cs;
+    const minPx = rangeInfo.minR * cs;
+
+    // Translucent radial fill
+    const rGrad = ctx.createRadialGradient(cx, cy, minPx, cx, cy, maxPx);
+    if (hitsRoad) {
+      rGrad.addColorStop(0, 'rgba(52, 211, 153, 0.08)');
+      rGrad.addColorStop(0.75, 'rgba(52, 211, 153, 0.16)');
+      rGrad.addColorStop(1, 'rgba(250, 204, 21, 0.28)');
+    } else {
+      rGrad.addColorStop(0, 'rgba(239, 68, 68, 0.08)');
+      rGrad.addColorStop(1, 'rgba(239, 68, 68, 0.28)');
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxPx, 0, Math.PI * 2);
+    if (minPx > 0) {
+      ctx.arc(cx, cy, minPx, 0, Math.PI * 2, true);
+    }
+    ctx.fillStyle = rGrad;
+    ctx.fill();
+
+    // Outer circular ring
+    ctx.strokeStyle = hitsRoad ? 'rgba(110, 231, 183, 0.95)' : 'rgba(248, 113, 113, 0.95)';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([7, 4]);
+    ctx.lineDashOffset = -this.animClock * 18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxPx, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner blindspot ring for Siege Mortar
+    if (minPx > 0) {
+      ctx.strokeStyle = 'rgba(251, 146, 60, 0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, minPx, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 
@@ -602,7 +671,7 @@ export class BoardRenderer {
     ctx.restore();
   }
 
-  // ==================== 6. MAHJONG WAR-TILES + EQUIPPED WEAPON BADGE ====================
+  // ==================== 6. TILES: PUZZLE PIECES, BENCH SHOVEL & LEVELING GENERALS ====================
 
   public drawWarTile(
     ctx: CanvasRenderingContext2D,
@@ -617,6 +686,7 @@ export class BoardRenderer {
     const def = UNITS[u.unitId];
     const isAwakened = def.category === 'awakened';
     const isShard = def.category === 'shard1' || def.category === 'shard2';
+    const isItem = def.category === 'item';
 
     ctx.save();
     if (dimmed) ctx.globalAlpha = 0.52;
@@ -626,6 +696,8 @@ export class BoardRenderer {
     let scale = 1;
     if (u.mergeAnimTimer > 0) {
       scale = 1 + Math.sin((u.mergeAnimTimer / 0.25) * Math.PI) * 0.16;
+    } else if (u.levelUpAnimTimer > 0) {
+      scale = 1 + Math.sin((u.levelUpAnimTimer / 0.85) * Math.PI) * 0.12;
     }
     if (u.recoilTimer > 0) {
       const kick = (u.recoilTimer / 0.14) * 3.2;
@@ -640,11 +712,11 @@ export class BoardRenderer {
     const rad = Math.max(5, size * 0.13);
     const lip = Math.max(3, size * 0.085);
 
-    if (highlight !== 'none' || u.frenzyTimer > 0) {
+    if (highlight !== 'none' || u.frenzyTimer > 0 || u.levelUpAnimTimer > 0) {
       const pulse = 0.65 + 0.35 * Math.sin(this.animClock * 7.5);
       ctx.save();
       ctx.strokeStyle =
-        highlight === 'awaken' || highlight === 'talisman'
+        highlight === 'awaken' || highlight === 'talisman' || u.levelUpAnimTimer > 0
           ? `rgba(250, 204, 21, ${pulse})`
           : highlight === 'merge'
             ? `rgba(52, 211, 153, ${pulse})`
@@ -660,7 +732,13 @@ export class BoardRenderer {
     }
 
     // 3D Carved Mahjong Lip
-    ctx.fillStyle = isAwakened ? '#784b08' : isShard ? def.frameColor : '#b5aa94';
+    ctx.fillStyle = isAwakened
+      ? '#784b08'
+      : isItem
+        ? '#78350f'
+        : isShard
+          ? def.frameColor
+          : '#b5aa94';
     this.roundRect(ctx, tx, ty + lip, size, size - lip, rad);
     ctx.fill();
 
@@ -670,6 +748,17 @@ export class BoardRenderer {
       g.addColorStop(0, '#fef3c7');
       g.addColorStop(0.5, '#f5d061');
       g.addColorStop(1, '#d4af37');
+      ctx.fillStyle = g;
+    } else if (isItem) {
+      const g = ctx.createLinearGradient(tx, ty, tx, ty + faceH);
+      g.addColorStop(0, '#fef08a');
+      g.addColorStop(1, '#f59e0b');
+      ctx.fillStyle = g;
+    } else if (isShard) {
+      // Slightly muted stone-parchment face so unfused puzzle pieces clearly look sealed/inert!
+      const g = ctx.createLinearGradient(tx, ty, tx, ty + faceH);
+      g.addColorStop(0, '#efe9da');
+      g.addColorStop(1, '#d8ceba');
       ctx.fillStyle = g;
     } else {
       const g = ctx.createLinearGradient(tx, ty, tx, ty + faceH);
@@ -687,11 +776,12 @@ export class BoardRenderer {
     ctx.clip();
     const sprite = Assets.get(def.spriteKey);
     if (sprite) {
+      if (isShard) ctx.globalAlpha *= 0.88;
       ctx.drawImage(sprite, tx + pad, ty + pad, size - pad * 2, faceH - pad * 2);
     }
     ctx.restore();
 
-    // Borders
+    // Borders + Interlocking Jigsaw Tab/Socket for Hero Puzzle Pieces!
     if (isAwakened) {
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 1.6;
@@ -702,9 +792,34 @@ export class BoardRenderer {
       this.roundRect(ctx, tx, ty, size, faceH, rad);
       ctx.stroke();
     } else if (isShard) {
+      ctx.save();
       ctx.strokeStyle = def.accentColor;
       ctx.lineWidth = 2.2;
+      ctx.setLineDash([4, 2]);
       this.roundRect(ctx, tx + 1, ty + 1, size - 2, faceH - 2, rad);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Sculpted Jigsaw Tab (凸 on right edge of Piece 1/2, 凹/tab on left edge of Piece 2/2)
+      const tabR = Math.max(4, size * 0.105);
+      const midY = ty + faceH * 0.48;
+      ctx.beginPath();
+      if (def.category === 'shard1') {
+        ctx.arc(tx + size - 2, midY, tabR, Math.PI * 0.5, Math.PI * 1.5);
+        ctx.fillStyle = def.accentColor;
+      } else {
+        ctx.arc(tx + 2, midY, tabR, -Math.PI * 0.5, Math.PI * 0.5);
+        ctx.fillStyle = '#fde047';
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.restore();
+    } else if (isItem) {
+      ctx.strokeStyle = '#92400e';
+      ctx.lineWidth = 2;
+      this.roundRect(ctx, tx + 0.5, ty + 0.5, size - 1, faceH - 1, rad);
       ctx.stroke();
     } else {
       ctx.strokeStyle = '#3d352e';
@@ -733,88 +848,118 @@ export class BoardRenderer {
       ctx.fillText(def.crestSymbol, bx, by + 0.5);
     }
 
-    // Bottom Split-Jade Tally Seal on Shards (◐ for Shard I, ◑ for Shard II!)
+    // Bottom Puzzle Badge on Shards: [1/2] or [2/2] (clear non-Hanzi indicator!)
     if (isShard) {
-      const tallyR = Math.max(4.8, size * 0.115);
-      const jx = 0;
-      const jy = ty + faceH - tallyR - 2;
-
+      const pw = Math.max(20, size * 0.48);
+      const ph = Math.max(10, size * 0.22);
+      const px = -pw * 0.5;
+      const py = ty + faceH - ph - 1.5;
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(jx, jy, tallyR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(28, 25, 23, 0.82)';
+      ctx.fillStyle = 'rgba(24, 20, 18, 0.88)';
+      this.roundRect(ctx, px, py, pw, ph, 4);
       ctx.fill();
-
-      ctx.beginPath();
-      if (def.category === 'shard1') {
-        ctx.arc(jx, jy, tallyR - 1, Math.PI * 0.5, Math.PI * 1.5);
-      } else {
-        ctx.arc(jx, jy, tallyR - 1, -Math.PI * 0.5, Math.PI * 0.5);
-      }
-      ctx.closePath();
-      ctx.fillStyle = '#fde047';
-      ctx.fill();
-
-      ctx.strokeStyle = def.accentColor;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(jx, jy, tallyR, 0, Math.PI * 2);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 1;
       ctx.stroke();
+      ctx.fillStyle = '#fde047';
+      ctx.font = `800 ${Math.max(8, Math.round(ph * 0.78))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.category === 'shard1' ? '1/2' : '2/2', 0, py + ph * 0.52);
       ctx.restore();
     }
 
-    // Inlaid Equipped Weapon Badge on Awakened Generals (matches reference screenshot!)
-    if (isAwakened && def.heroKey) {
-      const eqWeapon = isPlayerSide
-        ? SaveManager.get().equippedWeapons[def.heroKey]
-        : null;
-      if (eqWeapon) {
-        const wSz = Math.max(12, size * 0.32);
-        const wx = tx + size - wSz - 2;
-        const wy = ty + faceH - wSz - 2;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
-        ctx.fillStyle = '#291d16';
-        ctx.fill();
-        ctx.clip();
-        const wImg = Assets.get(eqWeapon);
-        if (wImg) {
-          ctx.drawImage(wImg, wx, wy, wSz, wSz);
+    // Awakened General: Live XP Progress Bar + Lv.X Badge + Equipped Weapon Badge!
+    if (isAwakened) {
+      // Bottom XP Progress Bar
+      const barM = pad + 1;
+      const barW = size - barM * 2;
+      const barH = Math.max(3.2, size * 0.08);
+      const barX = tx + barM;
+      const barY = ty + faceH - barH - 2;
+      const xpRatio =
+        u.combatLevel >= MAX_HERO_COMBAT_LEVEL ? 1 : Math.min(1, u.xp / Math.max(1, u.maxXp));
+
+      ctx.fillStyle = 'rgba(18, 15, 12, 0.82)';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = u.combatLevel >= MAX_HERO_COMBAT_LEVEL ? '#f59e0b' : '#38bdf8';
+      ctx.fillRect(barX, barY, barW * xpRatio, barH);
+
+      // Bottom-Left Combat Level Pill (Lv.1 .. Lv.12)
+      const lvText = `Lv.${u.combatLevel}`;
+      const lvFont = Math.max(7.5, Math.round(size * 0.18));
+      ctx.font = `900 ${lvFont}px sans-serif`;
+      const lvw = ctx.measureText(lvText).width + 5;
+      const lvh = lvFont + 3;
+      const lvx = tx + 2;
+      const lvy = barY - lvh - 1;
+      ctx.fillStyle = 'rgba(24, 20, 18, 0.88)';
+      this.roundRect(ctx, lvx, lvy, lvw, lvh, 3);
+      ctx.fill();
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.fillStyle = '#fde047';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(lvText, lvx + lvw * 0.5, lvy + lvh * 0.54);
+
+      // Bottom-Right Equipped Weapon Badge
+      if (def.heroKey) {
+        const eqWeapon = isPlayerSide
+          ? SaveManager.get().equippedWeapons[def.heroKey]
+          : null;
+        if (eqWeapon) {
+          const wSz = Math.max(12, size * 0.31);
+          const wx = tx + size - wSz - 2;
+          const wy = barY - wSz - 1;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
+          ctx.fillStyle = '#291d16';
+          ctx.fill();
+          ctx.clip();
+          const wImg = Assets.get(eqWeapon);
+          if (wImg) {
+            ctx.drawImage(wImg, wx, wy, wSz, wSz);
+          }
+          ctx.restore();
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
+          ctx.stroke();
         }
-        ctx.restore();
-        ctx.strokeStyle = '#fde047';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(wx + wSz * 0.5, wy + wSz * 0.5, wSz * 0.52, 0, Math.PI * 2);
-        ctx.stroke();
       }
     }
 
-    // 5-Color Rarity Tier Numeral (1=White/Ink, 2=Green, 3=Blue, 4=Purple, 5=Orange-Gold)
-    const tierColors = ['#1c1917', '#15803d', '#1d4ed8', '#7e22ce', '#c2410c'];
-    const tierFont = Math.max(9, Math.round(size * 0.22));
-    const numX = tx + size - Math.max(7, size * 0.16);
-    const numY = ty + Math.max(8, size * 0.18);
-    ctx.font = `900 ${tierFont}px Georgia, serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 2.6;
-    ctx.strokeStyle = 'rgba(252, 249, 240, 0.95)';
-    ctx.strokeText(`${u.tier}`, numX, numY);
-    ctx.fillStyle = tierColors[Math.min(4, u.tier - 1)];
-    ctx.fillText(`${u.tier}`, numX, numY);
+    // 5-Color Rarity Tier Numeral (omitted on Shovel item tiles!)
+    if (!isItem) {
+      const tierColors = ['#1c1917', '#15803d', '#1d4ed8', '#7e22ce', '#c2410c'];
+      const tierFont = Math.max(9, Math.round(size * 0.22));
+      const numX = tx + size - Math.max(7, size * 0.16);
+      const numY = ty + Math.max(8, size * 0.18);
+      ctx.font = `900 ${tierFont}px Georgia, serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = 'rgba(252, 249, 240, 0.95)';
+      ctx.strokeText(`${u.tier}`, numX, numY);
+      ctx.fillStyle = tierColors[Math.min(4, u.tier - 1)];
+      ctx.fillText(`${u.tier}`, numX, numY);
+    }
 
     ctx.restore();
   }
 
-  // ==================== 8. ENEMIES, BOSSES, PROJECTILES & VFX ====================
+  // ==================== 8. BENCH, ENEMIES, BOSSES, PROJECTILES & VFX ====================
 
   private drawCampBench(
     ctx: CanvasRenderingContext2D,
     engine: GameEngine,
     s: RunState,
-    activeUnit: TileUnit | null
+    activeUnit: TileUnit | null,
+    readyPuzzles: Set<HeroKey>
   ): void {
     const L = engine.layout;
     const bs = L.benchTileSize;
@@ -848,14 +993,21 @@ export class BoardRenderer {
         continue;
       }
 
+      const def = UNITS[u.unitId];
       let highlight: 'none' | 'merge' | 'awaken' | 'selected' | 'talisman' = 'none';
-      if (s.talismanMode) {
+      if (s.talismanMode && getUnitCircleRange(u).canAttack) {
         highlight = 'talisman';
       } else if (s.selectedSource?.type === 'bench' && s.selectedSource.benchIdx === i) {
         highlight = 'selected';
       } else if (activeUnit && activeUnit.uid !== u.uid) {
         const combo = checkTileCombine(activeUnit, u);
         if (combo) highlight = combo.mode;
+      } else if (
+        (def.category === 'shard1' || def.category === 'shard2') &&
+        def.heroKey &&
+        readyPuzzles.has(def.heroKey)
+      ) {
+        highlight = 'awaken';
       }
 
       this.drawWarTile(ctx, u, sx + 2, sy + 2, bs - 4, highlight, false, true);
@@ -907,7 +1059,6 @@ export class BoardRenderer {
         }
       }
 
-      // Zhang Jiao Heal Chant emerald aura
       if (e.regenTimer > 0) {
         ctx.strokeStyle = '#4ade80';
         ctx.lineWidth = 2;

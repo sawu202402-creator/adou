@@ -1,6 +1,6 @@
 import { SoundFX } from '../audio/SoundFX';
 import { STAGES } from '../data/stages';
-import { HERO_KEYS, isCellInUnitRange, TROOP_KEYS, UNITS } from '../data/units';
+import { HERO_KEYS, MAX_HERO_COMBAT_LEVEL, TROOP_KEYS, UNITS } from '../data/units';
 import { SKILL_SPECS, WEAPON_IDS, WEAPON_SPECS } from '../data/weaponsAndSkills';
 import { GameEngine } from '../game/GameEngine';
 import { getLang, getUnitDisplayText, t } from '../i18n/locale';
@@ -351,28 +351,26 @@ export class UIManager {
   }
 
   private renderMiniRangeDiagram(unitId: TroopKey): string {
-    // 7x7 mini grid centered at (3,3) showing exact reachable cells!
+    // Circular range ring gauge (scaled against max 4.0R)
     const def = UNITS[unitId];
-    const cells: string[] = [];
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        if (r === 3 && c === 3) {
-          cells.push('<span class="rg-c center">★</span>');
-        } else if (isCellInUnitRange(def, 1, 3, 3, c, r)) {
-          cells.push('<span class="rg-c hit"></span>');
-        } else {
-          cells.push('<span class="rg-c"></span>');
-        }
-      }
-    }
-    return `<div class="mini-range-grid">${cells.join('')}</div>`;
+    const maxScale = 4.0;
+    const outerPct = Math.min(96, Math.round((def.rangeCells / maxScale) * 92));
+    const innerPct =
+      def.minRangeCells > 0 ? Math.round((def.minRangeCells / maxScale) * 92) : 0;
+    return `
+      <div class="mini-circle-gauge" title="${def.rangeCells.toFixed(1)}R">
+        <span class="mc-ring" style="width:${outerPct}%;height:${outerPct}%"></span>
+        ${innerPct > 0 ? `<span class="mc-blind" style="width:${innerPct}%;height:${innerPct}%"></span>` : ''}
+        <span class="mc-dot"></span>
+      </div>
+    `;
   }
 
   private renderCodexTab(): string {
     const dict = t();
     const save = SaveManager.get();
 
-    // 6 Two-Shard Hero Summoning Equations: [Shard I ◐] + [Shard II ◑] -> [Awakened General]
+    // 6 Two-Piece Hero Puzzle Equations: [Puzzle 1/2] + [Puzzle 2/2] -> [Awakened General]
     const fusionCards = HERO_KEYS.map((hKey) => {
       const s1Def = UNITS[`shard1_${hKey}`];
       const s2Def = UNITS[`shard2_${hKey}`];
@@ -386,13 +384,13 @@ export class UIManager {
             <div class="mini-war-tile part-tile" style="border-color:${s1Def.accentColor}">
               <img src="./assets/${s1Def.spriteKey}.png" alt="" />
               <span class="mini-crest" style="background:${s1Def.frameColor}">${s1Def.crestSymbol}</span>
-              <span class="mini-half">◐</span>
+              <span class="mini-half">1/2</span>
             </div>
             <span class="eq-op">+</span>
             <div class="mini-war-tile part-tile" style="border-color:${s2Def.accentColor}">
               <img src="./assets/${s2Def.spriteKey}.png" alt="" />
               <span class="mini-crest" style="background:${s2Def.frameColor}">${s2Def.crestSymbol}</span>
-              <span class="mini-half">◑</span>
+              <span class="mini-half">2/2</span>
             </div>
             <span class="eq-arrow">➔</span>
             <div class="mini-war-tile awakened-tile">
@@ -617,12 +615,11 @@ export class UIManager {
       return;
     }
 
-    // Otherwise Steamed Buns + Golden Shovel Supply Drop
+    // Otherwise Steamed Buns Supply Drop (Extra shovels strictly require Shovel Ad or random 5-slot drops)
     if (s.supplyAdCooldown <= 0) {
       const ok = await PlatformSDK.showRewardedAd('free_rations_supply', dict.adRewardSupply);
       if (ok && this.engine.state) {
         this.engine.state.rations += 65;
-        this.engine.state.shovels += 1;
         this.engine.state.supplyAdCooldown = 35;
         this.syncHUD();
       }
@@ -710,16 +707,31 @@ export class UIManager {
       el.classList.toggle('visible', Boolean(bannerStr));
     });
 
-    const infoKey = s.selectedUnitInfo
-      ? `${s.selectedUnitInfo.unitId}:${s.selectedUnitInfo.tier}`
+    const info = s.selectedUnitInfo;
+    const infoKey = info
+      ? `${info.unitId}:${info.tier}:${info.combatLevel}:${info.xp}:${info.maxXp}`
       : '';
     setIf('uinfo', infoKey, () => {
       const el = this.hudRoot!.querySelector('#hud-unit-info') as HTMLElement;
-      if (!s.selectedUnitInfo) {
+      if (!info) {
         el.classList.remove('visible');
       } else {
-        const uTxt = getUnitDisplayText(s.selectedUnitInfo.unitId);
-        el.textContent = `${uTxt.name} [Lv.${s.selectedUnitInfo.tier}] · ${uTxt.role}`;
+        const uTxt = getUnitDisplayText(info.unitId);
+        const def = UNITS[info.unitId];
+        if (def.category === 'awakened') {
+          const xpTag =
+            info.combatLevel >= MAX_HERO_COMBAT_LEVEL
+              ? `Lv.${info.combatLevel} MAX`
+              : `Lv.${info.combatLevel} (${info.xp}/${info.maxXp} XP)`;
+          el.textContent = `${uTxt.name} [${xpTag} · ★${info.tier}] · ${uTxt.role}`;
+        } else if (def.category === 'item') {
+          el.textContent = `${uTxt.name} · ${uTxt.role}`;
+        } else if (def.category === 'shard1' || def.category === 'shard2') {
+          const halfTag = def.category === 'shard1' ? '1/2' : '2/2';
+          el.textContent = `${uTxt.name} [${halfTag}] · ${uTxt.role}`;
+        } else {
+          el.textContent = `${uTxt.name} [Lv.${info.tier}] · ${uTxt.role}`;
+        }
         el.classList.add('visible');
       }
     });
@@ -800,12 +812,26 @@ export class UIManager {
     const hasPlayerLocked = s.cells
       .slice(s.stage.dividerRow)
       .some((r) => r.some((c) => c === 'locked'));
-    setIf('shovel', `${s.shovels}:${s.shovelMode ? 1 : 0}:${hasPlayerLocked ? 1 : 0}`, () => {
-      const btn = this.hudRoot!.querySelector('#btn-tac-shovel') as HTMLButtonElement;
-      const sub = this.hudRoot!.querySelector('#hud-shovel-cnt') as HTMLElement;
-      btn.classList.toggle('active-mode', s.shovelMode);
-      sub.textContent = !hasPlayerLocked ? 'MAX' : s.shovels > 0 ? `x${s.shovels}` : '35';
-    });
+    const benchShovelIdx = this.engine.getBenchShovelIndex();
+    const shovelActive = s.shovelMode || this.engine.isBenchShovelSelected();
+    setIf(
+      'shovel',
+      `${s.shovels}:${shovelActive ? 1 : 0}:${benchShovelIdx}:${hasPlayerLocked ? 1 : 0}`,
+      () => {
+        const btn = this.hudRoot!.querySelector('#btn-tac-shovel') as HTMLButtonElement;
+        const sub = this.hudRoot!.querySelector('#hud-shovel-cnt') as HTMLElement;
+        btn.classList.toggle('active-mode', shovelActive);
+        if (!hasPlayerLocked) {
+          sub.textContent = dict.maxLevel;
+        } else if (benchShovelIdx >= 0) {
+          sub.textContent = getLang() === 'zh' ? '备战x1' : 'Bench';
+        } else if (s.shovels > 0) {
+          sub.textContent = `x${s.shovels}`;
+        } else {
+          sub.textContent = dict.shovelAdTag;
+        }
+      }
+    );
 
     const fortCost = this.engine.getFortifyCost();
     setIf('fort', `${s.hearts}:${s.rations >= fortCost ? 1 : 0}`, () => {

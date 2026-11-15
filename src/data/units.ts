@@ -1,6 +1,5 @@
 import {
   ActiveSynergyInfo,
-  GridPoint,
   HeroKey,
   RangeShape,
   SynergyTag,
@@ -22,6 +21,9 @@ export const HERO_KEYS: HeroKey[] = [
 
 /** 5 Classic Rarity Ranks: 1(White) -> 2(Green) -> 3(Blue) -> 4(Purple) -> 5(Orange/Gold) */
 export const MAX_TILE_TIER = 5;
+
+/** Awakened Generals level up in battle from Lv.1 to Lv.12 via attack & kill XP! */
+export const MAX_HERO_COMBAT_LEVEL = 12;
 
 interface HeroThemeSpec {
   accent: string;
@@ -49,11 +51,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'dragon_sweep',
-    awakenedDamage: 74,
-    interval: 0.72,
-    range: 2.35,
+    awakenedDamage: 82,
+    interval: 0.7,
+    range: 2.45,
     projSpeed: 11.8,
-    aoe: 1.65,
+    aoe: 1.7,
     skillEveryN: 4,
   },
   guanyu: {
@@ -63,11 +65,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'jade_execute',
-    awakenedDamage: 102,
-    interval: 1.08,
-    range: 2.25,
+    awakenedDamage: 112,
+    interval: 1.05,
+    range: 2.35,
     projSpeed: 9.6,
-    aoe: 1.6,
+    aoe: 1.65,
     skillEveryN: 3,
   },
   zhangfei: {
@@ -77,11 +79,11 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'vanguard',
     rangeShape: 'hero_melee_2',
     pattern: 'roar_quake',
-    awakenedDamage: 76,
-    interval: 0.96,
-    range: 2.2,
+    awakenedDamage: 84,
+    interval: 0.94,
+    range: 2.35,
     projSpeed: 0,
-    aoe: 2.15,
+    aoe: 2.2,
     stunDur: 1.15,
     skillEveryN: 4,
   },
@@ -92,9 +94,9 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
     pattern: 'chain_lightning',
-    awakenedDamage: 68,
-    interval: 1.02,
-    range: 3.4,
+    awakenedDamage: 74,
+    interval: 1.0,
+    range: 3.45,
     projSpeed: 14.0,
     skillEveryN: 3,
   },
@@ -105,9 +107,9 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'mystic',
     rangeShape: 'hero_caster_3',
     pattern: 'lotus_blizzard',
-    awakenedDamage: 58,
-    interval: 0.94,
-    range: 3.3,
+    awakenedDamage: 64,
+    interval: 0.92,
+    range: 3.35,
     projSpeed: 9.2,
     aoe: 1.55,
     slow: 0.5,
@@ -122,9 +124,9 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
     synergy: 'marksman',
     rangeShape: 'hero_global_4',
     pattern: 'phoenix_volley',
-    awakenedDamage: 52,
-    interval: 0.65,
-    range: 4.5,
+    awakenedDamage: 58,
+    interval: 0.64,
+    range: 4.3,
     projSpeed: 12.8,
     skillEveryN: 4,
   },
@@ -132,7 +134,25 @@ const HERO_SPECS: Record<HeroKey, HeroThemeSpec> = {
 
 function buildUnitRegistry(): Record<UnitId, UnitDef> {
   const reg: Partial<Record<UnitId, UnitDef>> = {
-    // 1. 刀兵: Highest base cleave damage, STRICT 1-cell adjacent (3x3) melee range!
+    // Bench Tool Tile: Golden Shovel (randomly spawned in the 5 bench slots!)
+    shovel: {
+      id: 'shovel',
+      category: 'item',
+      spriteKey: 'icon_shovel',
+      accentColor: '#d97706',
+      frameColor: '#92400e',
+      crestSymbol: '',
+      synergy: 'none',
+      rangeShape: 'none',
+      pattern: 'none',
+      baseDamage: 0,
+      attackInterval: 99,
+      minRangeCells: 0,
+      rangeCells: 0,
+      projectileSpeed: 0,
+    },
+
+    // 1. 刀兵: Highest base cleave damage, tight circular melee range (1.48R) — must hug the road!
     blade: {
       id: 'blade',
       category: 'troop',
@@ -143,15 +163,15 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'melee_1',
       pattern: 'cleave',
-      baseDamage: 56,
-      attackInterval: 0.88,
+      baseDamage: 58,
+      attackInterval: 0.86,
       minRangeCells: 0,
-      rangeCells: 1.42,
+      rangeCells: 1.48,
       projectileSpeed: 0,
       aoeRadiusCells: 1.35,
     },
 
-    // 2. 枪兵: Straight 2-cell cross corridors + multi-target line pierce!
+    // 2. 枪兵: Medium circular range (2.10R) + multi-target line-piercing lance!
     spear: {
       id: 'spear',
       category: 'troop',
@@ -162,14 +182,14 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'spear_line_2',
       pattern: 'pierce_lance',
-      baseDamage: 34,
+      baseDamage: 35,
       attackInterval: 0.82,
       minRangeCells: 0,
-      rangeCells: 2.45,
+      rangeCells: 2.1,
       projectileSpeed: 11.2,
     },
 
-    // 3. 骑兵: Agile 2-cell diamond zone, fast tempo wave clearer!
+    // 3. 骑兵: Agile medium-wide circular range (2.38R), fast tempo wave clearer!
     lancer: {
       id: 'lancer',
       category: 'troop',
@@ -180,14 +200,14 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'vanguard',
       rangeShape: 'cavalry_2',
       pattern: 'cavalry_slash',
-      baseDamage: 31,
+      baseDamage: 32,
       attackInterval: 0.68,
       minRangeCells: 0,
-      rangeCells: 2.25,
+      rangeCells: 2.38,
       projectileSpeed: 10.5,
     },
 
-    // 4. 弓兵: Deep inner-core 3-cell (7x7) long-range single-target Boss sniper!
+    // 4. 弓兵: Wide sniper circle (3.42R) covering outer roads safely from the inner core!
     archer: {
       id: 'archer',
       category: 'troop',
@@ -198,14 +218,14 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'marksman',
       rangeShape: 'archer_3',
       pattern: 'arrow',
-      baseDamage: 24,
+      baseDamage: 25,
       attackInterval: 0.58,
       minRangeCells: 0,
-      rangeCells: 3.45,
+      rangeCells: 3.42,
       projectileSpeed: 12.2,
     },
 
-    // 5. 神威炮: Siege ring (2..3 cells away, 1-cell melee blindspot!), heavy armor-piercing AoE!
+    // 5. 神威炮: Siege ring (1.15R inner blindspot .. 3.55R outer circle), heavy armor-piercing AoE!
     mortar: {
       id: 'mortar',
       category: 'troop',
@@ -216,10 +236,10 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: 'mystic',
       rangeShape: 'mortar_ring_3',
       pattern: 'mortar_aoe',
-      baseDamage: 48,
-      attackInterval: 1.42,
-      minRangeCells: 1.45,
-      rangeCells: 3.35,
+      baseDamage: 50,
+      attackInterval: 1.4,
+      minRangeCells: 1.15,
+      rangeCells: 3.55,
       projectileSpeed: 7.8,
       aoeRadiusCells: 1.35,
     },
@@ -231,7 +251,7 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
     const s2: UnitId = `shard2_${h}`;
     const heroId: UnitId = `hero_${h}`;
 
-    // Hero Shard I (Left Portrait Tally ◐ — needs Shard II ◑ to summon Hero!)
+    // Hero Puzzle Piece I (Left Half 1/2 — CANNOT attack until fused with Piece II!)
     reg[s1] = {
       id: s1,
       category: 'shard1',
@@ -240,17 +260,17 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       accentColor: sp.accent,
       frameColor: sp.frame,
       crestSymbol: sp.crest,
-      synergy: sp.synergy,
-      rangeShape: 'shard_sentry',
-      pattern: 'spirit_strike',
-      baseDamage: 14,
-      attackInterval: 1.25,
+      synergy: 'none',
+      rangeShape: 'none',
+      pattern: 'none',
+      baseDamage: 0,
+      attackInterval: 99,
       minRangeCells: 0,
-      rangeCells: 1.5,
-      projectileSpeed: 9.5,
+      rangeCells: 0,
+      projectileSpeed: 0,
     };
 
-    // Hero Shard II (Right Totem Crest Tally ◑ — needs Shard I ◐ to summon Hero!)
+    // Hero Puzzle Piece II (Right Half 2/2 — CANNOT attack until fused with Piece I!)
     reg[s2] = {
       id: s2,
       category: 'shard2',
@@ -259,17 +279,17 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       accentColor: sp.accent,
       frameColor: sp.frame,
       crestSymbol: sp.crest,
-      synergy: sp.synergy,
-      rangeShape: 'shard_sentry',
-      pattern: 'spirit_strike',
-      baseDamage: 14,
-      attackInterval: 1.25,
+      synergy: 'none',
+      rangeShape: 'none',
+      pattern: 'none',
+      baseDamage: 0,
+      attackInterval: 99,
       minRangeCells: 0,
-      rangeCells: 1.5,
-      projectileSpeed: 9.5,
+      rangeCells: 0,
+      projectileSpeed: 0,
     };
 
-    // Full Awakened Legendary General (Shard I + Shard II -> Hero!)
+    // Awakened Legendary General (Piece I + Piece II -> Attacks & levels up via Combat XP!)
     reg[heroId] = {
       id: heroId,
       category: 'awakened',
@@ -300,88 +320,44 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
 export const UNITS: Record<UnitId, UnitDef> = buildUnitRegistry();
 
 /**
- * Exact Grid-Cell Range Evaluator:
- * Used BOTH to highlight exact targetable tiles on the 8x10 board AND to validate enemy targeting!
+ * Circular Attack Range Evaluator (in board cell units):
+ * - Puzzle pieces ('shard1' / 'shard2') and tools ('item') have canAttack = false & maxR = 0.
+ * - Troops gain slight range expansion with merge tier; Awakened Generals gain range with Combat Level!
  */
-export function isCellInUnitRange(
-  def: UnitDef,
-  tier: number,
-  uCol: number,
-  uRow: number,
-  tCol: number,
-  tRow: number
-): boolean {
-  const dc = Math.abs(tCol - uCol);
-  const dr = Math.abs(tRow - uRow);
-  const cheb = Math.max(dc, dr);
-  const manh = dc + dr;
-
-  switch (def.rangeShape) {
-    case 'melee_1':
-      // Strict 3x3 adjacent cells; Tier 4+ unlocks orthogonal 2-cell reach
-      if (cheb <= 1) return true;
-      if (tier >= 4 && ((dc === 0 && dr <= 2) || (dr === 0 && dc <= 2))) return true;
-      return false;
-
-    case 'spear_line_2': {
-      // Straight cross corridors (2 cells, 3 cells at Tier 3+) + adjacent 3x3
-      const maxLine = tier >= 3 ? 3 : 2;
-      return (dc === 0 && dr <= maxLine) || (dr === 0 && dc <= maxLine) || cheb <= 1;
-    }
-
-    case 'cavalry_2':
-      // Agile 2-cell rounded diamond around unit
-      return cheb <= 2 && manh <= (tier >= 4 ? 4 : 3);
-
-    case 'archer_3':
-      // Long 3-cell (7x7) inner-core coverage (4 cells orthogonal at Tier 5)
-      if (cheb <= 3) return true;
-      if (tier >= 5 && ((dc === 0 && dr <= 4) || (dr === 0 && dc <= 4))) return true;
-      return false;
-
-    case 'mortar_ring_3':
-      // 1-cell melee blindspot! Shells 2..3 cells away
-      return cheb >= 2 && cheb <= 3;
-
-    case 'shard_sentry':
-      return cheb <= 1;
-
-    case 'hero_melee_2':
-      return cheb <= 2;
-
-    case 'hero_caster_3':
-      return cheb <= 3;
-
-    case 'hero_global_4':
-      return cheb <= 5;
+export function getUnitCircleRange(unit: TileUnit): {
+  canAttack: boolean;
+  minR: number;
+  maxR: number;
+} {
+  const def = UNITS[unit.unitId];
+  if (def.category === 'shard1' || def.category === 'shard2' || def.category === 'item') {
+    return { canAttack: false, minR: 0, maxR: 0 };
   }
+  const tierBonus = (unit.tier - 1) * 0.08;
+  const heroLvlBonus = def.category === 'awakened' ? (unit.combatLevel - 1) * 0.08 : 0;
+  return {
+    canAttack: true,
+    minR: def.minRangeCells,
+    maxR: def.rangeCells + tierBonus + heroLvlBonus,
+  };
 }
 
-export function getTargetableGridCells(
-  def: UnitDef,
-  tier: number,
-  uCol: number,
-  uRow: number,
-  cols: number,
-  rStart: number,
-  rEnd: number
-): GridPoint[] {
-  const out: GridPoint[] = [];
-  for (let r = rStart; r < rEnd; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (c === uCol && r === uRow) continue;
-      if (isCellInUnitRange(def, tier, uCol, uRow, c, r)) {
-        out.push({ col: c, row: r });
-      }
-    }
-  }
-  return out;
+export function getHeroXpForNextLevel(combatLevel: number): number {
+  return 35 + (combatLevel - 1) * 28;
+}
+
+export function getCombatLevelDamageMult(combatLevel: number): number {
+  return 1 + (combatLevel - 1) * 0.18;
+}
+
+export function getCombatLevelSpeedMult(combatLevel: number): number {
+  return 1 + (combatLevel - 1) * 0.055;
 }
 
 /**
  * Checks if two tiles can combine:
- * 1) 'awaken': Matching Hero Shard I (◐) + Hero Shard II (◑) -> Awakened General!
- * 2) 'merge': Identical UnitId + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
+ * 1) 'awaken': Matching Hero Puzzle Piece I + Hero Puzzle Piece II -> Awakened General!
+ * 2) 'merge': Identical UnitId (except 'shovel') + Identical Tier (< MAX_TILE_TIER) -> Tier + 1!
  */
 export function checkTileCombine(
   a: TileUnit,
@@ -391,6 +367,10 @@ export function checkTileCombine(
 
   const defA = UNITS[a.unitId];
   const defB = UNITS[b.unitId];
+
+  if (defA.category === 'item' || defB.category === 'item') {
+    return null;
+  }
 
   if (
     defA.heroKey &&
@@ -432,7 +412,7 @@ export function computeSynergies(boardUnits: (TileUnit | null)[]): {
   for (const u of boardUnits) {
     if (!u) continue;
     const def = UNITS[u.unitId];
-    if (def.category === 'shard1' || def.category === 'shard2') continue;
+    if (def.category === 'shard1' || def.category === 'shard2' || def.category === 'item') continue;
     uniqueTypes.add(def.heroKey || def.id);
     if (def.category === 'awakened' && def.heroKey) {
       uniqueAwakenedHeroes.add(def.heroKey);

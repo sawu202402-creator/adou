@@ -88,12 +88,17 @@ interface Dict {
   actExorcise: string;
   actShovel: string;
   actFortify: string;
+  shovelAdTag: string;
 
   bannerWaveStart: (w: number) => string;
   bannerBossIncoming: (name: string, trait: string) => string;
   bannerShovelPick: string;
+  bannerBenchShovelPick: string;
   bannerTileUnlocked: string;
+  bannerShovelRefund: (buns: number) => string;
   bannerTombRaiderBonus: (buns: number, gotShard: boolean) => string;
+  bannerShardCannotAttack: string;
+  bannerHeroLevelUp: (name: string, lvl: number) => string;
   bannerTalismanPick: string;
   bannerTalismanUpgraded: (name: string, tier: number) => string;
   bannerExorciseCast: string;
@@ -157,6 +162,8 @@ interface Dict {
   adRewardHero: string;
   adRewardSettle: (mult: number) => string;
 
+  shovelTile: UnitText;
+  shardInactiveRole: string;
   rankTitles: string[];
   stages: Record<string, { name: string; subtitle: string; bossHint: string }>;
   skills: Record<SkillId, { name: string; shortTag: string; desc: string; val: (lvl: number) => string }>;
@@ -176,7 +183,7 @@ interface Dict {
 
 const EN_DICT: Dict = {
   gameTitle: 'Dynasty Jade Guard',
-  gameSubtitle: '1v1 Split-Board Duel · 2-Shard Hero Fusion · Divine Weapons & Skill Scrolls',
+  gameSubtitle: '1v1 Split-Board Duel · 2-Piece Hero Puzzle · Combat Leveling & Divine Armory',
   tabStages: 'Passes',
   tabArmory: 'Divine Armory',
   tabSkills: 'Skill Shop',
@@ -190,7 +197,7 @@ const EN_DICT: Dict = {
   btnPlayStandard: 'Enter Pass Duel (10 Waves)',
   btnPlayEndless: 'Enter Endless Siege',
   hubFooterTip:
-    'Combine [Shard I ◐] + [Shard II ◑] to summon Generals · Defeat Bosses for Weapon Shards · Buy Skills after every battle!',
+    'Hero Puzzle Pieces cannot attack until fused [1/2 + 2/2] · Generals gain XP from hits & kills · Shovels spawn randomly in the 5 bench slots (Watch Ad for more)!',
   commanderRank: (lvl, rankTitle, bonusPct) =>
     `Rank: ${rankTitle} (Lv.${lvl})  ·  Global Might +${bonusPct}%`,
   maxLevel: 'MAX',
@@ -206,11 +213,11 @@ const EN_DICT: Dict = {
   equippedOn: (heroName) => `Equipped: ${heroName}`,
   unequippedLabel: 'Tap to Equip',
 
-  codexFusionTitle: 'Two-Shard Hero Summoning: [Portrait Shard ◐] + [Totem Shard ◑] = General',
-  codexTroopsTitle: 'Five Tactical Troops & Exact Grid Attack Ranges',
+  codexFusionTitle: '2-Piece Hero Puzzle: [Left Piece 1/2] + [Right Piece 2/2] = General (Cannot Attack Unfused!)',
+  codexTroopsTitle: 'Five Tactical Troops & Circular Attack Ranges',
   codexSynergyTitle: 'Battlefield Formation Synergies',
   codexRuleTip:
-    'Drag or tap any unit on the board to see its exact highlighted target cells! Melee Blades (1-cell) must hug the road; Archers (3-cell) snipe safely from the inner core.',
+    'Hold or tap any unit to preview its circular attack ring! Unfused Hero Puzzle Pieces [1/2, 2/2] CANNOT attack — fuse both halves to summon a General who gains XP & levels up from attacks and kills!',
 
   rivalTag: 'RIVAL',
   playerTag: 'YOU',
@@ -222,9 +229,9 @@ const EN_DICT: Dict = {
   },
 
   btnRecruit: 'Conscript',
-  btnReroll: 'Refresh',
-  btnHeroScrollFree: 'Free Shard',
-  btnHeroScrollAd: 'Hero Tally',
+  btnReroll: 'Refresh 5',
+  btnHeroScrollFree: 'Free Piece',
+  btnHeroScrollAd: 'Hero Puzzle',
   btnSupplyAd: '+65 Buns',
   talismanLabel: 'Talisman',
   talismanReady: 'UPGRADE!',
@@ -233,27 +240,32 @@ const EN_DICT: Dict = {
   actExorcise: 'Exorcise',
   actShovel: 'Shovel',
   actFortify: 'Guard',
+  shovelAdTag: '🎬 Ad +2',
 
-  bannerWaveStart: (w) => `Wave ${w} — Enemy Vanguard Advances!`,
+  bannerWaveStart: (w) => `Wave ${w} — Escalating Enemy Force Advances!`,
   bannerBossIncoming: (name, trait) => `BOSS: ${name} (${trait}) — Drops Weapon Shard!`,
-  bannerShovelPick: 'Tap a dark stone cell in your half to excavate',
+  bannerShovelPick: 'Tap any dark stone cell in your half to dig it open!',
+  bannerBenchShovelPick: 'Drag or tap a dark stone cell to excavate with your Bench Shovel!',
   bannerTileUnlocked: 'New White Jade Pedestal Excavated!',
+  bannerShovelRefund: (buns) => `All slots unlocked! Extra Shovel converted to +${buns} Buns`,
   bannerTombRaiderBonus: (buns, gotShard) =>
     gotShard
       ? `Tomb Raider! +${buns} Buns & Unearthed 1 Weapon Shard!`
       : `Tomb Raider! Unearthed +${buns} Bonus Buns!`,
-  bannerTalismanPick: 'Divine Talisman Ready: Tap any unit/General to +1 Tier & Haste!',
+  bannerShardCannotAttack: 'Puzzle Piece cannot attack alone! Combine [1/2] + [2/2] to summon General!',
+  bannerHeroLevelUp: (name, lvl) => `✦ ${name} Leveled Up to Lv.${lvl}! (DMG & Range Up)`,
+  bannerTalismanPick: 'Divine Talisman Ready: Tap any Troop or General to +1 Tier & Haste!',
   bannerTalismanUpgraded: (name, tier) => `Divine Talisman! ${name} Promoted to Tier ${tier}!`,
   bannerExorciseCast: 'Exorcism Talisman! Celestial Thunder Smites Bosses!',
   bannerMeteorStrike: 'Meteor Tome! Flaming Starfalls Crush the Enemy!',
   bannerWeaponShardDrop: (weapName) => `Boss Spoils! Obtained [${weapName}] Shard!`,
   bannerZhangJiaoHeal: 'Zhang Jiao Chants Peace Scripture — Burst Him Down!',
   bannerZhangBaoSummon: 'Zhang Bao Summons Yellow Turban Raiders!',
-  bannerHeroAwakened: (name) => `2 Shards United · ${name} Summoned!`,
-  bannerRivalAwakened: (name) => `Rival Summoned ${name}!`,
+  bannerHeroAwakened: (name) => `Puzzle Complete · ${name} Summoned (Lv.1)!`,
+  bannerRivalAwakened: (name) => `Rival Completed Puzzle & Summoned ${name}!`,
   bannerRivalFallen: 'Rival Defense Collapsed!',
   bannerFortified: 'Barricade Rebuilt & Royal Heir Healed!',
-  bannerNeedRations: 'Not Enough Steamed Buns',
+  bannerNeedRations: 'Not Enough Steamed Buns — Upgrade [Farmer] for faster income!',
   bannerMaxLevel: 'Maximum Rank Reached',
 
   synergyNames: {
@@ -300,10 +312,17 @@ const EN_DICT: Dict = {
   mockAdCancel: 'Cancel',
 
   adRewardRevive: 'Dragon Rescue + Full Barricade Rebuild',
-  adRewardSupply: '+65 Buns + 1 Golden Shovel',
-  adRewardShovels: '+2 Golden Shovels',
-  adRewardHero: 'Matching Hero Shard (Instant Summon!)',
+  adRewardSupply: '+65 Steamed Buns',
+  adRewardShovels: '+2 Golden Shovels (Excavate Locked Stone Cells!)',
+  adRewardHero: 'Matching Hero Puzzle Half (Instant General Summon!)',
   adRewardSettle: (m) => `x${m} Gold & XP Spoils`,
+
+  shovelTile: {
+    name: 'Golden Shovel',
+    role: '[Bench Tool · Drag onto Dark Stone Cell]',
+    desc: 'Spawns randomly in the 5 bench slots! Drag onto any dark stone cell to unlock a new deploy slot. Watch Ad for extra shovels!',
+  },
+  shardInactiveRole: '[Puzzle Half · Cannot Attack Until Fused!]',
 
   rankTitles: [
     'Foot Soldier',
@@ -319,17 +338,17 @@ const EN_DICT: Dict = {
   stages: {
     hulao: {
       name: 'Hulao Twin Pass',
-      subtitle: 'Classic inner-core fortress! Use Shovels to open outer slots for 1-cell Blades while Archers snipe from within.',
+      subtitle: 'Classic inner-core fortress! Use Shovels from the bench to open outer slots for short-circle Blades while Archers snipe from within.',
       bossHint: 'Bosses: Zhang Bao (W5) · Lu Bu (W10)',
     },
     changban: {
       name: 'Changban Steep Bridge',
-      subtitle: 'Narrow river corridors ideal for 2-cell piercing Spearmen! Burst down Zhang Jiao before his heal chant.',
+      subtitle: 'Narrow river corridors ideal for piercing Spearmen! Burst down Zhang Jiao before his heal chant.',
       bossHint: 'Bosses: Zhang Bao (W5) · Zhang Jiao (W10)',
     },
     chibi: {
       name: 'Chibi Chained Armada',
-      subtitle: 'Long chained ship decks demanding Frost Inkstone slow, Siege Bombards, and weapon-equipped Generals.',
+      subtitle: 'Long chained ship decks demanding Frost Inkstone slow, Siege Bombards, and high-level Generals.',
       bossHint: 'Bosses: Zhang Bao (W5) · Demon Lu Bu (W10)',
     },
   },
@@ -356,7 +375,7 @@ const EN_DICT: Dict = {
     tomb_raider: {
       name: 'Tomb Raider',
       shortTag: 'Raider',
-      desc: 'Digging with a Shovel bursts out bonus Buns & chance for a Weapon Shard!',
+      desc: 'Boosts bench Shovel rate; digging bursts bonus Buns & chance for a Weapon Shard!',
       val: (lvl) => (lvl === 0 ? 'Locked' : `+${12 + lvl * 6} Buns/Dig`),
     },
     exorcist_seal: {
@@ -368,8 +387,8 @@ const EN_DICT: Dict = {
     hero_decree: {
       name: 'Hero Decree',
       shortTag: 'Decree',
-      desc: 'Raises Hero Shard I & II appearance chance when conscripting',
-      val: (lvl) => `+${(lvl * 4.5).toFixed(1)}% Shard`,
+      desc: 'Raises Hero Puzzle Piece appearance chance when conscripting',
+      val: (lvl) => `+${(lvl * 4.5).toFixed(1)}% Puzzle`,
     },
     granary_art: {
       name: 'Peasant Granary',
@@ -421,80 +440,80 @@ const EN_DICT: Dict = {
   troops: {
     blade: {
       name: 'Heavy Blade Guard',
-      role: '[Range: 1-Cell 3x3] · Extreme Melee Cleave',
-      desc: 'Highest base damage, but short 1-cell reach! Must be placed directly beside the road.',
+      role: '[Circle: 1.5R Melee] · Highest Cleave DMG',
+      desc: 'Highest base damage, small melee circle! Excavate outer road-side cells to reach foes.',
     },
     spear: {
       name: 'Crimson Spearman',
-      role: '[Range: 2-Cell Cross] · Straight-Line Pierce',
-      desc: 'Thrusts piercing shockwaves down straight 2-cell corridors, hitting multiple foes.',
+      role: '[Circle: 2.1R Medium] · Line-Piercing Lance',
+      desc: 'Thrusts piercing shockwaves hitting up to 4+ enemies in a straight line.',
     },
     lancer: {
       name: 'Iron Cavalry',
-      role: '[Range: 2-Cell Diamond] · Fast Raid',
-      desc: 'Agile 2-cell reach with rapid strikes — best early-wave clearer.',
+      role: '[Circle: 2.4R Agile] · Rapid Sweep',
+      desc: 'Balanced medium-wide circle with fast strikes — reliable wave clearer.',
     },
     archer: {
       name: 'Horn-Bow Marksman',
-      role: '[Range: 3-Cell 7x7] · Inner-Core Boss Sniper',
-      desc: 'Covers outer roads safely from deep inner tiles. +30% bonus damage vs Bosses!',
+      role: '[Circle: 3.4R Sniper] · +30% Boss DMG',
+      desc: 'Wide sniper circle reaching outer roads safely from deep inner tiles!',
     },
     mortar: {
       name: 'Siege Bombard',
-      role: '[Range: 2-3 Cell Ring] · 1-Cell Blindspot AoE',
-      desc: 'Cannot hit adjacent cells, but shells distant roads with armor-shattering blasts!',
+      role: '[Circle: 1.2-3.6R Ring] · Armor-Piercing AoE',
+      desc: 'Inner blindspot ring, wide outer siege blast crushing armored shieldmen!',
     },
   },
 
   heroes: {
     zhaoyun: {
-      shard1Name: 'Zhao Yun · Shard I (◐)',
-      shard2Name: 'Zhao Yun · Shard II (◑)',
+      shard1Name: 'Zhao Yun · Puzzle 1/2',
+      shard2Name: 'Zhao Yun · Puzzle 2/2',
       heroName: 'Zhao Yun · White Dragon',
-      role: '◈ 2-Cell Martial Zone · Piercing Dragon Surge',
-      desc: 'Combine Shard I + II! Sweeps wide arcs; with Dragon Spear equipped, fires full-board flying spears.',
+      role: '◈ 2.5R Martial Circle · Levels Up via Hits & Kills',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP on every hit & kill to level up; Dragon Spear fires full-board spears.',
     },
     guanyu: {
-      shard1Name: 'Guan Yu · Shard I (◐)',
-      shard2Name: 'Guan Yu · Shard II (◑)',
+      shard1Name: 'Guan Yu · Puzzle 1/2',
+      shard2Name: 'Guan Yu · Puzzle 2/2',
       heroName: 'Guan Yu · Martial Saint',
-      role: '☾ 2-Cell Martial Zone · Instant Execute',
-      desc: 'Combine Shard I + II! Executes low-HP enemies outright and hurls emerald crescent waves.',
+      role: '☾ 2.4R Martial Circle · Levels Up & Executes',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP from hits & kills, executing low-HP foes outright.',
     },
     zhangfei: {
-      shard1Name: 'Zhang Fei · Shard I (◐)',
-      shard2Name: 'Zhang Fei · Shard II (◑)',
+      shard1Name: 'Zhang Fei · Puzzle 1/2',
+      shard2Name: 'Zhang Fei · Puzzle 2/2',
       heroName: 'Zhang Fei · Warcry Titan',
-      role: '❖ 2-Cell Martial Zone · AoE Quake Stun',
-      desc: 'Combine Shard I + II! Roars fiery tremors that stun all surrounding invaders & Bosses.',
+      role: '❖ 2.4R Martial Circle · Levels Up & Quake Stun',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP in combat and stuns surrounding waves & Bosses.',
     },
     zhuge: {
-      shard1Name: 'Zhuge Liang · Shard I (◐)',
-      shard2Name: 'Zhuge Liang · Shard II (◑)',
+      shard1Name: 'Zhuge Liang · Puzzle 1/2',
+      shard2Name: 'Zhuge Liang · Puzzle 2/2',
       heroName: 'Zhuge Liang · Storm Sage',
-      role: '☯ 3-Cell Mystic Zone · Chain Lightning',
-      desc: 'Combine Shard I + II! Calls celestial lightning jumping across enemy formations.',
+      role: '☯ 3.5R Mystic Circle · Levels Up & Chain Thunder',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP from hits & kills, calling multi-jump lightning.',
     },
     zhenji: {
-      shard1Name: 'Zhen Ji · Shard I (◐)',
-      shard2Name: 'Zhen Ji · Shard II (◑)',
+      shard1Name: 'Zhen Ji · Puzzle 1/2',
+      shard2Name: 'Zhen Ji · Puzzle 2/2',
       heroName: 'Zhen Ji · Frost Consort',
-      role: '✻ 3-Cell Mystic Zone · Lotus Blizzard',
-      desc: 'Combine Shard I + II! Blankets the road in freezing lotus storms that immobilize waves.',
+      role: '✻ 3.4R Mystic Circle · Levels Up & Blizzard',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP in battle while freezing whole lanes.',
     },
     shangxiang: {
-      shard1Name: 'Shangxiang · Shard I (◐)',
-      shard2Name: 'Shangxiang · Shard II (◑)',
+      shard1Name: 'Shangxiang · Puzzle 1/2',
+      shard2Name: 'Shangxiang · Puzzle 2/2',
       heroName: 'Shangxiang · Sky Archer',
-      role: '✦ Full Half-Board Sniper · Blazing Volley',
-      desc: 'Combine Shard I + II! Fires multi-arrow flame barrages across the entire half-board.',
+      role: '✦ 4.3R Giant Circle · Levels Up & Flame Volley',
+      desc: 'Inert until 2 puzzle halves fuse! Gains XP rapidly from multi-arrow flame barrages.',
     },
   },
 };
 
 const ZH_DICT: Dict = {
   gameTitle: '千里护主录 · 国风双阵塔防',
-  gameSubtitle: '1V1双阵竞速 · 双碎片合名将 · 斩Boss爆神兵碎片 · 凯旋秘籍商店',
+  gameSubtitle: '1V1双阵竞速 · 双拼图合武将 · 杀敌升级 · 五格随机刷铲',
   tabStages: '烽火关卡',
   tabArmory: '神兵专武阁',
   tabSkills: '秘籍技能店',
@@ -508,7 +527,7 @@ const ZH_DICT: Dict = {
   btnPlayStandard: '擂鼓出阵（十波Boss战）',
   btnPlayEndless: '死守雄关（无尽刷碎片）',
   hubFooterTip:
-    '拖拽同武将【左碎片◐】+【右碎片◑】召唤名将 · 击败第5/10波 Boss 掉落神兵武器碎片 · 每局胜利后可购买秘籍技能！',
+    '武将需【两块拼图合成】后才可攻击 · 武将攻击与杀敌获经验升级 · 金铲随机刷在下方5格中（更多金铲看广告获取）！',
   commanderRank: (lvl, rankTitle, bonusPct) =>
     `当前军衔：【${rankTitle}】(统帅 Lv.${lvl})  ·  全军战力加成 +${bonusPct}%`,
   maxLevel: '已满阶',
@@ -516,7 +535,7 @@ const ZH_DICT: Dict = {
 
   armoryTitle: '神兵专武阁 —— 收集过关 Boss 武器碎片 · 锻造并给武将穿戴神兵',
   armoryTip:
-    '过关斩杀第5波精英与第10波守关 Boss 必掉【神兵碎片】！集齐 3 片即可锻造神兵并佩戴给武将：上阵后棋牌右上角将显示专武图标，并激活超强专武绝技！',
+    '过关斩杀第5波精英与第10波守关 Boss 必掉【神兵碎片】！集齐 3 片即可锻造神兵并佩戴给武将：上阵后棋牌右下角显示专武图标，并激活超强专武绝技！',
   shardCount: (have, need) => (need === null ? `5★满星 (余${have}片)` : `武器碎片：${have} / ${need}`),
   btnForgeWeapon: (need) => `合成神兵 (${need}片)`,
   btnStarUpWeapon: (need) => `升星精炼 (${need}片)`,
@@ -524,11 +543,11 @@ const ZH_DICT: Dict = {
   equippedOn: (heroName) => `已装备：${heroName}`,
   unequippedLabel: '点击装备武将',
 
-  codexFusionTitle: '武将双碎片召唤：【左半将魂碎片 ◐】＋【右半命格碎片 ◑】＝ 真·三国名将',
-  codexTroopsTitle: '五大基础兵种 · 严格棋盘格攻击范围详解',
+  codexFusionTitle: '武将双拼图合成：【左拼图 1/2】＋【右拼图 2/2】＝ 真名将（单块拼图不可攻击！实战杀敌升级）',
+  codexTroopsTitle: '五大基础兵种 · 圆形攻击范围详解',
   codexSynergyTitle: '军阵奇门羁绊（上阵自动激活）',
   codexRuleTip:
-    '局内按住或点击任意棋子，棋盘会直接逐格高亮其真实攻击范围：【刀兵】仅打贴身周围1格但伤害极高（需放外圈贴路格）；【枪兵】打十字直线2格贯穿；【弓兵】缩在内圈也能打3格远路！',
+    '按住或点击棋子可查看【圆形攻击范围框】！未合成的武将拼图不可攻击；合成为真武将后每次攻击和杀敌都会涨经验升级（攻击力、攻速、圆圈射程全面成长）！',
 
   rivalTag: '敌方守军',
   playerTag: '我方阿斗',
@@ -541,8 +560,8 @@ const ZH_DICT: Dict = {
 
   btnRecruit: '征兵',
   btnReroll: '换批征兵',
-  btnHeroScrollFree: '赐碎片(免)',
-  btnHeroScrollAd: '招贤虎符',
+  btnHeroScrollFree: '赐拼图(免)',
+  btnHeroScrollAd: '招贤拼图',
   btnSupplyAd: '+65 馒头',
   talismanLabel: '神兵符',
   talismanReady: '直升一阶!',
@@ -551,28 +570,33 @@ const ZH_DICT: Dict = {
   actExorcise: '降妖',
   actShovel: '金铲',
   actFortify: '护主',
+  shovelAdTag: '🎬广告+2',
 
-  bannerWaveStart: (w) => `第 ${w} 波敌军擂鼓攻关！`,
+  bannerWaveStart: (w) => `第 ${w} 波强敌压境 · 难度攀升！`,
   bannerBossIncoming: (name, trait) => `首领降临：【${name}】(${trait}) · 击杀必掉神兵碎片！`,
-  bannerShovelPick: '请点击我方区域的深色石格开辟白玉阵位',
-  bannerTileUnlocked: '金铲辟地 · 开启全新外圈阵位！',
+  bannerShovelPick: '请点击我方区域的深色石格开辟白玉阵位！',
+  bannerBenchShovelPick: '拖动或点击深色石格，即可用备战格【金铲】挖开新阵位！',
+  bannerTileUnlocked: '金铲辟地 · 开启全新外圈白玉阵位！',
+  bannerShovelRefund: (buns) => `深色石格已全部挖完，多余金铲折算 +${buns} 馒头！`,
   bannerTombRaiderBonus: (buns, gotShard) =>
     gotShard
       ? `摸金校尉触发！挖出 +${buns} 馒头，并惊喜出土 1 枚【神兵碎片】！`
       : `摸金校尉触发！额外挖出 +${buns} 馒头军粮！`,
-  bannerTalismanPick: '【神兵符】已出鞘：请点击任意我方士兵或武将，无条件直升 1 阶并狂暴！',
+  bannerShardCannotAttack: '单块武将拼图无法攻击！请集齐【1/2 + 2/2】两块拼图合成真武将',
+  bannerHeroLevelUp: (name, lvl) => `✦【${name}】杀敌历练升至 Lv.${lvl}！伤害与射程提升！`,
+  bannerTalismanPick: '【神兵符】已出鞘：点击任意士兵或武将，无条件升阶并全军狂暴！',
   bannerTalismanUpgraded: (name, tier) => `神兵符显灵！【${name}】跃升至 ${tier} 阶并攻速狂飙！`,
   bannerExorciseCast: '【降妖符】敕令九天落雷，重创首领并碎裂护甲！',
   bannerMeteorStrike: '【天降陨石】火流星轰击敌群！',
   bannerWeaponShardDrop: (weapName) => `斩杀首领！掉落【${weapName}】碎片 ×1！`,
-  bannerZhangJiaoHeal: '张角吟唱太平回血咒！速用【降妖】或名将集火秒杀！',
+  bannerZhangJiaoHeal: '张角吟唱太平回血咒！速用【降妖】或高等级名将秒杀！',
   bannerZhangBaoSummon: '张宝施展妖术，召唤黄巾斥候突袭！',
-  bannerHeroAwakened: (name) => `双碎片合璧 · 召唤【${name}】登场！`,
-  bannerRivalAwakened: (name) => `上方对手凑齐双碎片召唤了【${name}】！`,
+  bannerHeroAwakened: (name) => `双拼图合璧 · 召唤【${name}】(Lv.1) 参战！`,
+  bannerRivalAwakened: (name) => `上方对手拼出双图召唤了【${name}】！`,
   bannerRivalFallen: '上方对手阿斗失守！',
   bannerFortified: '铁刺鹿砦重筑，阿斗恢复红心！',
-  bannerNeedRations: '馒头军粮不足，可升级【农田】加快产出',
-  bannerMaxLevel: '已升至最高阶',
+  bannerNeedRations: '馒头不足（每次征兵递增涨价，请及时升级【农田】！）',
+  bannerMaxLevel: '已全部开启或升至满阶',
 
   synergyNames: {
     vanguard: '锋矢铁卫',
@@ -618,10 +642,17 @@ const ZH_DICT: Dict = {
   mockAdCancel: '婉拒赏赐',
 
   adRewardRevive: '单骑救主清场 + 鹿砦重筑',
-  adRewardSupply: '+65 蒸笼馒头 + 赐 1 把金铲',
-  adRewardShovels: '赐 2 把洛阳金铲',
-  adRewardHero: '定向赐予配对武将另一半碎片（即刻合成名将！）',
+  adRewardSupply: '+65 蒸笼馒头粮饷',
+  adRewardShovels: '赐 2 把洛阳金铲（可立即挖开外圈石格！）',
+  adRewardHero: '定向赐予配对武将另一块拼图（即刻合成真名将！）',
   adRewardSettle: (m) => `战功金铢与历练 x${m} 倍奉还`,
+
+  shovelTile: {
+    name: '洛阳金铲',
+    role: '【五格随机刷出 · 拖至深色石格辟地】',
+    desc: '征兵时随机刷在5个备战格里！拖到我方深色石格即可挖开新阵位；想要更多铲子可点下方【金铲】看广告获取。',
+  },
+  shardInactiveRole: '【未合成拼图 · 集齐两块合成后才可攻击！】',
 
   rankTitles: [
     '义勇步卒',
@@ -637,17 +668,17 @@ const ZH_DICT: Dict = {
   stages: {
     hulao: {
       name: '虎牢雄关',
-      subtitle: '经典外路环绕阵！用金铲砸开外圈石格部署1格【刀兵】堵路，内圈安放【弓兵】远程点杀。',
+      subtitle: '经典外路环绕阵！用备战格刷出的金铲挖开外圈石格放近战【刀兵】，内圈放【弓兵】圆圈狙击。',
       bossHint: '镇守首领：第5波 张宝 · 第10波 魔神吕布',
     },
     changban: {
       name: '长坂古桥',
-      subtitle: '青绿水陆狭长直道，极利【枪兵】直线贯穿！小心第10波张角残血回春，留好【降妖】秒杀！',
+      subtitle: '水陆狭长直道极利【枪兵】穿透与名将刷经验升级！小心第10波张角回血咒，留好【降妖】打断！',
       bossHint: '镇守首领：第5波 张宝 · 第10波 太平张角',
     },
     chibi: {
       name: '赤壁水寨',
-      subtitle: '铁索连舟超长防线！搭配【寒冰砚台】减速、【天降陨石】与穿戴专武的名将镇守大营。',
+      subtitle: '铁索连舟超长防线！敌军波次强度极高，需尽快拼出名将持续杀敌升级并穿戴专武镇守。',
       bossHint: '镇守首领：第5波 张宝 · 第10波 无双吕布',
     },
   },
@@ -674,7 +705,7 @@ const ZH_DICT: Dict = {
     tomb_raider: {
       name: '摸金校尉',
       shortTag: '摸金',
-      desc: '每次用金铲挖开石格立即爆出大量馒头，且有概率直接挖出【神兵碎片】！',
+      desc: '提高5格刷出金铲概率；每挖开1格石块爆大量馒头，且有概率挖出【神兵碎片】！',
       val: (lvl) => (lvl === 0 ? '未解锁' : `每铲+${12 + lvl * 6}馒头`),
     },
     exorcist_seal: {
@@ -686,13 +717,13 @@ const ZH_DICT: Dict = {
     hero_decree: {
       name: '招贤金榜',
       shortTag: '招贤',
-      desc: '永久提高征兵刷出名将【左/右碎片】的概率，更快凑齐双碎片合成名将',
-      val: (lvl) => `碎片率 +${(lvl * 4.5).toFixed(1)}%`,
+      desc: '永久提高征兵刷出武将【左右拼图】的概率，更快合成真名将',
+      val: (lvl) => `拼图率 +${(lvl * 4.5).toFixed(1)}%`,
     },
     granary_art: {
       name: '屯田农政',
       shortTag: '农术',
-      desc: '大幅加快局内每秒自动产出的蒸笼馒头数量，并增加开局粮草储备',
+      desc: '大幅加快局内每秒自动产出的蒸笼馒头数量，应对征兵涨价压力',
       val: (lvl) => `每秒 +${(lvl * 0.45).toFixed(2)}粮`,
     },
     frost_inkstone: {
@@ -739,73 +770,73 @@ const ZH_DICT: Dict = {
   troops: {
     blade: {
       name: '玄铁刀兵',
-      role: '【射程：贴身1格(3×3)】· 极致近战重斩',
-      desc: '基础攻击力断层最高！但射程仅限周围紧邻1格，必须部署在紧贴道路的外圈格堵门。',
+      role: '【圆圈射程：1.5格近战】· 极致重斩',
+      desc: '基础伤害断层最高！但圆圈很小仅够打贴身道路，需用金铲挖开外圈石格贴路部署。',
     },
     spear: {
       name: '红缨枪兵',
-      role: '【射程：十字直线2格】· 直线贯穿刺击',
-      desc: '向正对通道刺出破阵枪芒，直线贯穿一串敌军！最适合摆在直道拐角口。',
+      role: '【圆圈射程：2.1格中程】· 直线贯穿',
+      desc: '中等圆圈射程，刺出破阵枪芒直线贯穿 4 名以上敌军！最适合摆在直道口。',
     },
     lancer: {
       name: '铁浮屠骑',
-      role: '【射程：周围2格菱形】· 高机动快攻',
-      desc: '覆盖周围2格机动区域且攻速轻快，前期开荒清理成群小怪性价比最高。',
+      role: '【圆圈射程：2.4格机动】· 高频快攻',
+      desc: '圆圈覆盖较广且攻速轻快，前中期清理小怪潮性价比极高。',
     },
     archer: {
       name: '雕翎弓兵',
-      role: '【射程：内圈远射3格(7×7)】· 远程克制Boss',
-      desc: '射程极远，缩在最安全的内圈白格也能覆盖外围道路，对首领额外造成 +30% 伤害！',
+      role: '【圆圈射程：3.4格大圆】· 克制首领',
+      desc: '超大圆形射程，缩在安全的内圈白格也能覆盖外围远路，对 Boss 额外 +30% 伤害！',
     },
     mortar: {
       name: '神威火炮',
-      role: '【射程：远端2~3格环】· 近身1格盲区重轰',
-      desc: '无法攻击贴身1格敌人，但能隔墙轰炸远端道路，范围爆炸专破重甲盾兵！',
+      role: '【圆环射程：1.2~3.6格】· 破甲重轰',
+      desc: '贴身小圈盲区、外围大圆重炮轰炸，范围爆炸无视盾兵厚甲！',
     },
   },
 
   heroes: {
     zhaoyun: {
-      shard1Name: '赵云·将魂碎片Ⅰ(◐)',
-      shard2Name: '赵云·龙盔碎片Ⅱ(◑)',
+      shard1Name: '赵云·左拼图 [1/2]',
+      shard2Name: '赵云·右拼图 [2/2]',
       heroName: '真·赵云',
-      role: '◈ 周围2格战区 · 贯穿苍龙枪',
-      desc: '集齐【左/右两枚碎片】拖拽合成！高攻速银枪横扫；装备【龙胆亮银枪】后触发全场飞枪！',
+      role: '◈ 2.5格圆圈 · 攻击与杀敌获经验升级',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，攻击与杀敌不断升级；配【龙胆亮银枪】触发全场飞枪！',
     },
     guanyu: {
-      shard1Name: '关羽·将魂碎片Ⅰ(◐)',
-      shard2Name: '关羽·青龙印碎片Ⅱ(◑)',
+      shard1Name: '关羽·左拼图 [1/2]',
+      shard2Name: '关羽·右拼图 [2/2]',
       heroName: '真·关羽',
-      role: '☾ 周围2格战区 · 残血一刀斩',
-      desc: '集齐【左/右两枚碎片】拖拽合成！重刀劈斩直接处决残血敌军；装备【青龙偃月刀】斩杀线大幅提升！',
+      role: '☾ 2.4格圆圈 · 杀敌升级 · 残血处决',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，攻击与斩杀敌军飞速升级，重刀秒杀残血敌军！',
     },
     zhangfei: {
-      shard1Name: '张飞·将魂碎片Ⅰ(◐)',
-      shard2Name: '张飞·猛虎印碎片Ⅱ(◑)',
+      shard1Name: '张飞·左拼图 [1/2]',
+      shard2Name: '张飞·右拼图 [2/2]',
       heroName: '真·张飞',
-      role: '❖ 周围2格战区 · 怒吼群控眩晕',
-      desc: '集齐【左/右两枚碎片】拖拽合成！周期爆发当阳怒吼震晕周围群怪；装备【丈八点钢矛】破甲控Boss！',
+      role: '❖ 2.4格圆圈 · 杀敌升级 · 怒吼群晕',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，激战升级扩大震地范围，怒吼震晕群怪与 Boss！',
     },
     zhuge: {
-      shard1Name: '诸葛·将魂碎片Ⅰ(◐)',
-      shard2Name: '诸葛·八卦冠碎片Ⅱ(◑)',
+      shard1Name: '诸葛·左拼图 [1/2]',
+      shard2Name: '诸葛·右拼图 [2/2]',
       heroName: '真·诸葛亮',
-      role: '☯ 远程3格谋略区 · 九天连环雷',
-      desc: '集齐【左/右两枚碎片】拖拽合成！召唤天雷在敌阵间连环弹跳；装备【八卦白羽扇】雷电增至7连跳！',
+      role: '☯ 3.5格大圆 · 杀敌升级 · 九天连环雷',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，落雷电杀敌群快速升级，电弧在敌阵连环跳跃！',
     },
     zhenji: {
-      shard1Name: '甄姬·将魂碎片Ⅰ(◐)',
-      shard2Name: '甄姬·冰莲簪碎片Ⅱ(◑)',
+      shard1Name: '甄姬·左拼图 [1/2]',
+      shard2Name: '甄姬·右拼图 [2/2]',
       heroName: '真·甄姬',
-      role: '✻ 远程3格控制区 · 洛神冰封雪',
-      desc: '集齐【左/右两枚碎片】拖拽合成！寒岚减速整条道路；装备【寒玉冰莲笛】直接冻结定身群敌！',
+      role: '✻ 3.4格大圆 · 杀敌升级 · 洛神冰封',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，寒岚控场杀敌升级，大范围减速冰封整条道路！',
     },
     shangxiang: {
-      shard1Name: '尚香·将魂碎片Ⅰ(◐)',
-      shard2Name: '尚香·火凤冠碎片Ⅱ(◑)',
+      shard1Name: '尚香·左拼图 [1/2]',
+      shard2Name: '尚香·右拼图 [2/2]',
       heroName: '真·孙尚香',
-      role: '✦ 半场全屏神射 · 漫天凤羽火雨',
-      desc: '集齐【左/右两枚碎片】拖拽合成！超远覆盖全半场齐射火凤箭雨；装备【丹凤烈焰弓】万箭燎原！',
+      role: '✦ 4.3格巨圆 · 杀敌升级 · 漫天凤羽箭',
+      desc: '单块拼图不可攻击！集齐两块拼图合成参战，超大圆圈齐射火雨，收割人头极快冲刺满级！',
     },
   },
 };
@@ -816,16 +847,19 @@ export function t(): Dict {
 
 export function getUnitDisplayText(unitId: UnitId): UnitText {
   const dict = t();
+  if (unitId === 'shovel') {
+    return dict.shovelTile;
+  }
   if (unitId in dict.troops) {
     return dict.troops[unitId as TroopKey];
   }
   const [prefix, hKey] = unitId.split('_') as ['shard1' | 'shard2' | 'hero', HeroKey];
   const h = dict.heroes[hKey];
   if (prefix === 'shard1') {
-    return { name: h.shard1Name, role: h.role, desc: h.desc };
+    return { name: h.shard1Name, role: dict.shardInactiveRole, desc: h.desc };
   }
   if (prefix === 'shard2') {
-    return { name: h.shard2Name, role: h.role, desc: h.desc };
+    return { name: h.shard2Name, role: dict.shardInactiveRole, desc: h.desc };
   }
   return { name: h.heroName, role: h.role, desc: h.desc };
 }

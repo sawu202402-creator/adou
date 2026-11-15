@@ -24,50 +24,42 @@ export type SkillId =
   | 'frost_inkstone';
 
 /**
- * Tile IDs on Board & Bench (Zero Hanzi):
- * - 5 Base Troops: 'blade' (刀) | 'spear' (枪) | 'lancer' (骑) | 'archer' (弓) | 'mortar' (炮)
- * - 6 Hero Shard I (Left Portrait Tally ◐): 'shard1_<hero>'
- * - 6 Hero Shard II (Right Totem Tally ◑): 'shard2_<hero>'
- * - 6 Awakened Generals (Fused I + II): 'hero_<hero>'
+ * Tile IDs on Board & 5-Slot Bench (Zero Hanzi):
+ * - 5 Base Troops: 'blade' | 'spear' | 'lancer' | 'archer' | 'mortar'
+ * - 1 Bench Tool Item: 'shovel' (Golden Shovel randomly rolled in the 5 bench slots!)
+ * - 6 Hero Puzzle Piece I (Left Portrait Puzzle 1/2 — CANNOT attack until fused!): 'shard1_<hero>'
+ * - 6 Hero Puzzle Piece II (Right Totem Puzzle 2/2 — CANNOT attack until fused!): 'shard2_<hero>'
+ * - 6 Awakened Generals (Fused I + II — Attacks & gains XP/Levels from hits & kills!): 'hero_<hero>'
  */
 export type UnitId =
   | TroopKey
+  | 'shovel'
   | `shard1_${HeroKey}`
   | `shard2_${HeroKey}`
   | `hero_${HeroKey}`;
 
-export type TileCategory = 'troop' | 'shard1' | 'shard2' | 'awakened';
+export type TileCategory = 'troop' | 'item' | 'shard1' | 'shard2' | 'awakened';
 
-export type SynergyTag = 'vanguard' | 'marksman' | 'mystic';
+export type SynergyTag = 'vanguard' | 'marksman' | 'mystic' | 'none';
 
-/**
- * Grid-Cell Range Archetypes (faithful to 赵云与阿斗 tactical positioning):
- * - 'melee_1': Adjacent 3x3 cells only (Chebyshev <= 1) — high damage, must hug the road!
- * - 'spear_line_2': Straight/cross 2-cell corridors + line pierce!
- * - 'cavalry_2': Agile 2-cell diamond/square around unit!
- * - 'archer_3': Long 3-cell inner-core sniper coverage!
- * - 'mortar_ring_3': Siege 1.2..3.2 cell ring (1-cell melee blindspot, heavy AoE)!
- * - 'shard_sentry': 1.8-cell weak sentry while waiting for partner shard!
- * - 'hero_2' / 'hero_3' / 'hero_full': Hero-specific tactical grids!
- */
 export type RangeShape =
+  | 'none'
   | 'melee_1'
   | 'spear_line_2'
   | 'cavalry_2'
   | 'archer_3'
   | 'mortar_ring_3'
-  | 'shard_sentry'
   | 'hero_melee_2'
   | 'hero_caster_3'
   | 'hero_global_4';
 
 export type AttackPattern =
+  | 'none'
   | 'cleave'
   | 'pierce_lance'
   | 'cavalry_slash'
   | 'arrow'
   | 'mortar_aoe'
-  | 'spirit_strike'
   | 'dragon_sweep'
   | 'jade_execute'
   | 'roar_quake'
@@ -101,7 +93,11 @@ export interface UnitDef {
 export interface TileUnit {
   uid: number;
   unitId: UnitId;
-  tier: number; // 1..5
+  tier: number; // 1..5 merge rarity tier
+  combatLevel: number; // 1..12 combat XP level for Awakened Generals!
+  xp: number;
+  maxXp: number;
+  levelUpAnimTimer: number;
   cooldown: number;
   attackCount: number;
   recoilTimer: number;

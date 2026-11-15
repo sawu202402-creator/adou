@@ -2,10 +2,14 @@ import { SoundFX } from '../audio/SoundFX';
 import {
   checkTileCombine,
   computeSynergies,
+  getCombatLevelDamageMult,
+  getCombatLevelSpeedMult,
+  getHeroXpForNextLevel,
   getTierDamageMultiplier,
   getTierSpeedMultiplier,
+  getUnitCircleRange,
   HERO_KEYS,
-  isCellInUnitRange,
+  MAX_HERO_COMBAT_LEVEL,
   MAX_TILE_TIER,
   TROOP_KEYS,
   UNITS,
@@ -70,6 +74,7 @@ export interface EnemyEntity {
 
 export interface ProjectileEntity {
   side: SideOwner;
+  sourceUnitUid?: number;
   x: number;
   y: number;
   vx: number;
@@ -81,7 +86,6 @@ export interface ProjectileEntity {
     | 'arrow'
     | 'lance'
     | 'mortar'
-    | 'spirit'
     | 'dragon'
     | 'glaive'
     | 'lotus'
@@ -210,8 +214,9 @@ export interface RunState {
   recruitCount: number;
   farmLevel: number;
   exorciseCooldown: number;
-  shovels: number;
+  shovels: number; // Extra ad-granted shovel charges (bench shovels live directly inside bench[0..4]!)
   shovelMode: boolean;
+  benchShovelRolledOnce: boolean;
   talismanMode: boolean; // 神兵符 target selection mode!
   meteorTimer: number;
 
@@ -238,7 +243,14 @@ export interface RunState {
   bannerTimer: number;
   screenShake: number;
   selectedSource: SelectedSource | null;
-  selectedUnitInfo: { unitId: UnitId; tier: number } | null;
+  selectedUnitInfo: {
+    uid: number;
+    unitId: UnitId;
+    tier: number;
+    combatLevel: number;
+    xp: number;
+    maxXp: number;
+  } | null;
 }
 
 export interface EngineCallbacks {
@@ -280,6 +292,16 @@ export class GameEngine {
     this.bindInput();
   }
 
+  // ==================== PROGRESSIVE RECRUIT COST ====================
+
+  /**
+   * Every summon of 5 bench items becomes progressively more expensive!
+   * Sequence: 10 -> 12 -> 15 -> 18 -> 22 -> 26 -> 31 -> 36 -> 42 -> 48 -> 55 -> 63...
+   */
+  public computeNextRecruitCost(count: number): number {
+    return 10 + count * 2 + Math.floor((count * (count + 1)) / 5);
+  }
+
   // ==================== RUN INITIALIZATION ====================
 
   public startRun(stage: StageDef, mode: GameMode): void {
@@ -318,7 +340,7 @@ export class GameEngine {
       wave: 0,
       maxWaves: mode === 'standard' ? 10 : null,
       wavePhase: 'prep',
-      phaseTimer: 2.2,
+      phaseTimer: 2.3,
 
       cells,
       board,
@@ -352,12 +374,13 @@ export class GameEngine {
 
       rations: meta.startRations,
       passiveRationAcc: 0,
-      recruitCost: 12,
+      recruitCost: this.computeNextRecruitCost(0), // Starts at 10, rises EVERY summon!
       recruitCount: 0,
       farmLevel: 1,
       exorciseCooldown: 0,
-      shovels: meta.startShovels,
+      shovels: 0, // Shovels spawn randomly in the 5 bench slots; extra shovels require watching Ad!
       shovelMode: false,
+      benchShovelRolledOnce: false,
       talismanMode: false,
       meteorTimer: 7.5,
 
@@ -387,11 +410,18 @@ export class GameEngine {
       selectedUnitInfo: null,
     };
 
-    // Starter War-Camp tiles: 1 Blade (1-cell melee), 1 Hero Shard I (◐), 1 Archer (3-cell inner sniper)
+    // Starter 5-slot War-Camp Bench (like reference screenshot: troops + 1 puzzle piece, and random chance for a starter shovel!)
     const starterHero: HeroKey = 'zhaoyun';
     this.state.bench[0] = this.makeTile('blade', 1);
     this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
-    this.state.bench[2] = this.makeTile('archer', 1);
+    this.state.bench[2] = this.makeTile('lancer', 1);
+    this.state.bench[3] = this.makeTile('archer', 1);
+    if (Math.random() < 0.45) {
+      this.state.bench[4] = this.makeTile('shovel', 1);
+      this.state.benchShovelRolledOnce = true;
+    } else {
+      this.state.bench[4] = this.makeTile('spear', 1);
+    }
 
     // Place 1 starter Cavalry on a deploy pedestal adjacent to road
     const playerDeploys = this.getSideCells('player', 'deploy');
@@ -411,17 +441,37 @@ export class GameEngine {
     PlatformSDK.gameplayStart();
   }
 
-  private makeTile(unitId: UnitId, tier: number): TileUnit {
+  private makeTile(unitId: UnitId, tier: number, combatLevel = 1): TileUnit {
     return {
       uid: this.nextUid++,
       unitId,
       tier,
+      combatLevel,
+      xp: 0,
+      maxXp: getHeroXpForNextLevel(combatLevel),
+      levelUpAnimTimer: 0,
       cooldown: Math.random() * 0.3,
       attackCount: 0,
       recoilTimer: 0,
       recoilAngle: 0,
       mergeAnimTimer: 0.25,
       frenzyTimer: 0,
+    };
+  }
+
+  private setSelectedInfoFromUnit(u: TileUnit | null): void {
+    if (!this.state) return;
+    if (!u) {
+      this.state.selectedUnitInfo = null;
+      return;
+    }
+    this.state.selectedUnitInfo = {
+      uid: u.uid,
+      unitId: u.unitId,
+      tier: u.tier,
+      combatLevel: u.combatLevel,
+      xp: Math.floor(u.xp),
+      maxXp: u.maxXp,
     };
   }
 
@@ -439,6 +489,23 @@ export class GameEngine {
       }
     }
     return out;
+  }
+
+  public isBenchShovelSelected(): boolean {
+    const s = this.state;
+    if (!s) return false;
+    if (this.drag?.active && this.drag.unit.unitId === 'shovel') return true;
+    if (s.selectedSource?.type === 'bench') {
+      const u = s.bench[s.selectedSource.benchIdx];
+      return Boolean(u && u.unitId === 'shovel');
+    }
+    return false;
+  }
+
+  public getBenchShovelIndex(): number {
+    const s = this.state;
+    if (!s) return -1;
+    return s.bench.findIndex((u) => u !== null && u.unitId === 'shovel');
   }
 
   // ==================== LAYOUT METRICS ====================
@@ -511,7 +578,7 @@ export class GameEngine {
 
     // Passive Granary Steamed Bun income
     const meta = SaveManager.getEffectiveBonuses();
-    const rationsPerSec = 1.05 + (s.farmLevel - 1) * 0.62 + meta.passiveRationBonus;
+    const rationsPerSec = 1.15 + (s.farmLevel - 1) * 0.72 + meta.passiveRationBonus;
     s.passiveRationAcc += rationsPerSec * dt;
     if (s.passiveRationAcc >= 1) {
       const whole = Math.floor(s.passiveRationAcc);
@@ -520,7 +587,7 @@ export class GameEngine {
     }
 
     // Passive 神兵符 charge
-    s.ultCharge = Math.min(100, s.ultCharge + dt * 2.1);
+    s.ultCharge = Math.min(100, s.ultCharge + dt * 2.0);
 
     // Passive Meteor Tome Skill (天降陨石)
     if (meta.meteorLevel > 0 && s.wavePhase === 'combat') {
@@ -558,7 +625,7 @@ export class GameEngine {
     const count = Math.min(meteorLvl, playerFoes.length);
     for (let i = 0; i < count; i++) {
       const tgt = playerFoes[Math.floor(Math.random() * playerFoes.length)];
-      const mDmg = (95 + s.wave * 26) * dmgMult * (1 + (meteorLvl - 1) * 0.2);
+      const mDmg = (95 + s.wave * 28) * dmgMult * (1 + (meteorLvl - 1) * 0.2);
       s.effects.push({
         kind: 'explosion',
         x: tgt.x,
@@ -576,7 +643,7 @@ export class GameEngine {
     }
   }
 
-  // ==================== WAVE & DISTINCT BOSS SPAWNING ====================
+  // ==================== ESCALATING WAVE & BOSS SPAWNING ====================
 
   private updateWaveFlow(s: RunState, dt: number): void {
     if (s.wavePhase === 'prep' || s.wavePhase === 'intermission') {
@@ -604,9 +671,9 @@ export class GameEngine {
           if (s.maxWaves !== null && s.wave >= s.maxWaves) {
             this.finishRun(true, false);
           } else {
-            s.rations += 14 + s.farmLevel * 3;
+            s.rations += 15 + s.farmLevel * 3 + Math.floor(s.wave * 1.5);
             s.wavePhase = 'intermission';
-            s.phaseTimer = 3.0;
+            s.phaseTimer = 2.8;
           }
         }
       }
@@ -625,25 +692,44 @@ export class GameEngine {
     const isFinalBossWave = w % 10 === 0;
     const isEliteBossWave = !isFinalBossWave && w % 5 === 0;
 
+    // Progressive wave size & composition escalation!
     const queue: SpawnOrder[] = [];
-    const totalCount = 6 + Math.floor(w * 2.1);
+    const totalCount = 6 + Math.floor(w * 2.5) + (w >= 6 ? (w - 5) * 2 : 0);
+    const shieldChance = w < 3 ? 0 : Math.min(0.42, 0.2 + (w - 3) * 0.035);
+    const wolfChance = w < 2 ? 0 : Math.min(0.38, 0.24 + (w - 2) * 0.02);
 
     for (let i = 0; i < totalCount; i++) {
       let kind: EnemyKind = 'grunt';
       const roll = Math.random();
-      if (w >= 3 && roll < 0.25) kind = 'shield';
-      else if (w >= 2 && roll < 0.55) kind = 'wolf';
+      if (roll < shieldChance) kind = 'shield';
+      else if (roll < shieldChance + wolfChance) kind = 'wolf';
 
-      const gap = Math.max(0.36, 1.06 - w * 0.03) * (kind === 'wolf' ? 0.78 : 1.0);
-      queue.push({ delay: i === 0 ? 0.2 : gap, kind, bossType: 'none', isBoss: false, isMiniBoss: false });
+      const gap = Math.max(0.28, 1.04 - w * 0.042) * (kind === 'wolf' ? 0.76 : 1.0);
+      queue.push({
+        delay: i === 0 ? 0.2 : gap,
+        kind,
+        bossType: 'none',
+        isBoss: false,
+        isMiniBoss: false,
+      });
+    }
+
+    // Wave 8+ mid-late pressure: add an extra Sorcerer / Armored Captain vanguard!
+    if (w >= 8 && !isEliteBossWave && !isFinalBossWave) {
+      queue.push({
+        delay: 0.9,
+        kind: 'zhangjiao',
+        bossType: 'zhangbao',
+        isBoss: false,
+        isMiniBoss: true,
+      });
     }
 
     const dict = t();
 
     if (isEliteBossWave) {
-      // Wave 5 / 15 / 25: Sorcerer Zhang Bao (summons Yellow Turban raiders & drops Weapon Shard!)
       queue.push({
-        delay: 1.2,
+        delay: 1.1,
         kind: 'zhangjiao',
         bossType: 'zhangbao',
         isBoss: false,
@@ -653,7 +739,6 @@ export class GameEngine {
       const bInfo = dict.bossNames.zhangbao;
       this.showBanner(dict.bannerBossIncoming(bInfo.name, bInfo.trait), 3.4);
     } else if (isFinalBossWave) {
-      // Wave 10 / 20 / 30: Stage Final Boss (Zhang Jiao on Stage 2 / even 20s, Lu Bu on Stage 1&3)
       const bType: 'lubu' | 'zhangjiao' =
         w === 10
           ? s.stage.finalBoss
@@ -661,12 +746,22 @@ export class GameEngine {
             ? 'zhangjiao'
             : 'lubu';
       queue.push({
-        delay: 1.4,
+        delay: 1.3,
         kind: bType,
         bossType: bType,
         isBoss: true,
         isMiniBoss: false,
       });
+      // Endless Wave 20+: Twin Bosses!
+      if (w >= 20) {
+        queue.push({
+          delay: 3.2,
+          kind: bType === 'lubu' ? 'zhangjiao' : 'lubu',
+          bossType: bType === 'lubu' ? 'zhangjiao' : 'lubu',
+          isBoss: true,
+          isMiniBoss: false,
+        });
+      }
       SoundFX.alarm();
       const bInfo = dict.bossNames[bType];
       this.showBanner(dict.bannerBossIncoming(bInfo.name, bInfo.trait), 3.6);
@@ -693,45 +788,49 @@ export class GameEngine {
     order: SpawnOrder
   ): void {
     const w = s.wave;
-    const stageMult = 1 + s.stage.index * 0.18;
-    const waveMult = Math.pow(1.2, w - 1) * stageMult;
+    const stageMult = 1 + s.stage.index * 0.22;
+    // Progressive difficulty ramp: gentle W1-2, firm W3-5, steep W6-10+!
+    const lateSurge = w <= 2 ? 1.0 : 1 + (w - 2) * 0.14;
+    const waveMult = Math.pow(1.28, w - 1) * lateSurge * stageMult;
+    const spdScale = Math.min(1.45, 1 + (w - 1) * 0.028);
 
-    let hp = 66 * waveMult;
-    let speed = 0.92;
-    let armor = 0;
-    let reward = 3;
+    let hp = 62 * waveMult;
+    let speed = 0.92 * spdScale;
+    let armor = Math.min(0.18, Math.max(0, (w - 4) * 0.02));
+    let reward = 3 + Math.floor(w / 4);
     let radius = 0.3;
 
     if (order.kind === 'wolf') {
-      hp = 45 * waveMult;
-      speed = 1.48;
-      reward = 3;
+      hp = 44 * waveMult;
+      speed = 1.46 * spdScale;
+      armor = 0;
+      reward = 3 + Math.floor(w / 4);
       radius = 0.28;
     } else if (order.kind === 'shield') {
-      hp = 136 * waveMult;
-      speed = 0.68;
-      armor = 0.3;
-      reward = 5;
+      hp = 142 * waveMult;
+      speed = 0.68 * spdScale;
+      armor = Math.min(0.45, 0.3 + Math.max(0, w - 3) * 0.02);
+      reward = 5 + Math.floor(w / 3);
       radius = 0.34;
     }
 
     if (order.bossType === 'zhangbao') {
-      hp = 420 * waveMult;
-      speed = 0.56;
-      armor = 0.15;
-      reward = 22;
+      hp = 460 * waveMult;
+      speed = 0.56 * spdScale;
+      armor = 0.18;
+      reward = 24;
       radius = 0.4;
     } else if (order.bossType === 'zhangjiao') {
-      hp = 760 * waveMult;
-      speed = 0.54;
-      armor = 0.18;
-      reward = 40;
+      hp = 840 * waveMult;
+      speed = 0.55 * spdScale;
+      armor = 0.22;
+      reward = 45;
       radius = 0.44;
     } else if (order.bossType === 'lubu') {
-      hp = 880 * waveMult;
-      speed = 0.58;
-      armor = 0.36;
-      reward = 45;
+      hp = 980 * waveMult;
+      speed = 0.58 * spdScale;
+      armor = 0.38;
+      reward = 50;
       radius = 0.45;
     }
 
@@ -788,14 +887,14 @@ export class GameEngine {
       }
     }
 
-    // 1) Fuse matching Shard I + Shard II into Awakened General
+    // 1) Fuse matching Puzzle Piece I + Puzzle Piece II into Awakened General!
     for (let i = 0; i < occupied.length; i++) {
       for (let j = i + 1; j < occupied.length; j++) {
         const a = occupied[i];
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'awaken') {
-          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier);
+          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier, 1);
           s.board[a.row][a.col] = null;
           this.spawnCombineFX(b.col + 0.5, b.row + 0.5, 'awaken', res.resultId);
           const heroTxt = getUnitDisplayText(res.resultId);
@@ -813,7 +912,11 @@ export class GameEngine {
         const b = occupied[j];
         const res = checkTileCombine(a.unit, b.unit);
         if (res && res.mode === 'merge') {
-          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier);
+          const nextCombatLvl =
+            UNITS[res.resultId].category === 'awakened'
+              ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(a.unit.combatLevel, b.unit.combatLevel) + 1)
+              : 1;
+          s.board[b.row][b.col] = this.makeTile(res.resultId, res.resultTier, nextCombatLvl);
           s.board[a.row][a.col] = null;
           this.spawnCombineFX(b.col + 0.5, b.row + 0.5, 'merge', res.resultId);
           this.recalcSynergies();
@@ -822,7 +925,7 @@ export class GameEngine {
       }
     }
 
-    // 3) Excavate outer-ring locked cells so AI melee units reach the road too!
+    // 3) Excavate outer-ring locked cells progressively
     const targetExcavations = Math.min(4, Math.floor((s.wave + 1) / 2));
     if (s.aiExcavated < targetExcavations) {
       const lockedCells = this.getSideCells('ai', 'locked');
@@ -851,10 +954,14 @@ export class GameEngine {
       return;
     }
 
-    // 5) Conscript smartly onto empty deploy cell (avoid placing 1-cell Blade far from road!)
+    // 5) Conscript smartly onto empty deploy cell (avoid clogging board with >2 inert puzzle shards!)
     if (emptyDeploys.length > 0) {
       const slot = emptyDeploys[Math.floor(Math.random() * emptyDeploys.length)];
-      let unitId = this.rollUnitForSide('ai');
+      const inertCount = occupied.filter((o) => !getUnitCircleRange(o.unit).canAttack).length;
+      let unitId: UnitId =
+        inertCount >= 2
+          ? TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)]
+          : this.rollUnitForSide('ai');
       if (unitId === 'blade' && !this.cellHasRoadInMelee(s, 'ai', slot.col, slot.row)) {
         unitId = 'archer';
       }
@@ -863,7 +970,7 @@ export class GameEngine {
       return;
     }
 
-    // 6) Anti-deadlock partner cycle
+    // 6) Anti-deadlock partner cycle when full
     const lowTiles = occupied.filter(
       (o) => o.unit.tier === 1 && UNITS[o.unit.unitId].category !== 'awakened'
     );
@@ -893,14 +1000,14 @@ export class GameEngine {
     return false;
   }
 
-  // ==================== DRAFTING & 2-SHARD HERO PAIRING ====================
+  // ==================== DRAFTING, 2-PIECE PUZZLE PAIRING & RANDOM BENCH SHOVELS ====================
 
   public getHeroDraftChance(): number {
     const meta = SaveManager.getEffectiveBonuses();
-    return Math.min(0.55, 0.24 + meta.heroChanceBonus);
+    return Math.min(0.52, 0.24 + meta.heroChanceBonus);
   }
 
-  private findUnmatchedHeroShards(side: SideOwner): { heroKey: HeroKey; missingId: UnitId }[] {
+  public findUnmatchedHeroShards(side: SideOwner): { heroKey: HeroKey; missingId: UnitId }[] {
     const s = this.state;
     if (!s) return [];
 
@@ -937,12 +1044,41 @@ export class GameEngine {
     return unmatched;
   }
 
+  /** Returns HeroKeys for which BOTH Piece I and Piece II are currently held on player's board/bench! */
+  public getReadyPuzzleHeroKeys(): Set<HeroKey> {
+    const s = this.state;
+    const ready = new Set<HeroKey>();
+    if (!s) return ready;
+
+    const hasS1 = new Set<HeroKey>();
+    const hasS2 = new Set<HeroKey>();
+
+    const scan = (u: TileUnit | null) => {
+      if (!u) return;
+      const def = UNITS[u.unitId];
+      if (def.category === 'shard1' && def.heroKey) hasS1.add(def.heroKey);
+      else if (def.category === 'shard2' && def.heroKey) hasS2.add(def.heroKey);
+    };
+
+    for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        scan(s.board[r][c]);
+      }
+    }
+    for (const b of s.bench) scan(b);
+
+    for (const h of HERO_KEYS) {
+      if (hasS1.has(h) && hasS2.has(h)) ready.add(h);
+    }
+    return ready;
+  }
+
   private rollUnitForSide(side: SideOwner): UnitId {
-    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.24;
+    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.22;
     if (Math.random() < heroChance) {
       const unmatched = this.findUnmatchedHeroShards(side);
-      // 46% smart pity to roll the missing second shard of an already-held Hero shard!
-      if (unmatched.length > 0 && Math.random() < 0.46) {
+      // 42% smart pairing chance so hunting the 2nd puzzle piece is exciting & achievable!
+      if (unmatched.length > 0 && Math.random() < 0.42) {
         return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
       }
       const h = HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
@@ -951,31 +1087,46 @@ export class GameEngine {
     return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
   }
 
-  // ==================== PLAYER COMMANDS & TACTICAL SKILLS ====================
+  // ==================== PLAYER COMMANDS & RANDOM 5-SLOT SHOVELS ====================
 
   public recruitBench(): void {
     const s = this.state;
     if (!s || this.paused || this.modalPaused) return;
 
     if (s.rations < s.recruitCost) {
-      this.showBanner(t().bannerNeedRations, 1.4);
+      this.showBanner(t().bannerNeedRations, 1.6);
       return;
     }
 
     s.rations -= s.recruitCost;
     s.recruitCount += 1;
-    s.recruitCost = Math.min(34, 12 + Math.floor(s.recruitCount / 3) * 2);
+    // Every single summon gets progressively more expensive!
+    s.recruitCost = this.computeNextRecruitCost(s.recruitCount);
 
-    const hasEmpty = s.bench.some((b) => b === null);
-    if (hasEmpty) {
-      for (let i = 0; i < s.bench.length; i++) {
-        if (s.bench[i] === null) {
-          s.bench[i] = this.makeTile(this.rollUnitForSide('player'), 1);
-        }
-      }
-    } else {
-      for (let i = 0; i < s.bench.length; i++) {
-        s.bench[i] = this.makeTile(this.rollUnitForSide('player'), 1);
+    const indicesToFill: number[] = [];
+    for (let i = 0; i < s.bench.length; i++) {
+      if (s.bench[i] === null) indicesToFill.push(i);
+    }
+    // If all 5 bench slots are full, refresh all 5 slots (preserving at most 1 un-used shovel if desired, or refreshing cleanly)
+    if (indicesToFill.length === 0) {
+      for (let i = 0; i < s.bench.length; i++) indicesToFill.push(i);
+    }
+
+    for (const idx of indicesToFill) {
+      s.bench[idx] = this.makeTile(this.rollUnitForSide('player'), 1);
+    }
+
+    // Random Golden Shovel appearance inside one of the newly summoned bench slots!
+    const hasLockedStone = this.getSideCells('player', 'locked').length > 0;
+    const alreadyHasBenchShovel = s.bench.some((u) => u?.unitId === 'shovel');
+    if (hasLockedStone && !alreadyHasBenchShovel && indicesToFill.length > 0) {
+      const meta = SaveManager.getEffectiveBonuses();
+      const shovelProb = Math.min(0.62, 0.34 + meta.benchShovelChanceBonus * 3);
+      const forceEarlyPity = !s.benchShovelRolledOnce && s.recruitCount >= 2;
+      if (forceEarlyPity || Math.random() < shovelProb) {
+        const pickSlot = indicesToFill[Math.floor(Math.random() * indicesToFill.length)];
+        s.bench[pickSlot] = this.makeTile('shovel', 1);
+        s.benchShovelRolledOnce = true;
       }
     }
 
@@ -1012,7 +1163,7 @@ export class GameEngine {
     s.bench[slots[1]] = this.makeTile(`shard2_${h}`, 1);
     SoundFX.merge(3, true);
     const hName = getUnitDisplayText(`hero_${h}`).name;
-    this.showBanner(`◈ ${hName}`, 2.4);
+    this.showBanner(`◈ ${hName} [1/2 + 2/2]`, 2.4);
   }
 
   public getFarmCost(): number {
@@ -1067,7 +1218,7 @@ export class GameEngine {
     this.showBanner(t().bannerExorciseCast, 2.2);
 
     const meta = SaveManager.getEffectiveBonuses();
-    const baseStrike = (145 + s.wave * 38) * meta.damageMult * meta.bossDmgMult;
+    const baseStrike = (145 + s.wave * 42) * meta.damageMult * meta.bossDmgMult;
 
     const targets = foes.slice(0, 4);
     const pts: { x: number; y: number }[] = [];
@@ -1077,7 +1228,6 @@ export class GameEngine {
       this.damageEnemy(s, foe, baseStrike * mult, true, '#4ade80');
       foe.armorBrokenTimer = 6.0;
       foe.stunTimer = Math.max(foe.stunTimer, 1.05);
-      // Interrupt Zhang Jiao's low-HP heal chant!
       foe.regenTimer = 0;
     }
 
@@ -1095,19 +1245,18 @@ export class GameEngine {
   }
 
   /**
-   * Left Circle Orb: 【神兵符】 (Divine Upgrade Talisman — +1 Tier to chosen unit + Global Haste!)
+   * Left Circle Orb: 【神兵符】 (Divine Upgrade Talisman — +1 Tier & +1 Combat Level + Global Haste!)
    */
   public activateDivineTalisman(): void {
     const s = this.state;
     if (!s || s.ultCharge < 100) return;
 
-    // If clicked a second time while already in talismanMode, auto-apply to strongest board unit!
     if (s.talismanMode) {
       let best: { r: number; c: number; u: TileUnit } | null = null;
       for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
         for (let c = 0; c < s.stage.cols; c++) {
           const u = s.board[r][c];
-          if (!u) continue;
+          if (!u || !getUnitCircleRange(u).canAttack) continue;
           const isHero = UNITS[u.unitId].category === 'awakened';
           if (
             !best ||
@@ -1145,9 +1294,13 @@ export class GameEngine {
       u.tier += 1;
       s.merges += 1;
     }
+    if (UNITS[u.unitId].category === 'awakened' && u.combatLevel < MAX_HERO_COMBAT_LEVEL) {
+      u.combatLevel += 1;
+      u.maxXp = getHeroXpForNextLevel(u.combatLevel);
+      u.levelUpAnimTimer = 0.85;
+    }
     u.mergeAnimTimer = 0.3;
 
-    // Grant 7s Attack Speed Frenzy to ALL player units (神兵符 + 攻速符 burst!)
     for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
       for (let c = 0; c < s.stage.cols; c++) {
         const ally = s.board[r][c];
@@ -1159,8 +1312,15 @@ export class GameEngine {
     this.spawnCombineFX(gx, gy, 'awaken', u.unitId);
     const txt = getUnitDisplayText(u.unitId);
     this.showBanner(t().bannerTalismanUpgraded(txt.name, u.tier), 2.5);
+    this.setSelectedInfoFromUnit(u);
   }
 
+  /**
+   * Bottom Golden Shovel Button:
+   * - If a Shovel is currently in the 5-slot bench, highlights/selects it!
+   * - If player has Ad-granted shovel charges (s.shovels > 0), toggles shovelMode!
+   * - Otherwise, wanting more shovels requires watching a Rewarded Ad!
+   */
   public toggleShovelMode(): void {
     const s = this.state;
     if (!s) return;
@@ -1171,12 +1331,28 @@ export class GameEngine {
       return;
     }
 
+    s.talismanMode = false;
+
+    const benchShovelIdx = this.getBenchShovelIndex();
+    if (benchShovelIdx >= 0) {
+      if (
+        s.selectedSource?.type === 'bench' &&
+        s.selectedSource.benchIdx === benchShovelIdx
+      ) {
+        s.selectedSource = null;
+      } else {
+        s.selectedSource = { type: 'bench', benchIdx: benchShovelIdx, col: -1, row: -1 };
+        this.setSelectedInfoFromUnit(s.bench[benchShovelIdx]);
+        this.showBanner(t().bannerBenchShovelPick, 2.4);
+        SoundFX.tileClack(true);
+      }
+      return;
+    }
+
     if (s.shovelMode) {
       s.shovelMode = false;
       return;
     }
-
-    s.talismanMode = false;
 
     if (s.shovels > 0) {
       s.shovelMode = true;
@@ -1186,17 +1362,48 @@ export class GameEngine {
       return;
     }
 
-    if (s.rations >= 35) {
-      s.rations -= 35;
-      s.shovels += 1;
-      s.shovelMode = true;
-      s.selectedSource = null;
-      this.showBanner(t().bannerShovelPick, 2.4);
-      SoundFX.tileClack(true);
-      return;
-    }
-
+    // Extra shovels beyond random 5-slot bench drops strictly require watching an Ad!
     this.callbacks.onRequestShovelAd();
+  }
+
+  private excavateLockedCell(col: number, row: number): void {
+    const s = this.state;
+    if (!s) return;
+
+    s.cells[row][col] = 'deploy';
+    SoundFX.shovelDig();
+    s.effects.push({
+      kind: 'merge_burst',
+      x: col + 0.5,
+      y: row + 0.5,
+      radius: 0.95,
+      color: '#facc15',
+      timer: 0,
+      duration: 0.45,
+    });
+
+    const meta = SaveManager.getEffectiveBonuses();
+    if (meta.tombRaiderLevel > 0) {
+      const bonusBuns = 12 + meta.tombRaiderLevel * 6;
+      s.rations += bonusBuns;
+      const gotShard = Math.random() < 0.28;
+      if (gotShard) {
+        const sh = SaveManager.grantRandomWeaponShard();
+        s.droppedShards.push(sh);
+        s.effects.push({
+          kind: 'chest_drop',
+          x: col + 0.5,
+          y: row + 0.5,
+          radius: 0.9,
+          color: '#fde047',
+          timer: 0,
+          duration: 1.1,
+        });
+      }
+      this.showBanner(t().bannerTombRaiderBonus(bonusBuns, gotShard), 2.5);
+    } else {
+      this.showBanner(t().bannerTileUnlocked, 1.8);
+    }
   }
 
   public getFortifyCost(): number {
@@ -1293,7 +1500,85 @@ export class GameEngine {
     s.aiSynBonuses = computeSynergies(aiUnits);
   }
 
-  // ==================== COMBAT: STRICT GRID-CELL TARGETING & WEAPON SKILLS ====================
+  // ==================== HERO COMBAT XP & LEVELING ====================
+
+  private findBoardUnitByUid(
+    s: RunState,
+    uid: number
+  ): { unit: TileUnit; col: number; row: number; side: SideOwner } | null {
+    for (let r = 0; r < s.stage.rows; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        const u = s.board[r][c];
+        if (u && u.uid === uid) {
+          return {
+            unit: u,
+            col: c,
+            row: r,
+            side: r < s.stage.dividerRow ? 'ai' : 'player',
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  private grantHeroCombatXp(
+    s: RunState,
+    side: SideOwner,
+    u: TileUnit,
+    gx: number,
+    gy: number,
+    xpGain: number
+  ): void {
+    if (UNITS[u.unitId].category !== 'awakened') return;
+    if (u.combatLevel >= MAX_HERO_COMBAT_LEVEL) {
+      u.xp = u.maxXp;
+      return;
+    }
+
+    u.xp += xpGain;
+    let leveledUp = false;
+    while (u.xp >= u.maxXp && u.combatLevel < MAX_HERO_COMBAT_LEVEL) {
+      u.xp -= u.maxXp;
+      u.combatLevel += 1;
+      u.maxXp = getHeroXpForNextLevel(u.combatLevel);
+      u.levelUpAnimTimer = 0.85;
+      leveledUp = true;
+    }
+
+    if (leveledUp) {
+      s.effects.push({
+        kind: 'awaken_pillar',
+        x: gx,
+        y: gy,
+        radius: 1.15,
+        color: '#fde047',
+        timer: 0,
+        duration: 0.55,
+      });
+      if (side === 'player') {
+        SoundFX.merge(Math.min(5, u.combatLevel), true);
+        s.floatTexts.push({
+          x: gx,
+          y: gy - 0.35,
+          vy: -1.1,
+          text: `Lv.${u.combatLevel} UP!`,
+          color: '#fde047',
+          scale: 1.18,
+          timer: 0,
+          duration: 0.9,
+        });
+        const hName = getUnitDisplayText(u.unitId).name;
+        this.showBanner(t().bannerHeroLevelUp(hName, u.combatLevel), 2.0);
+      }
+    }
+
+    if (s.selectedUnitInfo && s.selectedUnitInfo.uid === u.uid) {
+      this.setSelectedInfoFromUnit(u);
+    }
+  }
+
+  // ==================== COMBAT: CIRCULAR RANGE TARGETING & HERO XP ====================
 
   private updateBoardUnits(s: RunState, dt: number): void {
     const meta = SaveManager.getEffectiveBonuses();
@@ -1313,6 +1598,7 @@ export class GameEngine {
         if (u.recoilTimer > 0) u.recoilTimer = Math.max(0, u.recoilTimer - dt);
         if (u.mergeAnimTimer > 0) u.mergeAnimTimer = Math.max(0, u.mergeAnimTimer - dt);
         if (u.frenzyTimer > 0) u.frenzyTimer = Math.max(0, u.frenzyTimer - dt);
+        if (u.levelUpAnimTimer > 0) u.levelUpAnimTimer = Math.max(0, u.levelUpAnimTimer - dt);
 
         if (
           this.drag?.active &&
@@ -1324,9 +1610,12 @@ export class GameEngine {
           continue;
         }
 
+        // Unfused Hero Puzzle Pieces ('shard1' / 'shard2') CANNOT attack!
+        const rangeInfo = getUnitCircleRange(u);
+        if (!rangeInfo.canAttack) continue;
+
         const def = UNITS[u.unitId];
 
-        // Check equipped Divine Weapon bonus if Awakened Hero on Player side!
         const weapBonus =
           side === 'player' && def.category === 'awakened' && def.heroKey
             ? SaveManager.getHeroWeaponBonus(def.heroKey)
@@ -1335,6 +1624,7 @@ export class GameEngine {
         const frenzyMult = u.frenzyTimer > 0 ? 1.75 : 1.0;
         const speedMult =
           getTierSpeedMultiplier(u.tier) *
+          getCombatLevelSpeedMult(u.combatLevel) *
           syn.globalAspdMult *
           sideAspdScale *
           weapBonus.aspdMult *
@@ -1343,8 +1633,18 @@ export class GameEngine {
         u.cooldown -= dt * speedMult;
         if (u.cooldown > 0) continue;
 
-        // Pick target strictly inside this unit's exact Grid-Cell Attack Range!
-        const target = this.pickTargetInGridRange(s, side, def, u.tier, c, r);
+        const ux = c + 0.5;
+        const uy = r + 0.5;
+
+        // Pick target inside circular attack ring (minR .. maxR)!
+        const target = this.pickTargetInCircleRange(
+          s,
+          side,
+          ux,
+          uy,
+          rangeInfo.minR,
+          rangeInfo.maxR
+        );
         if (!target) {
           u.cooldown = 0.1;
           continue;
@@ -1353,8 +1653,6 @@ export class GameEngine {
         u.cooldown = def.attackInterval;
         u.attackCount += 1;
 
-        const ux = c + 0.5;
-        const uy = r + 0.5;
         const angle = Math.atan2(target.y - uy, target.x - ux);
         u.recoilAngle = angle;
         u.recoilTimer = 0.14;
@@ -1362,6 +1660,7 @@ export class GameEngine {
         let dmg =
           def.baseDamage *
           getTierDamageMultiplier(u.tier) *
+          getCombatLevelDamageMult(u.combatLevel) *
           syn.globalDmgMult *
           sideDmgScale *
           weapBonus.dmgMult;
@@ -1377,6 +1676,11 @@ export class GameEngine {
           ? Math.max(2, def.skillEveryN - (syn.heroSkillFaster || weapBonus.weaponId ? 1 : 0))
           : 0;
         const isSkillStrike = skillPeriod > 0 && u.attackCount % skillPeriod === 0;
+
+        // Awakened Generals gain Combat XP on EVERY attack!
+        if (def.category === 'awakened') {
+          this.grantHeroCombatXp(s, side, u, ux, uy, isSkillStrike ? 9 : 5);
+        }
 
         this.executeUnitAttack(
           s,
@@ -1395,22 +1699,21 @@ export class GameEngine {
     }
   }
 
-  private pickTargetInGridRange(
+  private pickTargetInCircleRange(
     s: RunState,
     side: SideOwner,
-    def: (typeof UNITS)[UnitId],
-    tier: number,
-    uCol: number,
-    uRow: number
+    ux: number,
+    uy: number,
+    minR: number,
+    maxR: number
   ): EnemyEntity | null {
     let best: EnemyEntity | null = null;
     let bestProgress = -1;
 
     for (const e of s.enemies) {
       if (e.side !== side || e.hp <= 0) continue;
-      const eCol = Math.floor(e.x);
-      const eRow = Math.floor(e.y);
-      if (isCellInUnitRange(def, tier, uCol, uRow, eCol, eRow)) {
+      const dist = Math.hypot(e.x - ux, e.y - uy);
+      if (dist >= minR && dist <= maxR + e.radius * 0.35) {
         const progress = e.waypointIndex + e.segProgress;
         if (progress > bestProgress) {
           bestProgress = progress;
@@ -1437,6 +1740,9 @@ export class GameEngine {
     const playSfx = side === 'player';
 
     switch (def.pattern) {
+      case 'none':
+        break;
+
       case 'cleave': {
         if (playSfx) SoundFX.attack('slash');
         s.effects.push({
@@ -1452,7 +1758,7 @@ export class GameEngine {
         for (const e of s.enemies) {
           if (e.side !== side) continue;
           if (Math.hypot(e.x - target.x, e.y - target.y) <= 0.95) {
-            this.damageEnemy(s, e, dmg, false, def.accentColor);
+            this.damageEnemy(s, e, dmg, false, def.accentColor, u.uid);
           }
         }
         break;
@@ -1462,6 +1768,7 @@ export class GameEngine {
         if (playSfx) SoundFX.attack('lance');
         s.projectiles.push({
           side,
+          sourceUnitUid: u.uid,
           x: ux,
           y: uy,
           vx: Math.cos(angle) * def.projectileSpeed,
@@ -1500,7 +1807,7 @@ export class GameEngine {
         });
         for (const e of s.enemies) {
           if (e.side === side && Math.hypot(e.x - target.x, e.y - target.y) <= 1.05) {
-            this.damageEnemy(s, e, dmg, false, '#38bdf8');
+            this.damageEnemy(s, e, dmg, false, '#38bdf8', u.uid);
           }
         }
         break;
@@ -1511,6 +1818,7 @@ export class GameEngine {
         const p = this.spawnProj(
           s,
           side,
+          u.uid,
           ux,
           uy,
           target,
@@ -1519,7 +1827,7 @@ export class GameEngine {
           dmg,
           def.projectileSpeed
         );
-        p.bossBonusMult = 1.3; // Archer Boss-Slayer trait!
+        p.bossBonusMult = 1.3;
         break;
       }
 
@@ -1527,6 +1835,7 @@ export class GameEngine {
         if (playSfx) SoundFX.attack('cannon');
         s.projectiles.push({
           side,
+          sourceUnitUid: u.uid,
           x: ux,
           y: uy,
           vx: 0,
@@ -1551,27 +1860,21 @@ export class GameEngine {
         break;
       }
 
-      case 'spirit_strike': {
-        if (playSfx) SoundFX.attack('bow');
-        this.spawnProj(s, side, ux, uy, target, 'spirit', def.accentColor, dmg, def.projectileSpeed);
-        break;
-      }
-
       case 'dragon_sweep': {
         if (playSfx) SoundFX.attack('lance');
         s.effects.push({
           kind: 'slash',
           x: ux,
           y: uy,
-          radius: 1.7,
+          radius: 1.75,
           color: '#38bdf8',
           timer: 0,
           duration: 0.24,
           angle,
         });
         for (const e of s.enemies) {
-          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.85) {
-            this.damageEnemy(s, e, dmg, true, '#38bdf8');
+          if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.9) {
+            this.damageEnemy(s, e, dmg, true, '#38bdf8', u.uid);
           }
         }
         if (isSkill) {
@@ -1582,6 +1885,7 @@ export class GameEngine {
             const spAng = Math.atan2(spTarget.y - uy, spTarget.x - ux);
             s.projectiles.push({
               side,
+              sourceUnitUid: u.uid,
               x: ux,
               y: uy,
               vx: Math.cos(spAng) * 11.5,
@@ -1624,15 +1928,16 @@ export class GameEngine {
         for (const e of s.enemies) {
           if (e.side === side && Math.hypot(e.x - ux, e.y - uy) <= 1.85) {
             if (!e.isBoss && e.hp / e.maxHp <= execThresh) {
-              this.damageEnemy(s, e, e.hp * 2.5, true, '#10b981');
+              this.damageEnemy(s, e, e.hp * 2.5, true, '#10b981', u.uid);
             } else {
-              this.damageEnemy(s, e, dmg, false, '#10b981');
+              this.damageEnemy(s, e, dmg, false, '#10b981', u.uid);
             }
           }
         }
         if (isSkill) {
           s.projectiles.push({
             side,
+            sourceUnitUid: u.uid,
             x: ux,
             y: uy,
             vx: Math.cos(angle) * 9.2,
@@ -1659,7 +1964,10 @@ export class GameEngine {
       }
 
       case 'roar_quake': {
-        const rad = (def.aoeRadiusCells || 2.15) * (isSkill ? (hasSigWeapon ? 1.4 : 1.2) : 1.0);
+        const rad =
+          (def.aoeRadiusCells || 2.2) *
+          (1 + (u.combatLevel - 1) * 0.03) *
+          (isSkill ? (hasSigWeapon ? 1.4 : 1.2) : 1.0);
         if (playSfx) SoundFX.attack(isSkill ? 'cannon' : 'slash');
         s.effects.push({
           kind: 'ring',
@@ -1673,7 +1981,7 @@ export class GameEngine {
         for (const e of s.enemies) {
           if (e.side !== side) continue;
           if (Math.hypot(e.x - ux, e.y - uy) <= rad) {
-            this.damageEnemy(s, e, dmg * (isSkill ? 1.45 : 1.0), isSkill, '#f97316');
+            this.damageEnemy(s, e, dmg * (isSkill ? 1.45 : 1.0), isSkill, '#f97316', u.uid);
             if (isSkill) {
               e.stunTimer = Math.max(e.stunTimer, (def.stunDuration || 1.15) + (hasSigWeapon ? 0.45 : 0));
               if (hasSigWeapon) e.armorBrokenTimer = 5.0;
@@ -1694,7 +2002,7 @@ export class GameEngine {
         for (let j = 0; j < maxJumps && cur; j++) {
           visited.add(cur.id);
           pts.push({ x: cur.x, y: cur.y });
-          this.damageEnemy(s, cur, curDmg, true, '#eab308');
+          this.damageEnemy(s, cur, curDmg, true, '#eab308', u.uid);
           if (hasSigWeapon && isSkill) cur.stunTimer = Math.max(cur.stunTimer, 0.35);
           curDmg *= 0.88;
 
@@ -1729,6 +2037,7 @@ export class GameEngine {
         const p = this.spawnProj(
           s,
           side,
+          u.uid,
           ux,
           uy,
           target,
@@ -1753,6 +2062,7 @@ export class GameEngine {
           const p = this.spawnProj(
             s,
             side,
+            u.uid,
             ux,
             uy,
             tEnemy,
@@ -1771,6 +2081,7 @@ export class GameEngine {
   private spawnProj(
     s: RunState,
     side: SideOwner,
+    sourceUnitUid: number,
     ux: number,
     uy: number,
     target: EnemyEntity,
@@ -1782,6 +2093,7 @@ export class GameEngine {
     const angle = Math.atan2(target.y - uy, target.x - ux);
     const p: ProjectileEntity = {
       side,
+      sourceUnitUid,
       x: ux,
       y: uy,
       vx: Math.cos(angle) * speed,
@@ -1830,7 +2142,7 @@ export class GameEngine {
           for (const e of s.enemies) {
             if (e.side !== p.side) continue;
             if (Math.hypot(e.x - p.tx, e.y - p.ty) <= p.aoeRadius + e.radius) {
-              this.damageEnemy(s, e, p.damage, true, p.color);
+              this.damageEnemy(s, e, p.damage, true, p.color, p.sourceUnitUid);
             }
           }
           s.projectiles.splice(i, 1);
@@ -1891,14 +2203,15 @@ export class GameEngine {
   private applyProjHit(s: RunState, p: ProjectileEntity, e: EnemyEntity): void {
     const bossScale = e.isBoss || e.isMiniBoss ? p.bossBonusMult : 1.0;
     if (p.executeRatio > 0 && !e.isBoss && e.hp / e.maxHp <= p.executeRatio) {
-      this.damageEnemy(s, e, e.hp * 2.5, true, p.color);
+      this.damageEnemy(s, e, e.hp * 2.5, true, p.color, p.sourceUnitUid);
     } else {
       this.damageEnemy(
         s,
         e,
         p.damage * bossScale,
         p.kind === 'dragon' || p.kind === 'phoenix',
-        p.color
+        p.color,
+        p.sourceUnitUid
       );
     }
     if (p.slowFactor > 0) {
@@ -1919,7 +2232,8 @@ export class GameEngine {
     e: EnemyEntity,
     rawDmg: number,
     armorPiercing: boolean,
-    floatColor: string
+    floatColor: string,
+    attackerUid?: number
   ): void {
     if (e.hp <= 0) return;
 
@@ -1949,13 +2263,28 @@ export class GameEngine {
     }
 
     if (e.hp <= 0) {
+      // Attribute Kill XP to the Awakened General who landed the killing blow!
+      if (attackerUid !== undefined) {
+        const killer = this.findBoardUnitByUid(s, attackerUid);
+        if (killer) {
+          const killXp = e.isBoss ? 110 : e.isMiniBoss ? 55 : e.kind === 'shield' ? 19 : 14;
+          this.grantHeroCombatXp(
+            s,
+            killer.side,
+            killer.unit,
+            killer.col + 0.5,
+            killer.row + 0.5,
+            killXp
+          );
+        }
+      }
+
       if (e.side === 'player') {
         s.kills += 1;
         s.rations += e.rewardRations;
-        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 35 : e.isMiniBoss ? 20 : 2.4));
+        s.ultCharge = Math.min(100, s.ultCharge + (e.isBoss ? 35 : e.isMiniBoss ? 20 : 2.2));
         SoundFX.enemyKill();
 
-        // Boss / Elite Boss Death -> Guaranteed Divine Weapon Shard Chest Drop!!
         if (e.isBoss || e.isMiniBoss) {
           const dropCount = e.isBoss ? 2 : 1;
           let lastShard: WeaponId = 'weap_zhaoyun';
@@ -2014,11 +2343,10 @@ export class GameEngine {
         }
       }
 
-      // Boss Special Mechanics!
       if (e.bossType === 'zhangbao' && e.stunTimer <= 0) {
         e.bossSkillTimer -= dt;
         if (e.bossSkillTimer <= 0) {
-          e.bossSkillTimer = 5.8;
+          e.bossSkillTimer = 5.2;
           this.summonZhangBaoMinion(s, e);
           if (e.side === 'player') {
             this.showBanner(t().bannerZhangBaoSummon, 1.8);
@@ -2027,7 +2355,7 @@ export class GameEngine {
       } else if (e.bossType === 'zhangjiao') {
         if (!e.healChantUsed && e.hp / e.maxHp <= 0.38) {
           e.healChantUsed = true;
-          e.regenTimer = 3.2;
+          e.regenTimer = 3.4;
           if (e.side === 'player') {
             SoundFX.alarm();
             this.showBanner(t().bannerZhangJiaoHeal, 2.8);
@@ -2035,7 +2363,7 @@ export class GameEngine {
         }
         if (e.regenTimer > 0 && e.stunTimer <= 0) {
           e.regenTimer = Math.max(0, e.regenTimer - dt);
-          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.075 * dt);
+          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.08 * dt);
         }
       }
 
@@ -2053,9 +2381,9 @@ export class GameEngine {
         if (Math.hypot(e.x - bx, e.y - by) <= 0.52) {
           e.bashTimer -= dt;
           if (e.bashTimer <= 0) {
-            e.bashTimer = 0.65;
+            e.bashTimer = 0.62;
             const bashDmg =
-              e.bossType === 'lubu' ? 95 : e.isBoss ? 70 : e.isMiniBoss ? 40 : e.kind === 'shield' ? 24 : 15;
+              e.bossType === 'lubu' ? 105 : e.isBoss ? 75 : e.isMiniBoss ? 44 : e.kind === 'shield' ? 26 : 16;
             barricade.hp = Math.max(0, barricade.hp - bashDmg);
             barricade.shakeTimer = 0.16;
           }
@@ -2100,7 +2428,7 @@ export class GameEngine {
   }
 
   private summonZhangBaoMinion(s: RunState, boss: EnemyEntity): void {
-    const minionHp = boss.maxHp * 0.11;
+    const minionHp = boss.maxHp * 0.12;
     s.enemies.push({
       id: this.nextEnemyId++,
       side: boss.side,
@@ -2114,7 +2442,7 @@ export class GameEngine {
       y: boss.y,
       hp: minionHp,
       maxHp: minionHp,
-      speed: 1.35,
+      speed: 1.38,
       armor: 0,
       armorBrokenTimer: 0,
       rewardRations: 2,
@@ -2205,7 +2533,6 @@ export class GameEngine {
 
     if (victory) {
       SaveManager.markStageCleared(s.stage.id);
-      // Victory Chest guarantees +1 extra Weapon Shard!
       const bonusShard = SaveManager.grantRandomWeaponShard();
       s.droppedShards.push(bonusShard);
       PlatformSDK.happyTime();
@@ -2339,12 +2666,12 @@ export class GameEngine {
     if (s.talismanMode) {
       if (cellHit && cellHit.row >= s.stage.dividerRow) {
         const u = s.board[cellHit.row][cellHit.col];
-        if (u) {
+        if (u && getUnitCircleRange(u).canAttack) {
           this.applyDivineTalismanToUnit(u, cellHit.col + 0.5, cellHit.row + 0.5);
           return;
         }
       }
-      if (benchIdx >= 0 && s.bench[benchIdx]) {
+      if (benchIdx >= 0 && s.bench[benchIdx] && getUnitCircleRange(s.bench[benchIdx]!).canAttack) {
         this.applyDivineTalismanToUnit(s.bench[benchIdx]!, 3.5, 7.5);
         return;
       }
@@ -2352,49 +2679,31 @@ export class GameEngine {
       return;
     }
 
-    // 1) Golden Shovel Excavation + Tomb Raider (摸金校尉) Passive!
+    // 1a) Selected Bench Shovel + Tap Locked Stone Cell -> Excavate & Consume Bench Shovel!
+    if (
+      cellHit &&
+      cellHit.row >= s.stage.dividerRow &&
+      s.cells[cellHit.row][cellHit.col] === 'locked' &&
+      s.selectedSource?.type === 'bench' &&
+      s.bench[s.selectedSource.benchIdx]?.unitId === 'shovel'
+    ) {
+      s.bench[s.selectedSource.benchIdx] = null;
+      s.selectedSource = null;
+      s.selectedUnitInfo = null;
+      this.excavateLockedCell(cellHit.col, cellHit.row);
+      return;
+    }
+
+    // 1b) Ad-Shovel Dig Mode (s.shovelMode)
     if (s.shovelMode && cellHit) {
       if (
         cellHit.row >= s.stage.dividerRow &&
         s.cells[cellHit.row][cellHit.col] === 'locked' &&
         s.shovels > 0
       ) {
-        s.cells[cellHit.row][cellHit.col] = 'deploy';
         s.shovels -= 1;
-        s.shovelMode = false;
-        SoundFX.shovelDig();
-        s.effects.push({
-          kind: 'merge_burst',
-          x: cellHit.col + 0.5,
-          y: cellHit.row + 0.5,
-          radius: 0.95,
-          color: '#facc15',
-          timer: 0,
-          duration: 0.45,
-        });
-
-        const meta = SaveManager.getEffectiveBonuses();
-        if (meta.tombRaiderLevel > 0) {
-          const bonusBuns = 12 + meta.tombRaiderLevel * 6;
-          s.rations += bonusBuns;
-          const gotShard = Math.random() < 0.28;
-          if (gotShard) {
-            const sh = SaveManager.grantRandomWeaponShard();
-            s.droppedShards.push(sh);
-            s.effects.push({
-              kind: 'chest_drop',
-              x: cellHit.col + 0.5,
-              y: cellHit.row + 0.5,
-              radius: 0.9,
-              color: '#fde047',
-              timer: 0,
-              duration: 1.1,
-            });
-          }
-          this.showBanner(t().bannerTombRaiderBonus(bonusBuns, gotShard), 2.5);
-        } else {
-          this.showBanner(t().bannerTileUnlocked, 1.8);
-        }
+        if (s.shovels <= 0) s.shovelMode = false;
+        this.excavateLockedCell(cellHit.col, cellHit.row);
       } else {
         s.shovelMode = false;
       }
@@ -2404,16 +2713,25 @@ export class GameEngine {
     // 2) Read-only inspect AI Top Half unit
     if (cellHit && cellHit.row < s.stage.dividerRow) {
       const aiUnit = s.board[cellHit.row][cellHit.col];
-      s.selectedUnitInfo = aiUnit ? { unitId: aiUnit.unitId, tier: aiUnit.tier } : null;
+      this.setSelectedInfoFromUnit(aiUnit);
       s.selectedSource = null;
       return;
     }
 
-    // 3) Player Bench or Player Bottom Half Board Tile
+    // 3) Player Bench Tile
     if (benchIdx >= 0) {
       const unit = s.bench[benchIdx];
       if (unit) {
-        s.selectedUnitInfo = { unitId: unit.unitId, tier: unit.tier };
+        // Safety valve: if all locked stone cells are already dug, tapping a leftover bench shovel converts it into +18 Buns!
+        if (unit.unitId === 'shovel' && this.getSideCells('player', 'locked').length === 0) {
+          s.bench[benchIdx] = null;
+          s.rations += 18;
+          SoundFX.fanfare();
+          this.showBanner(t().bannerShovelRefund(18), 2.0);
+          return;
+        }
+
+        this.setSelectedInfoFromUnit(unit);
         this.drag = {
           active: true,
           pointerId: e.pointerId,
@@ -2437,10 +2755,11 @@ export class GameEngine {
       }
     }
 
+    // 4) Player Bottom Half Board Cell
     if (cellHit && cellHit.row >= s.stage.dividerRow) {
       const unit = s.board[cellHit.row][cellHit.col];
       if (unit) {
-        s.selectedUnitInfo = { unitId: unit.unitId, tier: unit.tier };
+        this.setSelectedInfoFromUnit(unit);
         this.drag = {
           active: true,
           pointerId: e.pointerId,
@@ -2458,15 +2777,18 @@ export class GameEngine {
         SoundFX.tileClack(false);
         return;
       } else if (s.cells[cellHit.row][cellHit.col] === 'locked') {
-        if (s.shovels > 0) this.toggleShovelMode();
+        this.toggleShovelMode();
         return;
       } else if (s.selectedSource && s.cells[cellHit.row][cellHit.col] === 'deploy') {
-        this.tryMoveOrCombine(s.selectedSource, {
-          type: 'board',
-          benchIdx: -1,
-          col: cellHit.col,
-          row: cellHit.row,
-        });
+        const selUnit = this.getUnitAt(s.selectedSource);
+        if (selUnit && selUnit.unitId !== 'shovel') {
+          this.tryMoveOrCombine(s.selectedSource, {
+            type: 'board',
+            benchIdx: -1,
+            col: cellHit.col,
+            row: cellHit.row,
+          });
+        }
         s.selectedSource = null;
         return;
       }
@@ -2504,6 +2826,12 @@ export class GameEngine {
     };
 
     if (!d.movedEnough) {
+      if (d.unit.unitId === 'shovel') {
+        s.selectedSource = src;
+        this.showBanner(t().bannerBenchShovelPick, 2.2);
+        return;
+      }
+
       if (
         s.selectedSource &&
         !(
@@ -2522,6 +2850,30 @@ export class GameEngine {
       return;
     }
 
+    // Dragging a Bench Shovel directly onto a dark locked stone cell -> Excavate!!
+    const boardHit = this.hitTestBoard(d.screenX, d.screenY);
+    if (d.unit.unitId === 'shovel' && d.sourceType === 'bench') {
+      if (
+        boardHit &&
+        boardHit.row >= s.stage.dividerRow &&
+        s.cells[boardHit.row][boardHit.col] === 'locked'
+      ) {
+        s.bench[d.benchIdx] = null;
+        s.selectedSource = null;
+        s.selectedUnitInfo = null;
+        this.excavateLockedCell(boardHit.col, boardHit.row);
+        return;
+      }
+      const benchHit = this.hitTestBench(d.screenX, d.screenY);
+      if (benchHit >= 0 && benchHit !== d.benchIdx) {
+        const other = s.bench[benchHit];
+        s.bench[benchHit] = d.unit;
+        s.bench[d.benchIdx] = other;
+        SoundFX.tileClack(false);
+      }
+      return;
+    }
+
     const benchHit = this.hitTestBench(d.screenX, d.screenY);
     if (benchHit >= 0) {
       this.tryMoveOrCombine(src, { type: 'bench', benchIdx: benchHit, col: -1, row: -1 });
@@ -2529,7 +2881,6 @@ export class GameEngine {
       return;
     }
 
-    const boardHit = this.hitTestBoard(d.screenX, d.screenY);
     if (
       boardHit &&
       boardHit.row >= s.stage.dividerRow &&
@@ -2576,25 +2927,40 @@ export class GameEngine {
     const srcUnit = this.getUnitAt(src);
     if (!srcUnit) return false;
 
+    // Never allow placing a Shovel tool onto a deploy pedestal!
+    if (srcUnit.unitId === 'shovel' && dst.type === 'board') {
+      return false;
+    }
+
     const dstUnit = this.getUnitAt(dst);
+    if (dstUnit?.unitId === 'shovel' && src.type === 'board') {
+      return false;
+    }
 
     if (!dstUnit) {
       this.setUnitAt(dst, srcUnit);
       this.setUnitAt(src, null);
       srcUnit.mergeAnimTimer = 0.16;
       SoundFX.tileClack(true);
+      if (dst.type === 'board' && !getUnitCircleRange(srcUnit).canAttack) {
+        this.showBanner(t().bannerShardCannotAttack, 2.2);
+      }
       this.recalcSynergies();
       return true;
     }
 
     const combo = checkTileCombine(srcUnit, dstUnit);
     if (combo) {
-      const created = this.makeTile(combo.resultId, combo.resultTier);
+      const nextCombatLevel =
+        combo.mode === 'merge' && UNITS[combo.resultId].category === 'awakened'
+          ? Math.min(MAX_HERO_COMBAT_LEVEL, Math.max(srcUnit.combatLevel, dstUnit.combatLevel) + 1)
+          : 1;
+      const created = this.makeTile(combo.resultId, combo.resultTier, nextCombatLevel);
       this.setUnitAt(dst, created);
       this.setUnitAt(src, null);
 
       s.merges += 1;
-      s.selectedUnitInfo = { unitId: created.unitId, tier: created.tier };
+      this.setSelectedInfoFromUnit(created);
 
       if (combo.mode === 'awaken') {
         s.ultCharge = Math.min(100, s.ultCharge + 22);

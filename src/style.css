@@ -1661,3 +1661,42 @@ body {
   color: #1b4332;
   font-weight: 700;
 }
+
+/* Circular Attack Range Gauge in Codex */
+.mini-circle-gauge {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #2f2822 0%, #1c1814 100%);
+  border: 1.5px solid #8c6d32;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.mini-circle-gauge .mc-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.8px dashed #34d399;
+  background: rgba(52, 211, 153, 0.16);
+}
+
+.mini-circle-gauge .mc-blind {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.2px dashed #fb923c;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.mini-circle-gauge .mc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #facc15;
+  box-shadow: 0 0 4px rgba(250, 204, 21, 0.85);
+  z-index: 1;
+}
+
