@@ -1472,32 +1472,35 @@ export class GameEngine {
     // Every single summon gets progressively more expensive!
     s.recruitCost = this.computeNextRecruitCost(s.recruitCount);
 
-    const indicesToFill: number[] = [];
+    // Clear ALL 5 bench slots first — any unused items left in the bottom bench are discarded and replaced!
     for (let i = 0; i < s.bench.length; i++) {
-      if (s.bench[i] === null) indicesToFill.push(i);
-    }
-    // If all 5 bench slots are full, refresh all 5 slots (preserving at most 1 un-used shovel if desired, or refreshing cleanly)
-    if (indicesToFill.length === 0) {
-      for (let i = 0; i < s.bench.length; i++) indicesToFill.push(i);
+      s.bench[i] = null;
     }
 
-    for (const idx of indicesToFill) {
-      s.bench[idx] = this.makeTile(this.rollUnitForSide('player'), 1);
+    // Summon 5 brand-new tiles across all 5 bench slots!
+    for (let i = 0; i < s.bench.length; i++) {
+      const tile = this.makeTile(this.rollUnitForSide('player'), 1);
+      tile.mergeAnimTimer = 0.16;
+      s.bench[i] = tile;
     }
 
-    // Random Golden Shovel appearance inside one of the newly summoned bench slots (scarce so board space is precious!)
+    // Random Golden Shovel appearance inside one of the 5 newly summoned bench slots!
     const hasLockedStone = this.getSideCells('player', 'locked').length > 0;
-    const alreadyHasBenchShovel = s.bench.some((u) => u?.unitId === 'shovel');
-    if (hasLockedStone && !alreadyHasBenchShovel && indicesToFill.length > 0) {
+    if (hasLockedStone && s.bench.length > 0) {
       const meta = SaveManager.getEffectiveBonuses();
       const shovelProb = Math.min(0.36, 0.14 + meta.benchShovelChanceBonus * 2.2);
       if (Math.random() < shovelProb) {
-        const pickSlot = indicesToFill[Math.floor(Math.random() * indicesToFill.length)];
-        s.bench[pickSlot] = this.makeTile('shovel', 1);
+        const pickSlot = Math.floor(Math.random() * s.bench.length);
+        const shovelTile = this.makeTile('shovel', 1);
+        shovelTile.mergeAnimTimer = 0.18;
+        s.bench[pickSlot] = shovelTile;
         s.benchShovelRolledOnce = true;
       }
     }
 
+    if (s.selectedSource?.type === 'bench') {
+      s.selectedUnitInfo = null;
+    }
     s.selectedSource = null;
     s.talismanMode = false;
     SoundFX.recruit();

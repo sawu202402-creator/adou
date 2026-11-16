@@ -751,14 +751,11 @@ export class UIManager {
           : `${ultPct}%`;
     });
 
-    // Conscript / Refresh Button
-    const benchHasEmpty = s.bench.some((b) => b === null);
-    const recKey = `${s.recruitCost}:${benchHasEmpty ? 1 : 0}:${s.rations >= s.recruitCost ? 1 : 0}`;
+    // Conscript Button (always replaces all 5 bench slots with a fresh batch of 5!)
+    const recKey = `${s.recruitCost}:${s.rations >= s.recruitCost ? 1 : 0}`;
     setIf('rec', recKey, () => {
       const btn = this.hudRoot!.querySelector('#btn-recruit') as HTMLButtonElement;
-      (this.hudRoot!.querySelector('#hud-rec-label') as HTMLElement).textContent = benchHasEmpty
-        ? dict.btnRecruit
-        : dict.btnReroll;
+      (this.hudRoot!.querySelector('#hud-rec-label') as HTMLElement).textContent = dict.btnRecruit;
       (this.hudRoot!.querySelector('#hud-rec-cost') as HTMLElement).textContent = `${s.recruitCost}`;
       btn.classList.toggle('affordable', s.rations >= s.recruitCost);
     });
