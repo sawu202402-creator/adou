@@ -265,8 +265,8 @@ const EN_DICT: Dict = {
       ? `Tomb Raider! +${buns} Buns & Unearthed 1 Weapon Shard!`
       : `Tomb Raider! Unearthed +${buns} Bonus Buns!`,
   bannerShardCannotAttack: 'Shards have zero effect before synthesis! Fuse [1/2]+[2/2] first, or feed to an awakened General!',
-  bannerNeedTwoCellsForHero: 'Generals occupy 2 adjacent jade cells! Free an adjacent slot or dig with a Shovel!',
-  bannerHeroCannotBench: '2-Cell Generals cannot return to a 1-slot camp bench!',
+  bannerNeedTwoCellsForHero: 'Generals are fixed horizontal (2×1)! Free an adjacent left/right slot or dig with a Shovel!',
+  bannerHeroCannotBench: '2×1 Generals cannot return to a 1-slot camp bench!',
   bannerHeroAlreadyActive: (name) =>
     `${name} is already on the board (max 1)! Drag new shards directly onto ${name} to upgrade!`,
   bannerHeroShardUpgraded: (name, lvl, tier) =>
@@ -680,8 +680,8 @@ const ZH_DICT: Dict = {
       ? `摸金校尉触发！挖出 +${buns} 馒头，并惊喜出土 1 枚【神兵碎片】！`
       : `摸金校尉触发！额外挖出 +${buns} 馒头军粮！`,
   bannerShardCannotAttack: '碎片在武将合成前不起作用！请先【1/2+2/2】合成武将，合成后新碎片可拖给该武将升级',
-  bannerNeedTwoCellsForHero: '真名将需占【相邻2格】白玉阵位！请先腾出相邻格或用金铲扩建',
-  bannerHeroCannotBench: '名将占2格阵位，无法收回单格备战营帐！',
+  bannerNeedTwoCellsForHero: '真名将固定【横向占左右2格】！请先腾出左右相邻格或用金铲横向扩建',
+  bannerHeroCannotBench: '名将固定横向占2格，无法收回单格备战营帐！',
   bannerHeroAlreadyActive: (name) =>
     `【${name}】已在场（同名武将仅限1尊）！请将新碎片直接拖到【${name}】身上升级！`,
   bannerHeroShardUpgraded: (name, lvl, tier) =>

@@ -175,13 +175,8 @@ export class BoardRenderer {
       ctx.shadowBlur = 16;
       ctx.shadowOffsetY = 8;
       if (du.cellSpan === 2) {
-        const hoverCol = Math.floor((engine.drag.screenX - L.boardX) / L.cellSize);
-        const hoverRow = Math.floor((engine.drag.screenY - L.boardY) / L.cellSize);
-        const defaultHoriz = du.anchorRow === du.secRow;
-        const preview = engine.previewTwoCellPlacement(hoverCol, hoverRow, defaultHoriz, du.uid);
-        const isHoriz = preview ? preview.r1 === preview.r2 : defaultHoriz;
-        const w = (isHoriz ? 2 : 1) * L.cellSize * 1.02 - 4;
-        const h = (isHoriz ? 1 : 2) * L.cellSize * 1.02 - 4;
+        const w = 2 * L.cellSize * 1.02 - 4;
+        const h = L.cellSize * 1.02 - 4;
         this.drawDoubleWarTile(
           ctx,
           du,
@@ -569,8 +564,7 @@ export class BoardRenderer {
             : null;
 
         if (dragUnit.cellSpan === 2) {
-          const preferHoriz = dragUnit.anchorRow === dragUnit.secRow;
-          twoCellFootprint = engine.previewTwoCellPlacement(col, row, preferHoriz, dragUnit.uid);
+          twoCellFootprint = engine.previewTwoCellPlacement(col, row, dragUnit.uid);
           previewUnit = dragUnit;
           if (twoCellFootprint) {
             centerGridX = (twoCellFootprint.c1 + twoCellFootprint.c2) * 0.5 + 0.5;
@@ -604,8 +598,8 @@ export class BoardRenderer {
             engine.findAwakenedHeroOnSide(s, 'player', UNITS[dragUnit.unitId].heroKey!)
           )
         ) {
-          // Previewing 1/2 + 2/2 fusion into a unique 2-Cell Awakened General right on the board!
-          twoCellFootprint = engine.previewTwoCellPlacement(col, row, true, dragUnit.uid);
+          // Previewing 1/2 + 2/2 fusion into a unique horizontal 2x1 Awakened General right on the board!
+          twoCellFootprint = engine.previewTwoCellPlacement(col, row, dragUnit.uid);
           previewUnit = {
             ...dragUnit,
             unitId: hoverCombo.resultId,

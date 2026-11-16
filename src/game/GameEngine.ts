@@ -573,52 +573,40 @@ export class GameEngine {
   }
 
   /**
-   * Finds an orthogonally adjacent deploy cell on `side` next to `(col, row)`:
-   * - Priority 1: empty cell (or holding `ignoreUid`)
-   * - Priority 2 (if `allowDisplaceOneCell`): cell holding a 1x1 unit
+   * Finds a HORIZONTALLY adjacent deploy cell (`2x1` left/right on the same row) on `side` next to `(col, row)`:
+   * - Synthesized Generals are strictly fixed to horizontal orientation (`2x1`)!
+   * - Priority 1: empty horizontal cell (or holding `ignoreUid`)
+   * - Priority 2 (if `allowDisplaceOneCell`): horizontal cell holding a 1x1 unit
    */
-  private findAdjacentDeployPartner(
+  private findHorizontalDeployPartner(
     s: RunState,
     side: SideOwner,
     col: number,
     row: number,
-    preferHoriz: boolean,
     allowDisplaceOneCell: boolean,
     ignoreUid?: number
   ): { col: number; row: number } | null {
     const rMin = side === 'ai' ? 0 : s.stage.dividerRow;
     const rMax = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
-    const dirs = preferHoriz
-      ? [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]
-      : [
-          [0, 1],
-          [0, -1],
-          [1, 0],
-          [-1, 0],
-        ];
+    if (row < rMin || row >= rMax) return null;
 
-    for (const [dc, dr] of dirs) {
+    const horizOffsets = [1, -1];
+
+    for (const dc of horizOffsets) {
       const nc = col + dc;
-      const nr = row + dr;
-      if (nc < 0 || nc >= s.stage.cols || nr < rMin || nr >= rMax) continue;
-      if (s.cells[nr][nc] !== 'deploy') continue;
-      const occ = s.board[nr][nc];
-      if (!occ || occ.uid === ignoreUid) return { col: nc, row: nr };
+      if (nc < 0 || nc >= s.stage.cols) continue;
+      if (s.cells[row][nc] !== 'deploy') continue;
+      const occ = s.board[row][nc];
+      if (!occ || occ.uid === ignoreUid) return { col: nc, row };
     }
 
     if (allowDisplaceOneCell) {
-      for (const [dc, dr] of dirs) {
+      for (const dc of horizOffsets) {
         const nc = col + dc;
-        const nr = row + dr;
-        if (nc < 0 || nc >= s.stage.cols || nr < rMin || nr >= rMax) continue;
-        if (s.cells[nr][nc] !== 'deploy') continue;
-        const occ = s.board[nr][nc];
-        if (occ && occ.cellSpan === 1) return { col: nc, row: nr };
+        if (nc < 0 || nc >= s.stage.cols) continue;
+        if (s.cells[row][nc] !== 'deploy') continue;
+        const occ = s.board[row][nc];
+        if (occ && occ.cellSpan === 1) return { col: nc, row };
       }
     }
 
@@ -631,7 +619,7 @@ export class GameEngine {
   ): { c1: number; r1: number; c2: number; r2: number } | null {
     const empties = this.getSideCells(side, 'deploy').filter((pt) => s.board[pt.row][pt.col] === null);
     const lane = side === 'ai' ? s.stage.aiLane : s.stage.playerLane;
-    // Prefer pairs closer to road!
+    // Prefer horizontal pairs closer to road!
     empties.sort((a, b) => {
       const aRoad = doesCircleReachLane(lane, a.col + 0.5, a.row + 0.5, 0, 1.5) ? 0 : 1;
       const bRoad = doesCircleReachLane(lane, b.col + 0.5, b.row + 0.5, 0, 1.5) ? 0 : 1;
@@ -639,9 +627,11 @@ export class GameEngine {
     });
 
     for (const pt of empties) {
-      const partner = this.findAdjacentDeployPartner(s, side, pt.col, pt.row, true, false);
+      const partner = this.findHorizontalDeployPartner(s, side, pt.col, pt.row, false);
       if (partner) {
-        return { c1: pt.col, r1: pt.row, c2: partner.col, r2: partner.row };
+        const c1 = Math.min(pt.col, partner.col);
+        const c2 = Math.max(pt.col, partner.col);
+        return { c1, r1: pt.row, c2, r2: pt.row };
       }
     }
     return null;
@@ -650,7 +640,6 @@ export class GameEngine {
   public previewTwoCellPlacement(
     col: number,
     row: number,
-    preferHoriz: boolean,
     ignoreUid?: number
   ): { c1: number; r1: number; c2: number; r2: number } | null {
     const s = this.state;
@@ -665,20 +654,11 @@ export class GameEngine {
       return { c1: cur.anchorCol, r1: cur.anchorRow, c2: cur.secCol, r2: cur.secRow };
     }
 
-    const partner = this.findAdjacentDeployPartner(
-      s,
-      'player',
-      col,
-      row,
-      preferHoriz,
-      true,
-      ignoreUid
-    );
+    const partner = this.findHorizontalDeployPartner(s, 'player', col, row, true, ignoreUid);
     if (!partner) return null;
-    const firstTopLeft = row < partner.row || (row === partner.row && col <= partner.col);
-    return firstTopLeft
-      ? { c1: col, r1: row, c2: partner.col, r2: partner.row }
-      : { c1: partner.col, r1: partner.row, c2: col, r2: row };
+    const c1 = Math.min(col, partner.col);
+    const c2 = Math.max(col, partner.col);
+    return { c1, r1: row, c2, r2: row };
   }
 
   private setSelectedInfoFromUnit(
@@ -1181,23 +1161,30 @@ export class GameEngine {
           this.removeBoardUnit(s, a.unit);
           this.removeBoardUnit(s, b.unit);
 
-          const adjToB = this.findAdjacentDeployPartner(s, 'ai', b.col, b.row, true, true);
-          if (adjToB) {
-            const displaced = s.board[adjToB.row][adjToB.col];
+          const adjToB = this.findHorizontalDeployPartner(s, 'ai', b.col, b.row, true);
+          const anchor = adjToB
+            ? { col: b.col, row: b.row, spare: a, partner: adjToB }
+            : (() => {
+                const adjToA = this.findHorizontalDeployPartner(s, 'ai', a.col, a.row, true);
+                return adjToA ? { col: a.col, row: a.row, spare: b, partner: adjToA } : null;
+              })();
+
+          if (anchor) {
+            const displaced = s.board[anchor.partner.row][anchor.partner.col];
             if (displaced && displaced.cellSpan === 1) {
               this.removeBoardUnit(s, displaced);
-              this.placeBoardUnit(s, displaced, a.col, a.row);
+              this.placeBoardUnit(s, displaced, anchor.spare.col, anchor.spare.row);
             }
             const heroTile = this.makeTile(res.resultId, res.resultTier, 1);
-            this.placeBoardUnit(s, heroTile, b.col, b.row, adjToB.col, adjToB.row);
-            const ctr = this.getUnitBoardCenter(heroTile, b.col, b.row);
+            this.placeBoardUnit(s, heroTile, anchor.col, anchor.row, anchor.partner.col, anchor.partner.row);
+            const ctr = this.getUnitBoardCenter(heroTile, anchor.col, anchor.row);
             this.spawnCombineFX(ctr.x, ctr.y, 'awaken', res.resultId);
             const heroTxt = getUnitDisplayText(res.resultId);
             this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.3);
             this.recalcSynergies();
             return;
           } else {
-            // Restore if no valid 2-cell pair around b yet
+            // Restore if no valid horizontal 2x1 pair around b or a yet
             this.placeBoardUnit(s, a.unit, a.col, a.row);
             this.placeBoardUnit(s, b.unit, b.col, b.row);
           }
@@ -3977,24 +3964,7 @@ export class GameEngine {
       }
 
       if (s.selectedSource) {
-        const prevUnit = this.getUnitAt(s.selectedSource);
-        // Double-tap on an already-selected 2-Cell General: rotate 90° around tapped cell if perpendicular cell is free!
         if (
-          prevUnit &&
-          prevUnit.uid === d.unit.uid &&
-          d.unit.cellSpan === 2 &&
-          src.type === 'board'
-        ) {
-          if (this.tryRotateTwoCellUnit(d.unit, src.col, src.row)) {
-            s.selectedSource = {
-              type: 'board',
-              benchIdx: -1,
-              col: d.unit.anchorCol,
-              row: d.unit.anchorRow,
-            };
-            return;
-          }
-        } else if (
           !(
             s.selectedSource.type === src.type &&
             s.selectedSource.benchIdx === src.benchIdx &&
@@ -4065,35 +4035,6 @@ export class GameEngine {
     }
   }
 
-  private tryRotateTwoCellUnit(u: TileUnit, pivotCol: number, pivotRow: number): boolean {
-    const s = this.state;
-    if (!s || u.cellSpan !== 2) return false;
-    const isHoriz = u.anchorRow === u.secRow;
-    const perpDirs = isHoriz
-      ? [
-          [0, 1],
-          [0, -1],
-        ]
-      : [
-          [1, 0],
-          [-1, 0],
-        ];
-    for (const [dc, dr] of perpDirs) {
-      const nc = pivotCol + dc;
-      const nr = pivotRow + dr;
-      if (nc < 0 || nc >= s.stage.cols || nr < s.stage.dividerRow || nr >= s.stage.rows) continue;
-      if (s.cells[nr][nc] !== 'deploy') continue;
-      if (s.board[nr][nc] === null) {
-        this.removeBoardUnit(s, u);
-        this.placeBoardUnit(s, u, pivotCol, pivotRow, nc, nr);
-        u.mergeAnimTimer = 0.14;
-        SoundFX.tileClack(true);
-        return true;
-      }
-    }
-    return false;
-  }
-
   private getUnitAt(loc: SelectedSource): TileUnit | null {
     const s = this.state;
     if (!s) return null;
@@ -4147,13 +4088,12 @@ export class GameEngine {
       return false;
     }
 
-    // Dragging from one cell of a 2-cell General onto its own second cell -> slide 1 cell forward or rotate!
+    // Dragging from one cell of a horizontal 2x1 General onto its own second cell -> slide 1 cell horizontally!
     if (dstUnit && dstUnit.uid === srcUnit.uid) {
-      if (srcUnit.cellSpan === 2 && src.type === 'board' && dst.type === 'board') {
+      if (srcUnit.cellSpan === 2 && src.type === 'board' && dst.type === 'board' && src.row === dst.row) {
         const dc = dst.col - src.col;
-        const dr = dst.row - src.row;
         const nc = dst.col + dc;
-        const nr = dst.row + dr;
+        const nr = dst.row;
         if (
           nc >= 0 &&
           nc < s.stage.cols &&
@@ -4175,7 +4115,6 @@ export class GameEngine {
             return true;
           }
         }
-        return this.tryRotateTwoCellUnit(srcUnit, dst.col, dst.row);
       }
       return false;
     }
@@ -4256,35 +4195,71 @@ export class GameEngine {
           return true;
         }
 
-        // dst is on board!
-        const srcWasAdjBoard =
+        // dst is on board! Synthesized Generals are STRICTLY HORIZONTAL (`2x1` same row)!
+        const srcWasHorizAdjBoard =
           src.type === 'board' &&
-          Math.abs(src.col - dst.col) + Math.abs(src.row - dst.row) === 1 &&
+          src.row === dst.row &&
+          Math.abs(src.col - dst.col) === 1 &&
           s.cells[src.row][src.col] === 'deploy';
 
         this.clearSourceUnit(s, src, srcUnit);
         this.removeBoardUnit(s, dstUnit);
 
-        const partner = srcWasAdjBoard
+        let anchorCol = dst.col;
+        let anchorRow = dst.row;
+        let partner = srcWasHorizAdjBoard
           ? { col: src.col, row: src.row }
-          : this.findAdjacentDeployPartner(s, 'player', dst.col, dst.row, true, true);
+          : this.findHorizontalDeployPartner(s, 'player', dst.col, dst.row, true);
+
+        // Fallback if dst sits on a single isolated cell: try horizontal pair at src (if on board) or any empty horizontal deploy pair!
+        if (!partner && src.type === 'board' && s.cells[src.row][src.col] === 'deploy') {
+          const srcPartner = this.findHorizontalDeployPartner(s, 'player', src.col, src.row, true);
+          if (srcPartner) {
+            anchorCol = src.col;
+            anchorRow = src.row;
+            partner = srcPartner;
+          }
+        }
+        if (!partner) {
+          const freePair = this.findEmptyAdjacentDeployPair(s, 'player');
+          if (freePair) {
+            anchorCol = freePair.c1;
+            anchorRow = freePair.r1;
+            partner = { col: freePair.c2, row: freePair.r2 };
+          }
+        }
 
         if (!partner) {
-          // Rollback cleanly if no adjacent deploy cell is available!
+          // Rollback cleanly if no horizontal 2x1 deploy space is available!
           this.placeBoardUnit(s, dstUnit, dst.col, dst.row);
           this.placeSingleUnitAt(s, src, srcUnit);
           this.showBanner(t().bannerNeedTwoCellsForHero, 2.5);
           return false;
         }
 
-        const displaced = s.board[partner.row][partner.col];
-        if (displaced) {
-          this.removeBoardUnit(s, displaced);
-          this.placeSingleUnitAt(s, src, displaced);
+        const displacedList: TileUnit[] = [];
+        const occAnchor = s.board[anchorRow][anchorCol];
+        if (occAnchor) {
+          this.removeBoardUnit(s, occAnchor);
+          displacedList.push(occAnchor);
+        }
+        const occPartner = s.board[partner.row][partner.col];
+        if (occPartner) {
+          this.removeBoardUnit(s, occPartner);
+          displacedList.push(occPartner);
         }
 
         const created = this.makeTile(combo.resultId, combo.resultTier, 1);
-        this.placeBoardUnit(s, created, dst.col, dst.row, partner.col, partner.row);
+        this.placeBoardUnit(s, created, anchorCol, anchorRow, partner.col, partner.row);
+
+        // Relocate any displaced 1x1 unit into freed source/dst slot!
+        for (const disp of displacedList) {
+          if (dst.type === 'board' && s.board[dst.row][dst.col] === null) {
+            this.placeBoardUnit(s, disp, dst.col, dst.row);
+          } else {
+            this.placeSingleUnitAt(s, src, disp);
+          }
+        }
 
         s.merges += 1;
         s.ultCharge = Math.min(100, s.ultCharge + 22);
@@ -4293,7 +4268,7 @@ export class GameEngine {
         this.setSelectedInfoFromUnit(created);
         const heroTxt = getUnitDisplayText(combo.resultId);
         this.showBanner(t().bannerHeroAwakened(heroTxt.name), 2.6);
-        const center = this.getUnitBoardCenter(created, dst.col, dst.row);
+        const center = this.getUnitBoardCenter(created, anchorCol, anchorRow);
         this.spawnCombineFX(center.x, center.y, 'awaken', combo.resultId);
         this.recalcSynergies();
         return true;
@@ -4316,7 +4291,7 @@ export class GameEngine {
       return true;
     }
 
-    // 2) Move / Swap a 2-CELL Awakened General
+    // 2) Move / Swap a Horizontal 2x1 Awakened General
     if (srcUnit.cellSpan === 2) {
       if (dst.type === 'bench') {
         this.showBanner(t().bannerHeroCannotBench, 2.2);
@@ -4327,7 +4302,6 @@ export class GameEngine {
         { col: srcUnit.anchorCol, row: srcUnit.anchorRow },
         { col: srcUnit.secCol, row: srcUnit.secRow },
       ];
-      const preferHoriz = srcUnit.anchorRow === srcUnit.secRow;
 
       if (dstUnit && dstUnit.cellSpan === 2) {
         const dstCells = [
@@ -4346,7 +4320,7 @@ export class GameEngine {
       }
 
       this.removeBoardUnit(s, srcUnit);
-      const partner = this.findAdjacentDeployPartner(s, 'player', dst.col, dst.row, preferHoriz, true);
+      const partner = this.findHorizontalDeployPartner(s, 'player', dst.col, dst.row, true);
       if (!partner) {
         this.placeBoardUnit(s, srcUnit, oldCells[0].col, oldCells[0].row, oldCells[1].col, oldCells[1].row);
         this.showBanner(t().bannerNeedTwoCellsForHero, 2.2);
