@@ -428,8 +428,8 @@ body {
 }
 
 .mini-war-tile.awakened-tile {
-  width: 56px;
-  height: 56px;
+  width: 78px;
+  height: 46px;
   border: 2.5px solid #b8860b;
   box-shadow: 0 3px 0 #784b08, 0 0 10px rgba(212, 175, 55, 0.55);
 }
@@ -1699,4 +1699,43 @@ body {
   box-shadow: 0 0 4px rgba(250, 204, 21, 0.85);
   z-index: 1;
 }
+
+/* ==================== V4 SPEED TOGGLE, OVERWRITE GUARD & RETRY ROW ==================== */
+.hud-speed-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid #9c7c38;
+  background: rgba(34, 28, 24, 0.86);
+  color: #e7decb;
+  font-size: 12px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.14s ease;
+}
+
+.hud-speed-btn.fast {
+  border-color: #facc15;
+  background: linear-gradient(180deg, #991b1b 0%, #6e140f 100%);
+  color: #fde047;
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.55);
+}
+
+.recruit-main-btn.confirm-warn {
+  background: linear-gradient(180deg, #b45309 0%, #78350f 100%) !important;
+  border-color: #fde047 !important;
+  color: #fef9c3 !important;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.72), 0 3px 0 #291811 !important;
+}
+
+.settle-dual-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 

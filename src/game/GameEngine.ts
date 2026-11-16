@@ -275,6 +275,7 @@ export interface RunState {
   droppedShards: WeaponId[];
   bannerText: string;
   bannerTimer: number;
+  confirmOverwriteTimer: number;
   screenShake: number;
   selectedSource: SelectedSource | null;
   selectedUnitInfo: {
@@ -301,6 +302,7 @@ export class GameEngine {
   public drag: DragState | null = null;
   public paused = false;
   public modalPaused = false;
+  public gameSpeed: 1 | 2 = 1;
   public layout: BoardLayoutMetrics = {
     viewW: 390,
     viewH: 844,
@@ -463,6 +465,7 @@ export class GameEngine {
       droppedShards: [],
       bannerText: '',
       bannerTimer: 0,
+      confirmOverwriteTimer: 0,
       screenShake: 0,
       selectedSource: null,
       selectedUnitInfo: null,
@@ -767,6 +770,42 @@ export class GameEngine {
     };
   }
 
+  public toggleGameSpeed(): 1 | 2 {
+    this.gameSpeed = this.gameSpeed === 1 ? 2 : 1;
+    SoundFX.tileClack(true);
+    return this.gameSpeed;
+  }
+
+  public getUnitRecycleBuns(u: TileUnit): number {
+    const def = UNITS[u.unitId];
+    if (def.category === 'item') {
+      return this.getSideCells('player', 'locked').length === 0 ? 18 : 8;
+    }
+    if (def.category === 'shard1' || def.category === 'shard2') {
+      return 2;
+    }
+    if (def.category === 'awakened') {
+      return 8 + Math.min(10, u.combatLevel - 1);
+    }
+    const troopRefunds = [2, 4, 7, 11, 16];
+    return troopRefunds[Math.min(troopRefunds.length - 1, Math.max(0, u.tier - 1))];
+  }
+
+  public isDraggingOverTent(): boolean {
+    if (!this.drag || !this.drag.active || !this.drag.movedEnough) return false;
+    return this.hitTestTent(this.drag.screenX, this.drag.screenY);
+  }
+
+  private hitTestTent(sx: number, sy: number): boolean {
+    const L = this.layout;
+    return (
+      sx >= L.tentX - 6 &&
+      sx <= L.tentX + L.benchTileSize + 6 &&
+      sy >= L.tentY - 8 &&
+      sy <= L.tentY + L.benchTileSize + 8
+    );
+  }
+
   // ==================== MAIN UPDATE LOOP ====================
 
   public update(dt: number, viewW: number, viewH: number): void {
@@ -774,13 +813,26 @@ export class GameEngine {
     const s = this.state;
     if (!s) return;
 
+    // Real-time UI & feedback timers (unaffected by 2x battle speed!)
     if (s.bannerTimer > 0) s.bannerTimer = Math.max(0, s.bannerTimer - dt);
+    if (s.confirmOverwriteTimer > 0) {
+      s.confirmOverwriteTimer = Math.max(0, s.confirmOverwriteTimer - dt);
+    }
     if (s.screenShake > 0) s.screenShake = Math.max(0, s.screenShake - dt * 2.8);
 
     if (this.paused || this.modalPaused || s.wavePhase === 'ended' || s.wavePhase === 'revive_wait') {
       return;
     }
 
+    // Sub-step simulation when at 2x speed so projectiles never tunnel!
+    const steps = this.gameSpeed;
+    for (let step = 0; step < steps; step++) {
+      this.stepSimulation(s, dt);
+    }
+  }
+
+  private stepSimulation(s: RunState, dt: number): void {
+    if (s.wavePhase === 'ended' || s.wavePhase === 'revive_wait') return;
     if (s.supplyAdCooldown > 0) s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
     if (s.exorciseCooldown > 0) s.exorciseCooldown = Math.max(0, s.exorciseCooldown - dt);
 
@@ -1414,49 +1466,109 @@ export class GameEngine {
     return out;
   }
 
+  private collectHeldHeroHalves(side: SideOwner): { hasS1: Set<HeroKey>; hasS2: Set<HeroKey> } {
+    const hasS1 = new Set<HeroKey>();
+    const hasS2 = new Set<HeroKey>();
+    const s = this.state;
+    if (!s) return { hasS1, hasS2 };
+
+    const scan = (u: TileUnit | null) => {
+      if (!u) return;
+      const def = UNITS[u.unitId];
+      if (def.category === 'shard1' && def.heroKey) hasS1.add(def.heroKey);
+      else if (def.category === 'shard2' && def.heroKey) hasS2.add(def.heroKey);
+    };
+
+    const rStart = side === 'ai' ? 0 : s.stage.dividerRow;
+    const rEnd = side === 'ai' ? s.stage.dividerRow : s.stage.rows;
+    for (let r = rStart; r < rEnd; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        scan(s.board[r][c]);
+      }
+    }
+    if (side === 'player') {
+      for (const b of s.bench) scan(b);
+    }
+    return { hasS1, hasS2 };
+  }
+
   private rollUnitForSide(side: SideOwner): UnitId {
     const s = this.state;
     const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.28;
-    if (Math.random() < heroChance) {
+    if (s && Math.random() < heroChance) {
       const unmatched = this.findUnmatchedHeroShards(side);
-      // Higher smart pairing chance (especially when holding >=2 halves) so 12 Generals synthesize smoothly!
-      const pairProb = unmatched.length >= 2 ? 0.7 : 0.56;
+      const { hasS1, hasS2 } = this.collectHeldHeroHalves(side);
+
+      // Anti-clog: if already holding >=3 unmatched halves on player (>=2 on AI), strongly pair an existing half or roll a troop!
+      const maxOrphans = side === 'player' ? 3 : 2;
+      if (unmatched.length >= maxOrphans) {
+        if (Math.random() < 0.76) {
+          return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
+        }
+        return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
+      }
+
+      const pairProb = unmatched.length >= 2 ? 0.72 : 0.58;
       if (unmatched.length > 0 && Math.random() < pairProb) {
         return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
       }
 
-      if (s && side === 'player') {
-        const upgradeable = Array.from(this.getUpgradeableAwakenedHeroKeys());
-        if (upgradeable.length > 0 && Math.random() < 0.24) {
-          const uh = upgradeable[Math.floor(Math.random() * upgradeable.length)];
-          return Math.random() < 0.5 ? `shard1_${uh}` : `shard2_${uh}`;
-        }
+      // Allow feeding upgrade shards to already-awakened Generals below max rank/level!
+      const upgradeable = HERO_KEYS.filter((hk) => {
+        const hero = this.findAwakenedHeroOnSide(s, side, hk);
+        return Boolean(hero && (hero.tier < MAX_TILE_TIER || hero.combatLevel < MAX_HERO_COMBAT_LEVEL));
+      });
+      if (upgradeable.length > 0 && Math.random() < 0.26) {
+        const uh = upgradeable[Math.floor(Math.random() * upgradeable.length)];
+        return Math.random() < 0.5 ? `shard1_${uh}` : `shard2_${uh}`;
+      }
 
-        // Prefer unawakened Generals from this battle's focused 7-General pool; unlock all 12 once pool is awakened!
-        const poolUnawakened = s.matchHeroes.filter(
-          (hk) => !this.findAwakenedHeroOnSide(s, 'player', hk)
-        );
-        const allUnawakened = HERO_KEYS.filter(
-          (hk) => !this.findAwakenedHeroOnSide(s, 'player', hk)
-        );
-        const candidates =
-          poolUnawakened.length > 0
-            ? poolUnawakened
-            : allUnawakened.length > 0
-              ? allUnawakened
-              : HERO_KEYS;
-        const h = candidates[Math.floor(Math.random() * candidates.length)];
+      // Pick a fresh unawakened General with ZERO halves currently held so we NEVER deal a dead duplicate [1/2] before synthesis!
+      const freshPool = s.matchHeroes.filter(
+        (hk) => !this.findAwakenedHeroOnSide(s, side, hk) && !hasS1.has(hk) && !hasS2.has(hk)
+      );
+      const freshAll = HERO_KEYS.filter(
+        (hk) => !this.findAwakenedHeroOnSide(s, side, hk) && !hasS1.has(hk) && !hasS2.has(hk)
+      );
+      const freshCandidates = freshPool.length > 0 ? freshPool : freshAll;
+
+      if (freshCandidates.length > 0) {
+        const h = freshCandidates[Math.floor(Math.random() * freshCandidates.length)];
         return Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
       }
 
-      const aiPool = s ? s.matchHeroes : HERO_KEYS;
-      const h = aiPool[Math.floor(Math.random() * aiPool.length)];
-      return Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
+      if (unmatched.length > 0) {
+        return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
+      }
+      if (upgradeable.length > 0) {
+        const uh = upgradeable[Math.floor(Math.random() * upgradeable.length)];
+        return Math.random() < 0.5 ? `shard1_${uh}` : `shard2_${uh}`;
+      }
     }
     return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
   }
 
   // ==================== PLAYER COMMANDS & RANDOM 5-SLOT SHOVELS ====================
+
+  public benchHasValuableUnusedItem(): boolean {
+    const s = this.state;
+    if (!s) return false;
+    const hasLocked = this.getSideCells('player', 'locked').length > 0;
+    const readyHeroes = this.getReadyPuzzleHeroKeys();
+    const upgradeHeroes = this.getUpgradeableAwakenedHeroKeys();
+
+    for (const b of s.bench) {
+      if (!b) continue;
+      if (b.unitId === 'shovel' && hasLocked) return true;
+      const def = UNITS[b.unitId];
+      if ((def.category === 'shard1' || def.category === 'shard2') && def.heroKey) {
+        if (readyHeroes.has(def.heroKey) || upgradeHeroes.has(def.heroKey)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 
   public recruitBench(): void {
     const s = this.state;
@@ -1467,6 +1579,15 @@ export class GameEngine {
       return;
     }
 
+    // Smart 2-tap guard ONLY if bench currently holds an unused Shovel (with locked cells left) or a Ready/Upgrade Hero Shard!
+    if (s.confirmOverwriteTimer <= 0 && this.benchHasValuableUnusedItem()) {
+      s.confirmOverwriteTimer = 2.4;
+      SoundFX.tileClack(false);
+      this.showBanner(t().bannerConfirmBenchOverwrite, 2.4);
+      return;
+    }
+
+    s.confirmOverwriteTimer = 0;
     s.rations -= s.recruitCost;
     s.recruitCount += 1;
     // Every single summon gets progressively more expensive!
@@ -3345,9 +3466,10 @@ export class GameEngine {
 
         if (e.isBoss || e.isMiniBoss) {
           const dropCount = e.isBoss ? 2 : 1;
-          let lastShard: WeaponId = 'weap_zhaoyun';
+          const prefWeap = this.pickPreferredWeaponShardId(s, attackerUid);
+          let lastShard: WeaponId = prefWeap;
           for (let d = 0; d < dropCount; d++) {
-            lastShard = SaveManager.grantRandomWeaponShard('weap_zhaoyun');
+            lastShard = SaveManager.grantRandomWeaponShard(prefWeap);
             s.droppedShards.push(lastShard);
           }
           SoundFX.fanfare();
@@ -3650,6 +3772,21 @@ export class GameEngine {
     }
   }
 
+  private pickPreferredWeaponShardId(s: RunState, attackerUid?: number): WeaponId {
+    if (attackerUid !== undefined) {
+      const killer = this.findBoardUnitByUid(s, attackerUid);
+      const hk = killer ? UNITS[killer.unit.unitId].heroKey : undefined;
+      if (hk) return `weap_${hk}`;
+    }
+    const activeHeroes = HERO_KEYS.filter((hk) => Boolean(this.findAwakenedHeroOnSide(s, 'player', hk)));
+    if (activeHeroes.length > 0) {
+      const hk = activeHeroes[Math.floor(Math.random() * activeHeroes.length)];
+      return `weap_${hk}`;
+    }
+    const pool = s.matchHeroes.length > 0 ? s.matchHeroes : HERO_KEYS;
+    return `weap_${pool[Math.floor(Math.random() * pool.length)]}`;
+  }
+
   private finishRun(victory: boolean, aiDefeated: boolean): void {
     const s = this.state;
     if (!s || s.wavePhase === 'ended') return;
@@ -3658,7 +3795,7 @@ export class GameEngine {
 
     if (victory) {
       SaveManager.markStageCleared(s.stage.id);
-      const bonusShard = SaveManager.grantRandomWeaponShard();
+      const bonusShard = SaveManager.grantRandomWeaponShard(this.pickPreferredWeaponShardId(s));
       s.droppedShards.push(bonusShard);
       PlatformSDK.happyTime();
       SoundFX.fanfare();
@@ -3747,6 +3884,8 @@ export class GameEngine {
           this.activateDivineTalisman();
         } else if (e.key === 'e' || e.key === 'E') {
           this.castExorcism();
+        } else if (e.key === 'f' || e.key === 'F') {
+          this.toggleGameSpeed();
         }
       }
     });
@@ -3786,6 +3925,14 @@ export class GameEngine {
 
     const cellHit = this.hitTestBoard(sx, sy);
     const benchIdx = this.hitTestBench(sx, sy);
+    const tentHit = this.hitTestTent(sx, sy);
+
+    if (tentHit && !s.talismanMode && !s.shovelMode) {
+      SoundFX.tileClack(false);
+      this.showBanner(t().bannerTentRecycleHint, 2.4);
+      s.selectedSource = null;
+      return;
+    }
 
     // 0) 神兵符 (Divine Upgrade Talisman) Target Pick!
     if (s.talismanMode) {
@@ -3982,6 +4129,34 @@ export class GameEngine {
         }
       }
       s.selectedSource = src;
+      return;
+    }
+
+    // Dragging ANY unit onto the Left Camp Tent (`L.tentX, L.tentY`) -> Dismiss & Refund Buns!
+    if (this.hitTestTent(d.screenX, d.screenY)) {
+      const liveUnit = this.getUnitAt(src);
+      if (liveUnit && liveUnit.uid === d.unit.uid) {
+        const refundBuns = this.getUnitRecycleBuns(liveUnit);
+        const uName = getUnitDisplayText(liveUnit.unitId).name;
+        this.clearSourceUnit(s, src, liveUnit);
+        s.rations += refundBuns;
+        s.confirmOverwriteTimer = 0;
+        s.selectedSource = null;
+        s.selectedUnitInfo = null;
+        this.recalcSynergies();
+        SoundFX.tileClack(true);
+        s.floatTexts.push({
+          x: 0.7,
+          y: s.stage.rows - 0.35,
+          vy: -1.0,
+          text: `+${refundBuns}`,
+          color: '#fde047',
+          scale: 1.15,
+          timer: 0,
+          duration: 0.85,
+        });
+        this.showBanner(t().bannerUnitRecycled(uName, refundBuns), 2.1);
+      }
       return;
     }
 

@@ -78,6 +78,7 @@ interface Dict {
 
   btnRecruit: string;
   btnReroll: string;
+  btnConfirmOverwrite: string;
   btnHeroScrollFree: string;
   btnHeroScrollAd: string;
   btnSupplyAd: string;
@@ -117,6 +118,9 @@ interface Dict {
   bannerFortified: string;
   bannerNeedRations: string;
   bannerMaxLevel: string;
+  bannerConfirmBenchOverwrite: string;
+  bannerTentRecycleHint: string;
+  bannerUnitRecycled: (name: string, buns: number) => string;
 
   synergyNames: {
     vanguard: string;
@@ -158,6 +162,7 @@ interface Dict {
   settleDropsTitle: string;
   settleSkillShopTitle: string;
   btnMultClaim: string;
+  btnRetryStage: string;
   btnNormalClaim: string;
 
   mockAdBadge: (placement: string) => string;
@@ -241,6 +246,7 @@ const EN_DICT: Dict = {
 
   btnRecruit: 'Conscript',
   btnReroll: 'Refresh 5',
+  btnConfirmOverwrite: 'Tap to Replace!',
   btnHeroScrollFree: 'Free Piece',
   btnHeroScrollAd: 'Hero Puzzle',
   btnSupplyAd: '+65 Buns',
@@ -285,6 +291,9 @@ const EN_DICT: Dict = {
   bannerFortified: 'Barricade Rebuilt & Royal Heir Healed!',
   bannerNeedRations: 'Not Enough Steamed Buns — Upgrade [Farmer] for faster income!',
   bannerMaxLevel: 'Maximum Rank Reached',
+  bannerConfirmBenchOverwrite: 'Bench holds a Shovel or Ready Hero Pair! Tap [Conscript] again to replace!',
+  bannerTentRecycleHint: 'Camp Tent: Drag any unwanted unit or orphan shard here to dismiss & refund Buns!',
+  bannerUnitRecycled: (name, buns) => `Dismissed ${name} at Camp Tent · Refunded +${buns} Buns!`,
 
   synergyNames: {
     vanguard: 'Vanguard Phalanx',
@@ -327,6 +336,7 @@ const EN_DICT: Dict = {
   settleDropsTitle: 'Weapon Shards & Spoils Earned',
   settleSkillShopTitle: 'Post-Battle Skill Shop (Spend Gold to Unlock Skills)',
   btnMultClaim: 'Bonus Gold & Return',
+  btnRetryStage: 'Play Stage Again',
   btnNormalClaim: 'Confirm & Return to Hub',
 
   mockAdBadge: (placement) => `Preview · Simulated Rewarded Video (${placement})`,
@@ -656,6 +666,7 @@ const ZH_DICT: Dict = {
 
   btnRecruit: '征兵',
   btnReroll: '换批征兵',
+  btnConfirmOverwrite: '再点覆盖!',
   btnHeroScrollFree: '赐拼图(免)',
   btnHeroScrollAd: '招贤拼图',
   btnSupplyAd: '+65 馒头',
@@ -700,6 +711,9 @@ const ZH_DICT: Dict = {
   bannerFortified: '铁刺鹿砦重筑，阿斗恢复红心！',
   bannerNeedRations: '馒头不足（每次征兵递增涨价，请及时升级【农田】！）',
   bannerMaxLevel: '已全部开启或升至满阶',
+  bannerConfirmBenchOverwrite: '备战格留有【金铲】或【可合成/升阶名将碎片】！再点一次【征兵】确认全部覆盖',
+  bannerTentRecycleHint: '左下【中军营帐】：拖入不需要的士兵或多余碎片，即可裁撤腾格并换回馒头！',
+  bannerUnitRecycled: (name, buns) => `营帐裁撤【${name}】· 腾出阵位并回收 +${buns} 馒头！`,
 
   synergyNames: {
     vanguard: '锋矢铁卫',
@@ -742,6 +756,7 @@ const ZH_DICT: Dict = {
   settleDropsTitle: '本局战利品与掉落神兵碎片',
   settleSkillShopTitle: '凯旋秘籍商店（用战功金铢购买永久技能）',
   btnMultClaim: '虎符翻倍赏金并返回',
+  btnRetryStage: '再战本关',
   btnNormalClaim: '收下赏金并返回大营',
 
   mockAdBadge: (placement) => `开发预览 · 模拟激励视频 (${placement})`,

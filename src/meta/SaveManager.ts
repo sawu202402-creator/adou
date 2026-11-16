@@ -155,10 +155,12 @@ class SaveService {
   // ==================== WEAPON SHARDS & HERO EQUIPMENT ====================
 
   public grantRandomWeaponShard(preferred?: WeaponId): WeaponId {
+    const nonMaxed = WEAPON_IDS.filter((wId) => (this.data.weapons[wId] || 0) < 5);
+    const pool = nonMaxed.length > 0 ? nonMaxed : WEAPON_IDS;
     const chosen =
-      preferred && Math.random() < 0.45
+      preferred && pool.includes(preferred) && Math.random() < 0.48
         ? preferred
-        : WEAPON_IDS[Math.floor(Math.random() * WEAPON_IDS.length)];
+        : pool[Math.floor(Math.random() * pool.length)];
     this.data.weaponShards[chosen] = (this.data.weaponShards[chosen] || 0) + 1;
     this.save();
     return chosen;

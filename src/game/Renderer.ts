@@ -167,6 +167,11 @@ export class BoardRenderer {
     // 9. Player War-Camp Tent & 5-Slot Bench Row
     this.drawCampBench(ctx, engine, s, activeUnit, readyPuzzles, upgradeableHeroes);
 
+    // 9B. Combine / Synthesis Guide Curves to Matching Partners!
+    if (activeUnit) {
+      this.drawCombineGuideLinks(ctx, engine, s, activeUnit);
+    }
+
     // 10. Floating Dragged Tile (1x1 or 2-Cell Double Plaque!)
     if (engine.drag && engine.drag.active && engine.drag.movedEnough) {
       const du = engine.drag.unit;
@@ -1639,9 +1644,51 @@ export class BoardRenderer {
     const bs = L.benchTileSize;
 
     const tentImg = Assets.get('icon_tent');
-    if (tentImg) {
-      ctx.drawImage(tentImg, L.tentX - 2, L.tentY - 3, bs + 4, bs + 6);
+    const isDraggingTile = Boolean(engine.drag?.active && engine.drag.movedEnough);
+    const overTent = isDraggingTile && engine.isDraggingOverTent();
+
+    ctx.save();
+    if (isDraggingTile && engine.drag) {
+      const pulse = 0.65 + 0.35 * Math.sin(this.animClock * 8);
+      ctx.fillStyle = overTent ? 'rgba(250, 204, 21, 0.28)' : 'rgba(251, 191, 36, 0.1)';
+      this.roundRect(ctx, L.tentX - 3, L.tentY - 3, bs + 6, bs + 6, 8);
+      ctx.fill();
+      ctx.strokeStyle = overTent
+        ? '#fde047'
+        : `rgba(251, 191, 36, ${0.55 * pulse})`;
+      ctx.lineWidth = overTent ? 2.6 : 1.6;
+      ctx.setLineDash(overTent ? [] : [4, 3]);
+      this.roundRect(ctx, L.tentX - 3, L.tentY - 3, bs + 6, bs + 6, 8);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
+    if (tentImg) {
+      const lift = overTent ? -2.5 : 0;
+      ctx.drawImage(tentImg, L.tentX - 2, L.tentY - 3 + lift, bs + 4, bs + 6);
+    }
+    if (isDraggingTile && engine.drag) {
+      const refund = engine.getUnitRecycleBuns(engine.drag.unit);
+      const pillW = Math.max(30, bs * 0.78);
+      const pillH = 15;
+      const px = L.tentX + (bs - pillW) * 0.5;
+      const py = L.tentY + bs - pillH + 2;
+      ctx.fillStyle = overTent ? '#991b1b' : 'rgba(24, 20, 17, 0.9)';
+      this.roundRect(ctx, px, py, pillW, pillH, 7);
+      ctx.fill();
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      const bunImg = Assets.get('icon_rice');
+      if (bunImg) {
+        ctx.drawImage(bunImg, px + 3, py + 1.5, 12, 12);
+      }
+      ctx.fillStyle = '#fde047';
+      ctx.font = '800 10px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`+${refund}`, px + (bunImg ? 16 : 6), py + pillH * 0.52);
+    }
+    ctx.restore();
 
     for (let i = 0; i < 5; i++) {
       const sx = L.benchX + i * (bs + L.benchGap);
@@ -1697,6 +1744,101 @@ export class BoardRenderer {
 
       this.drawWarTile(ctx, u, sx + 2, sy + 2, bs - 4, highlight, false, true);
     }
+  }
+
+  private drawCombineGuideLinks(
+    ctx: CanvasRenderingContext2D,
+    engine: GameEngine,
+    s: RunState,
+    activeUnit: TileUnit
+  ): void {
+    const L = engine.layout;
+    const cs = L.cellSize;
+    const bs = L.benchTileSize;
+
+    let srcX = -1;
+    let srcY = -1;
+    if (engine.drag?.active && engine.drag.movedEnough) {
+      srcX = engine.drag.screenX;
+      srcY = engine.drag.screenY;
+    } else if (s.selectedSource) {
+      if (s.selectedSource.type === 'bench') {
+        srcX = L.benchX + s.selectedSource.benchIdx * (bs + L.benchGap) + bs * 0.5;
+        srcY = L.benchY + bs * 0.5;
+      } else {
+        const ctr = engine.getUnitBoardCenter(
+          activeUnit,
+          s.selectedSource.col,
+          s.selectedSource.row
+        );
+        srcX = L.boardX + ctr.x * cs;
+        srcY = L.boardY + ctr.y * cs;
+      }
+    }
+    if (srcX < 0) return;
+
+    const targets: { x: number; y: number; gold: boolean }[] = [];
+    const seen = new Set<number>();
+
+    const checkCand = (u: TileUnit | null, tx: number, ty: number) => {
+      if (!u || u.uid === activeUnit.uid || seen.has(u.uid)) return;
+      const combo = checkTileCombine(activeUnit, u);
+      if (!combo) return;
+      if (combo.mode === 'awaken') {
+        const hk = UNITS[u.unitId].heroKey;
+        if (hk && engine.findAwakenedHeroOnSide(s, 'player', hk)) return;
+      }
+      seen.add(u.uid);
+      targets.push({
+        x: tx,
+        y: ty,
+        gold: combo.mode === 'awaken' || combo.mode === 'upgrade_hero',
+      });
+    };
+
+    for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        const u = s.board[r][c];
+        if (!u || !engine.isPrimaryBoardCell(u, c, r)) continue;
+        const ctr = engine.getUnitBoardCenter(u, c, r);
+        checkCand(u, L.boardX + ctr.x * cs, L.boardY + ctr.y * cs);
+      }
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const u = s.bench[i];
+      if (!u) continue;
+      checkCand(u, L.benchX + i * (bs + L.benchGap) + bs * 0.5, L.benchY + bs * 0.5);
+    }
+
+    if (targets.length === 0) return;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const tgt of targets) {
+      const dist = Math.hypot(tgt.x - srcX, tgt.y - srcY);
+      if (dist < 14) continue;
+      const midX = (srcX + tgt.x) * 0.5;
+      const midY = (srcY + tgt.y) * 0.5 - Math.min(28, dist * 0.16);
+
+      ctx.strokeStyle = tgt.gold
+        ? 'rgba(250, 204, 21, 0.85)'
+        : 'rgba(52, 211, 153, 0.8)';
+      ctx.lineWidth = tgt.gold ? 2.4 : 2.0;
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -this.animClock * 26;
+      ctx.beginPath();
+      ctx.moveTo(srcX, srcY);
+      ctx.quadraticCurveTo(midX, midY, tgt.x, tgt.y);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = tgt.gold ? '#fde047' : '#34d399';
+      ctx.beginPath();
+      ctx.arc(tgt.x, tgt.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawEnemies(

@@ -48,6 +48,11 @@ export class UIManager {
       return need !== null && (save.weaponShards[wId] || 0) >= need;
     }).length;
 
+    const readySkillCount = SKILL_SPECS.filter((sp) => {
+      const lvl = save.skills[sp.id];
+      return lvl < sp.maxLevel && save.gold >= SaveManager.getSkillCost(sp.id);
+    }).length;
+
     const tabContent =
       this.hubTab === 'stages'
         ? this.renderStagesTab()
@@ -76,7 +81,9 @@ export class UIManager {
             <button class="seg-btn ${this.hubTab === 'armory' ? 'active' : ''}" data-hub-tab="armory">
               ${dict.tabArmory}${readyWeaponCount > 0 ? `<span class="nav-dot">${readyWeaponCount}</span>` : ''}
             </button>
-            <button class="seg-btn ${this.hubTab === 'skills' ? 'active' : ''}" data-hub-tab="skills">${dict.tabSkills}</button>
+            <button class="seg-btn ${this.hubTab === 'skills' ? 'active' : ''}" data-hub-tab="skills">
+              ${dict.tabSkills}${readySkillCount > 0 ? `<span class="nav-dot">${readySkillCount}</span>` : ''}
+            </button>
             <button class="seg-btn ${this.hubTab === 'codex' ? 'active' : ''}" data-hub-tab="codex">${dict.tabCodex}</button>
           </div>
 
@@ -393,7 +400,7 @@ export class UIManager {
               <span class="mini-half">2/2</span>
             </div>
             <span class="eq-arrow">➔</span>
-            <div class="mini-war-tile awakened-tile" style="width:68px">
+            <div class="mini-war-tile awakened-tile">
               <img src="./assets/${heroDef.spriteKey}.png" alt="" />
               <span class="mini-crest gold">${heroDef.crestSymbol}</span>
               <span class="mini-half">2×1</span>
@@ -480,6 +487,7 @@ export class UIManager {
       <div class="hud-top">
         <div class="hud-left">
           <button class="hud-pause-btn" id="btn-pause" title="Pause (Esc)">❚❚</button>
+          <button class="hud-speed-btn ${this.engine.gameSpeed === 2 ? 'fast' : ''}" id="btn-speed" title="1x / 2x Speed (F)">${this.engine.gameSpeed}x</button>
           <div class="ink-brush-pill">
             <img src="./assets/icon_rice.png" alt="" class="rice-icon" />
             <span id="hud-rations">28</span>
@@ -561,6 +569,10 @@ export class UIManager {
     this.hudRoot = hud;
 
     (hud.querySelector('#btn-pause') as HTMLButtonElement).onclick = () => this.togglePauseModal();
+    (hud.querySelector('#btn-speed') as HTMLButtonElement).onclick = () => {
+      this.engine.toggleGameSpeed();
+      this.syncHUD();
+    };
     (hud.querySelector('#btn-ult') as HTMLButtonElement).onclick = () => {
       this.engine.activateDivineTalisman();
       this.syncHUD();
@@ -751,13 +763,24 @@ export class UIManager {
           : `${ultPct}%`;
     });
 
+    // Battle Speed Toggle (1x / 2x)
+    setIf('spd', `${this.engine.gameSpeed}`, () => {
+      const spdBtn = this.hudRoot!.querySelector('#btn-speed') as HTMLButtonElement;
+      spdBtn.textContent = `${this.engine.gameSpeed}x`;
+      spdBtn.classList.toggle('fast', this.engine.gameSpeed === 2);
+    });
+
     // Conscript Button (always replaces all 5 bench slots with a fresh batch of 5!)
-    const recKey = `${s.recruitCost}:${s.rations >= s.recruitCost ? 1 : 0}`;
+    const confirmActive = s.confirmOverwriteTimer > 0;
+    const recKey = `${s.recruitCost}:${s.rations >= s.recruitCost ? 1 : 0}:${confirmActive ? 1 : 0}`;
     setIf('rec', recKey, () => {
       const btn = this.hudRoot!.querySelector('#btn-recruit') as HTMLButtonElement;
-      (this.hudRoot!.querySelector('#hud-rec-label') as HTMLElement).textContent = dict.btnRecruit;
+      (this.hudRoot!.querySelector('#hud-rec-label') as HTMLElement).textContent = confirmActive
+        ? dict.btnConfirmOverwrite
+        : dict.btnRecruit;
       (this.hudRoot!.querySelector('#hud-rec-cost') as HTMLElement).textContent = `${s.recruitCost}`;
       btn.classList.toggle('affordable', s.rations >= s.recruitCost);
+      btn.classList.toggle('confirm-warn', confirmActive);
     });
 
     // Partner Shard / Supply Boost Button
@@ -1139,7 +1162,10 @@ export class UIManager {
                   ? `<button class="btn-guofeng btn-cinnabar" id="btn-mult-claim">🎬 x3 (+${baseGold * 2}G) · ${dict.btnMultClaim}</button>`
                   : ''
               }
-              <button class="btn-guofeng btn-gilt" id="btn-normal-claim">${dict.btnNormalClaim}</button>
+              <div class="settle-dual-btns">
+                <button class="btn-guofeng btn-jade" id="btn-retry-stage">↻ ${dict.btnRetryStage}</button>
+                <button class="btn-guofeng btn-gilt" id="btn-normal-claim">${dict.btnNormalClaim}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1189,6 +1215,16 @@ export class UIManager {
             multBtn.disabled = false;
             startNeedleLoop();
           }
+        };
+      }
+
+      const retryBtn = this.modalRoot.querySelector('#btn-retry-stage') as HTMLButtonElement | null;
+      if (retryBtn) {
+        retryBtn.onclick = () => {
+          cancelAnimationFrame(this.needleAnimId);
+          const st = STAGES.find((item) => item.id === sum.stageId) || STAGES[0];
+          SoundFX.recruit();
+          this.startStageRun(st, sum.mode);
         };
       }
 
