@@ -335,7 +335,7 @@ export class UIManager {
           <div class="upg-left">
             <div class="upg-icon-box" style="border-color:${spec.badgeColor}">
               <img src="./assets/${spec.spriteKey}.png" alt="" />
-              <span class="skill-corner-seal" style="background:${spec.badgeColor}">${spec.badgeSymbol}</span>
+              <span class="skill-corner-seal" style="background:${spec.badgeColor}">${skTxt.shortTag}</span>
             </div>
             <div>
               <div class="upg-title">${skTxt.name} <small>Lv.${lvl}/${spec.maxLevel}</small></div>
@@ -390,19 +390,19 @@ export class UIManager {
           <div class="fusion-equation">
             <div class="mini-war-tile part-tile" style="border-color:${s1Def.accentColor}">
               <img src="./assets/${s1Def.spriteKey}.png" alt="" />
-              <span class="mini-crest" style="background:${s1Def.frameColor}">${s1Def.crestSymbol}</span>
+              <span class="mini-crest" style="background:${s1Def.frameColor}"><img src="./assets/crest_${hKey}.png" alt="" /></span>
               <span class="mini-half">1/2</span>
             </div>
             <span class="eq-op">+</span>
             <div class="mini-war-tile part-tile" style="border-color:${s2Def.accentColor}">
               <img src="./assets/${s2Def.spriteKey}.png" alt="" />
-              <span class="mini-crest" style="background:${s2Def.frameColor}">${s2Def.crestSymbol}</span>
+              <span class="mini-crest" style="background:${s2Def.frameColor}"><img src="./assets/crest_${hKey}.png" alt="" /></span>
               <span class="mini-half">2/2</span>
             </div>
             <span class="eq-arrow">➔</span>
             <div class="mini-war-tile awakened-tile">
               <img src="./assets/${heroDef.spriteKey}.png" alt="" />
-              <span class="mini-crest gold">${heroDef.crestSymbol}</span>
+              <span class="mini-crest gold"><img src="./assets/crest_${hKey}.png" alt="" /></span>
               <span class="mini-half">2×1</span>
               ${eqWeap ? `<img class="mini-eq-weap" src="./assets/${eqWeap}.png" alt="" />` : ''}
             </div>
@@ -441,12 +441,17 @@ export class UIManager {
       'mystic',
       'dragon_guard',
     ];
-    const synSymbols = { vanguard: '◈', marksman: '✦', mystic: '☯', dragon_guard: '❖' };
+    const synIcons = {
+      vanguard: 'syn_vanguard',
+      marksman: 'syn_marksman',
+      mystic: 'syn_mystic',
+      dragon_guard: 'crest_zhaoyun',
+    };
     const synHtml = synKeys
       .map(
         (k) => `
         <div class="syn-card">
-          <strong>${synSymbols[k]} ${dict.synergyNames[k]}</strong>
+          <strong><img class="syn-icon-mini" src="./assets/${synIcons[k]}.png" alt="" /> ${dict.synergyNames[k]}</strong>
           <span>${dict.synergyDescs[k]}</span>
         </div>
       `
@@ -699,12 +704,17 @@ export class UIManager {
         })
         .join('');
 
-      const symbols = { vanguard: '◈', marksman: '✦', mystic: '☯', dragon_guard: '❖' };
+      const synIcons = {
+        vanguard: 'syn_vanguard',
+        marksman: 'syn_marksman',
+        mystic: 'syn_mystic',
+        dragon_guard: 'crest_zhaoyun',
+      };
       const synBadges = s.synergies
         .filter((x) => x.tier > 0)
         .map(
           (x) =>
-            `<span class="syn-chip tier-${x.tier}" title="${dict.synergyNames[x.id]}: ${dict.synergyDescs[x.id]}">${symbols[x.id]}${x.count}</span>`
+            `<span class="syn-chip tier-${x.tier}" title="${dict.synergyNames[x.id]}: ${dict.synergyDescs[x.id]}"><img class="syn-icon-hud" src="./assets/${synIcons[x.id]}.png" alt="" />${x.count}</span>`
         )
         .join('');
 
@@ -1101,7 +1111,7 @@ export class UIManager {
         return `
           <div class="settle-skill-item">
             <div class="ss-left">
-              <span class="ss-badge" style="background:${sp.badgeColor}">${sp.badgeSymbol}</span>
+              <img class="ss-badge-img" src="./assets/${sp.spriteKey}.png" alt="" style="border-color:${sp.badgeColor}" />
               <div>
                 <div class="ss-name">${skTxt.name} <small>Lv.${lvl}/${sp.maxLevel}</small></div>
                 <div class="ss-val">${skTxt.val(lvl)}</div>

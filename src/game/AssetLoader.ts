@@ -61,7 +61,41 @@ export type SpriteKey =
   | 'enemy_wolf'
   | 'enemy_shield'
   | 'enemy_zhangjiao'
-  | 'enemy_lubu';
+  | 'enemy_lubu'
+  | 'hub_scroll_bg'
+  | 'vfx_arrow'
+  | 'vfx_phoenix_arrow'
+  | 'vfx_sun_arrow'
+  | 'vfx_spear_lance'
+  | 'vfx_boomerang_lance'
+  | 'vfx_glaive_wave'
+  | 'vfx_dragon_wave'
+  | 'vfx_mortar_shell'
+  | 'vfx_fireball'
+  | 'vfx_frost_lotus'
+  | 'vfx_chakram'
+  | 'vfx_heavy_chop'
+  | 'vfx_slash_cyan'
+  | 'vfx_slash_crimson'
+  | 'vfx_lance_beam'
+  | 'vfx_lightning_arc'
+  | 'vfx_explosion'
+  | 'vfx_shockwave_gold'
+  | 'vfx_shockwave_crimson'
+  | 'vfx_heal_ring'
+  | 'vfx_awaken_pillar'
+  | 'vfx_zone_thunder'
+  | 'vfx_zone_frost'
+  | 'vfx_zone_fire'
+  | 'prop_barricade'
+  | 'icon_heart'
+  | 'icon_spawn_arrow'
+  | 'status_stun'
+  | 'status_armor_break'
+  | 'status_freeze'
+  | 'syn_vanguard'
+  | 'syn_marksman'
+  | 'syn_mystic';
 
 const SPRITE_PATHS: Record<SpriteKey, string> = {
   unit_blade: './assets/unit_blade.png',
@@ -141,6 +175,44 @@ const SPRITE_PATHS: Record<SpriteKey, string> = {
   enemy_shield: './assets/enemy_shield.png',
   enemy_zhangjiao: './assets/enemy_zhangjiao.png',
   enemy_lubu: './assets/enemy_lubu.png',
+
+  hub_scroll_bg: './assets/hub_scroll_bg.jpg',
+
+  vfx_arrow: './assets/vfx_arrow.png',
+  vfx_phoenix_arrow: './assets/vfx_phoenix_arrow.png',
+  vfx_sun_arrow: './assets/vfx_sun_arrow.png',
+  vfx_spear_lance: './assets/vfx_spear_lance.png',
+  vfx_boomerang_lance: './assets/vfx_boomerang_lance.png',
+  vfx_glaive_wave: './assets/vfx_glaive_wave.png',
+  vfx_dragon_wave: './assets/vfx_dragon_wave.png',
+  vfx_mortar_shell: './assets/vfx_mortar_shell.png',
+  vfx_fireball: './assets/vfx_fireball.png',
+  vfx_frost_lotus: './assets/vfx_frost_lotus.png',
+  vfx_chakram: './assets/vfx_chakram.png',
+  vfx_heavy_chop: './assets/vfx_heavy_chop.png',
+
+  vfx_slash_cyan: './assets/vfx_slash_cyan.png',
+  vfx_slash_crimson: './assets/vfx_slash_crimson.png',
+  vfx_lance_beam: './assets/vfx_lance_beam.png',
+  vfx_lightning_arc: './assets/vfx_lightning_arc.png',
+  vfx_explosion: './assets/vfx_explosion.png',
+  vfx_shockwave_gold: './assets/vfx_shockwave_gold.png',
+  vfx_shockwave_crimson: './assets/vfx_shockwave_crimson.png',
+  vfx_heal_ring: './assets/vfx_heal_ring.png',
+  vfx_awaken_pillar: './assets/vfx_awaken_pillar.png',
+  vfx_zone_thunder: './assets/vfx_zone_thunder.png',
+  vfx_zone_frost: './assets/vfx_zone_frost.png',
+  vfx_zone_fire: './assets/vfx_zone_fire.png',
+
+  prop_barricade: './assets/prop_barricade.png',
+  icon_heart: './assets/icon_heart.png',
+  icon_spawn_arrow: './assets/icon_spawn_arrow.png',
+  status_stun: './assets/status_stun.png',
+  status_armor_break: './assets/status_armor_break.png',
+  status_freeze: './assets/status_freeze.png',
+  syn_vanguard: './assets/syn_vanguard.png',
+  syn_marksman: './assets/syn_marksman.png',
+  syn_mystic: './assets/syn_mystic.png',
 };
 
 class AssetRegistry {

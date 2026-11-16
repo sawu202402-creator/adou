@@ -249,17 +249,16 @@ export class BoardRenderer {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, viewW, viewH);
 
-    ctx.save();
-    ctx.fillStyle = 'rgba(42, 48, 44, 0.16)';
-    ctx.beginPath();
-    ctx.moveTo(0, 68);
-    ctx.quadraticCurveTo(viewW * 0.2, 22, viewW * 0.42, 52);
-    ctx.quadraticCurveTo(viewW * 0.68, 14, viewW, 56);
-    ctx.lineTo(viewW, 85);
-    ctx.lineTo(0, 85);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    const bgArt = Assets.get('hub_scroll_bg');
+    if (bgArt) {
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      const scale = Math.max(viewW / bgArt.width, viewH / bgArt.height);
+      const dw = bgArt.width * scale;
+      const dh = bgArt.height * scale;
+      ctx.drawImage(bgArt, (viewW - dw) * 0.5, (viewH - dh) * 0.5, dw, dh);
+      ctx.restore();
+    }
   }
 
   // ==================== 2. 8x10 SPLIT BOARD CELLS ====================
@@ -454,84 +453,37 @@ export class BoardRenderer {
       const px = L.boardX + z.x * cs;
       const py = L.boardY + z.y * cs;
       const radPx = z.radius * cs;
-      const fade = Math.min(1, z.timer / 0.45);
+      const fadeIn = Math.min(1, z.timer / 0.28);
+      const fadeOut = Math.min(1, Math.max(0, (z.duration - z.timer) / 0.35));
+      const fade = fadeIn * fadeOut;
 
       ctx.save();
-      ctx.globalAlpha = 0.85 * fade;
+      ctx.translate(px, py);
+      ctx.globalAlpha = 0.9 * fade;
 
       if (z.kind === 'thunder_sigil') {
-        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx);
-        g.addColorStop(0, 'rgba(250, 204, 21, 0.28)');
-        g.addColorStop(0.65, 'rgba(99, 102, 241, 0.2)');
-        g.addColorStop(1, 'rgba(99, 102, 241, 0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(px, py, radPx, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Rotating Eight-Trigrams Octagon
-        ctx.translate(px, py);
-        ctx.rotate(this.animClock * 1.3);
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        for (let i = 0; i < 8; i++) {
-          const a = (i * Math.PI) / 4;
-          const ox = Math.cos(a) * radPx * 0.78;
-          const oy = Math.sin(a) * radPx * 0.78;
-          if (i === 0) ctx.moveTo(ox, oy);
-          else ctx.lineTo(ox, oy);
+        const sp = Assets.get('vfx_zone_thunder');
+        const sz = radPx * 2.15;
+        ctx.rotate(this.animClock * 1.15);
+        if (sp) {
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
         }
-        ctx.closePath();
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(165, 180, 252, 0.75)';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(0, 0, radPx * 0.44, 0, Math.PI * 2);
-        ctx.stroke();
       } else if (z.kind === 'frost_zone') {
-        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx);
-        g.addColorStop(0, 'rgba(186, 230, 253, 0.36)');
-        g.addColorStop(0.68, 'rgba(56, 189, 248, 0.22)');
-        g.addColorStop(1, 'rgba(14, 165, 233, 0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(px, py, radPx, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.translate(px, py);
-        ctx.rotate(-this.animClock * 1.1);
-        ctx.strokeStyle = 'rgba(186, 230, 253, 0.82)';
-        ctx.lineWidth = 1.5;
-        for (let i = 0; i < 6; i++) {
-          const a = (i * Math.PI) / 3;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.cos(a) * radPx * 0.72, Math.sin(a) * radPx * 0.72);
-          ctx.stroke();
+        const sp = Assets.get('vfx_zone_frost');
+        const sz = radPx * 2.18;
+        ctx.rotate(-this.animClock * 1.25);
+        if (sp) {
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
         }
-        ctx.beginPath();
-        ctx.arc(0, 0, radPx * 0.82, 0, Math.PI * 2);
-        ctx.stroke();
       } else {
         // 'fire_patch'
-        const pulse = 0.88 + 0.12 * Math.sin(this.animClock * 10);
-        const g = ctx.createRadialGradient(px, py, 2, px, py, radPx * pulse);
-        g.addColorStop(0, 'rgba(254, 240, 138, 0.38)');
-        g.addColorStop(0.55, 'rgba(249, 115, 22, 0.28)');
-        g.addColorStop(1, 'rgba(220, 38, 38, 0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(px, py, radPx * pulse, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = 'rgba(251, 146, 60, 0.72)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([5, 4]);
-        ctx.beginPath();
-        ctx.arc(px, py, radPx * 0.78, 0, Math.PI * 2);
-        ctx.stroke();
+        const sp = Assets.get('vfx_zone_fire');
+        const pulse = 0.94 + 0.09 * Math.sin(this.animClock * 9.5 + z.x);
+        const sz = radPx * 2.18 * pulse;
+        ctx.rotate(Math.sin(this.animClock * 1.6 + z.y) * 0.14);
+        if (sp) {
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       }
 
       ctx.restore();
@@ -869,7 +821,7 @@ export class BoardRenderer {
     ctx: CanvasRenderingContext2D,
     engine: GameEngine,
     lane: DuelLane,
-    color: string
+    _color: string
   ): void {
     if (lane.waypoints.length < 2) return;
     const L = engine.layout;
@@ -880,21 +832,17 @@ export class BoardRenderer {
     const cy = L.boardY + (w0.row + 0.5) * cs;
     const ang = Math.atan2(w1.row - w0.row, w1.col - w0.col);
 
-    const pulse = 0.45 + 0.25 * Math.sin(this.animClock * 4.2);
+    const pulse = 0.62 + 0.3 * Math.sin(this.animClock * 4.2);
+    const nudge = Math.sin(this.animClock * 4.2) * cs * 0.06;
+    const arrowImg = Assets.get('icon_spawn_arrow');
+    if (!arrowImg) return;
+
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(ang);
     ctx.globalAlpha = pulse;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(2.5, cs * 0.08);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const r = cs * 0.22;
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.7, -r);
-    ctx.lineTo(r * 0.5, 0);
-    ctx.lineTo(-r * 0.7, r);
-    ctx.stroke();
+    const sz = cs * 0.64;
+    ctx.drawImage(arrowImg, -sz * 0.5 + nudge, -sz * 0.5, sz, sz);
     ctx.restore();
   }
 
@@ -913,18 +861,15 @@ export class BoardRenderer {
     const vy = L.boardY + lane.vipCell.row * cs;
 
     ctx.save();
-    const glow = ctx.createRadialGradient(
-      vx + cs * 0.5,
-      vy + cs * 0.5,
-      2,
-      vx + cs * 0.5,
-      vy + cs * 0.5,
-      cs * 0.48
-    );
-    glow.addColorStop(0, 'rgba(212, 175, 55, 0.35)');
-    glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(vx, vy, cs, cs);
+    const auraImg = Assets.get('vfx_shockwave_gold');
+    if (auraImg) {
+      ctx.save();
+      ctx.globalAlpha = 0.42 + 0.14 * Math.sin(this.animClock * 3.0);
+      ctx.translate(vx + cs * 0.5, vy + cs * 0.52);
+      ctx.rotate(this.animClock * 0.55);
+      ctx.drawImage(auraImg, -cs * 0.48, -cs * 0.48, cs * 0.96, cs * 0.96);
+      ctx.restore();
+    }
 
     const vipImg = Assets.get('vip_lord');
     if (vipImg) {
@@ -932,35 +877,22 @@ export class BoardRenderer {
       ctx.drawImage(vipImg, vx + cs * 0.06, vy + cs * 0.06 + bob, cs * 0.88, cs * 0.88);
     }
 
-    const heartAnchorY = side === 'ai' ? vy - cs * 0.32 : vy - cs * 0.28;
+    const heartImg = Assets.get('icon_heart');
+    const heartAnchorY = side === 'ai' ? vy - cs * 0.34 : vy - cs * 0.3;
     const colsPerRow = 4;
-    const hSize = Math.max(6, cs * 0.16);
-    const startX = vx + (cs - colsPerRow * (hSize + 2)) * 0.5;
+    const hSize = Math.max(8, cs * 0.22);
+    const startX = vx + (cs - colsPerRow * (hSize + 1)) * 0.5;
     const shownHearts = Math.min(12, hearts);
 
-    for (let i = 0; i < shownHearts; i++) {
-      const hc = i % colsPerRow;
-      const hr = Math.floor(i / colsPerRow);
-      const hx = startX + hc * (hSize + 2) + hSize * 0.5;
-      const hy = heartAnchorY - hr * (hSize + 1.5);
-      this.drawTinyHeart(ctx, hx, hy, hSize * 0.52);
+    if (heartImg) {
+      for (let i = 0; i < shownHearts; i++) {
+        const hc = i % colsPerRow;
+        const hr = Math.floor(i / colsPerRow);
+        const hx = startX + hc * (hSize + 1);
+        const hy = heartAnchorY - hr * (hSize * 0.92);
+        ctx.drawImage(heartImg, hx, hy - hSize * 0.5, hSize, hSize);
+      }
     }
-    ctx.restore();
-  }
-
-  private drawTinyHeart(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.beginPath();
-    ctx.moveTo(0, r * 0.85);
-    ctx.bezierCurveTo(-r * 1.3, r * 0.1, -r * 1.2, -r * 0.95, 0, -r * 0.35);
-    ctx.bezierCurveTo(r * 1.2, -r * 0.95, r * 1.3, r * 0.1, 0, r * 0.85);
-    ctx.closePath();
-    ctx.fillStyle = '#ef4444';
-    ctx.fill();
-    ctx.strokeStyle = '#450a0a';
-    ctx.lineWidth = 1;
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -972,45 +904,28 @@ export class BoardRenderer {
     if (bar.hp <= 0) return;
     const L = engine.layout;
     const cs = L.cellSize;
-    const shake = bar.shakeTimer > 0 ? (Math.random() - 0.5) * 4 : 0;
+    const shake = bar.shakeTimer > 0 ? (Math.random() - 0.5) * 4.5 : 0;
     const x = L.boardX + bar.col * cs + shake;
     const y = L.boardY + bar.row * cs;
 
     ctx.save();
-    const pad = cs * 0.08;
-    ctx.fillStyle = '#9c5a49';
-    this.roundRect(ctx, x + pad, y + pad, cs - pad * 2, cs - pad * 2, 4);
-    ctx.fill();
-    ctx.strokeStyle = '#3b1d16';
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(x + cs * 0.5, y + pad);
-    ctx.lineTo(x + cs * 0.5, y + cs - pad);
-    ctx.stroke();
-
-    ctx.fillStyle = '#f5efe0';
-    ctx.strokeStyle = '#3b1d16';
-    ctx.lineWidth = 1.1;
-    for (let i = 0; i < 3; i++) {
-      const sy = y + cs * (0.24 + i * 0.26);
-      const dir = bar.side === 'ai' ? 1 : -1;
-      const baseX = bar.side === 'ai' ? x + cs * 0.54 : x + cs * 0.46;
-      ctx.beginPath();
-      ctx.moveTo(baseX, sy - cs * 0.09);
-      ctx.lineTo(baseX + dir * cs * 0.24, sy);
-      ctx.lineTo(baseX, sy + cs * 0.09);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+    const barImg = Assets.get('prop_barricade');
+    if (barImg) {
+      ctx.save();
+      ctx.translate(x + cs * 0.5, y + cs * 0.48);
+      if (bar.side === 'player') {
+        ctx.scale(-1, 1);
+      }
+      const sz = cs * 0.94;
+      ctx.drawImage(barImg, -sz * 0.5, -sz * 0.5, sz, sz);
+      ctx.restore();
     }
 
     if (bar.hp < bar.maxHp) {
       const bw = cs * 0.78;
       const bx = x + (cs - bw) * 0.5;
-      const by = y + cs - 7;
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      const by = y + cs - 6.5;
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
       ctx.fillRect(bx, by, bw, 4);
       ctx.fillStyle = '#f59e0b';
       ctx.fillRect(bx, by, bw * (bar.hp / bar.maxHp), 4);
@@ -1227,24 +1142,27 @@ export class BoardRenderer {
       ctx.stroke();
     }
 
-    // Top-Left Non-Hanzi Pairing Crest
-    if (def.crestSymbol) {
-      const bR = Math.max(6.5, size * 0.16);
-      const bx = tx + bR + 2;
-      const by = ty + bR + 2;
-      ctx.fillStyle = isAwakened ? '#7c2d12' : def.frameColor;
+    // Top-Left Gongbi Pairing Crest Medallion (uses real crest sprite instead of Unicode font symbols!)
+    if (def.heroKey) {
+      const crestImg = Assets.get(`crest_${def.heroKey}`);
+      const bR = Math.max(7, size * 0.17);
+      const bx = tx + bR + 1.8;
+      const by = ty + bR + 1.8;
+      ctx.save();
       ctx.beginPath();
       ctx.arc(bx, by, bR, 0, Math.PI * 2);
+      ctx.fillStyle = isAwakened ? '#7c2d12' : def.frameColor;
       ctx.fill();
+      ctx.clip();
+      if (crestImg) {
+        ctx.drawImage(crestImg, bx - bR, by - bR, bR * 2, bR * 2);
+      }
+      ctx.restore();
       ctx.strokeStyle = '#fde68a';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(bx, by, bR, 0, Math.PI * 2);
       ctx.stroke();
-
-      ctx.fillStyle = '#fef3c7';
-      ctx.font = `700 ${Math.round(bR * 1.25)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(def.crestSymbol, bx, by + 0.5);
     }
 
     // Bottom Puzzle Badge on Shards: [1/2] or [2/2] (clear non-Hanzi indicator!)
@@ -1582,24 +1500,27 @@ export class BoardRenderer {
     this.roundRect(ctx, tx, ty, w, faceH, rad);
     ctx.stroke();
 
-    // Top-Left Non-Hanzi Totem Crest Badge
-    if (def.crestSymbol) {
-      const bR = Math.max(6.5, cellSize * 0.16);
-      const bx = tx + bR + 2.5;
-      const by = ty + bR + 2.5;
-      ctx.fillStyle = '#7c2d12';
+    // Top-Left Gongbi Totem Crest Medallion
+    if (def.heroKey) {
+      const crestImg = Assets.get(`crest_${def.heroKey}`);
+      const bR = Math.max(7, cellSize * 0.17);
+      const bx = tx + bR + 2.2;
+      const by = ty + bR + 2.2;
+      ctx.save();
       ctx.beginPath();
       ctx.arc(bx, by, bR, 0, Math.PI * 2);
+      ctx.fillStyle = '#7c2d12';
       ctx.fill();
+      ctx.clip();
+      if (crestImg) {
+        ctx.drawImage(crestImg, bx - bR, by - bR, bR * 2, bR * 2);
+      }
+      ctx.restore();
       ctx.strokeStyle = '#fde68a';
-      ctx.lineWidth = 1.1;
+      ctx.lineWidth = 1.15;
+      ctx.beginPath();
+      ctx.arc(bx, by, bR, 0, Math.PI * 2);
       ctx.stroke();
-
-      ctx.fillStyle = '#fef3c7';
-      ctx.font = `700 ${Math.round(bR * 1.25)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(def.crestSymbol, bx, by + 0.5);
     }
 
     // Full-Width Bottom XP Progress Bar
@@ -1866,11 +1787,23 @@ export class BoardRenderer {
 
       if (e.isBoss || e.isMiniBoss) {
         const lubuDash = e.bossType === 'lubu' && e.bossSkillTimer < 1.35;
-        ctx.strokeStyle = e.regenTimer > 0 ? '#22c55e' : lubuDash ? '#f97316' : e.isBoss ? '#dc2626' : '#eab308';
-        ctx.lineWidth = lubuDash ? 3 : 2.2;
-        ctx.beginPath();
-        ctx.ellipse(px, py + drawSz * 0.3, drawSz * 0.36, drawSz * 0.15, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        const bossAura = Assets.get(
+          e.regenTimer > 0
+            ? 'vfx_heal_ring'
+            : lubuDash || e.isBoss
+              ? 'vfx_shockwave_crimson'
+              : 'vfx_shockwave_gold'
+        );
+        if (bossAura) {
+          ctx.save();
+          ctx.translate(px, py + drawSz * 0.28);
+          ctx.scale(1, 0.45);
+          ctx.rotate(this.animClock * (lubuDash ? 3.2 : 1.4));
+          ctx.globalAlpha = 0.85;
+          const aSz = drawSz * 0.92;
+          ctx.drawImage(bossAura, -aSz * 0.5, -aSz * 0.5, aSz, aSz);
+          ctx.restore();
+        }
       }
 
       const key = `enemy_${e.kind}`;
@@ -1888,34 +1821,40 @@ export class BoardRenderer {
       }
 
       if (e.regenTimer > 0) {
-        ctx.strokeStyle = '#4ade80';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(px, py - drawSz * 0.15, drawSz * 0.38, 0, Math.PI * 2);
-        ctx.stroke();
+        const healRing = Assets.get('vfx_heal_ring');
+        if (healRing) {
+          ctx.save();
+          ctx.translate(px, py - drawSz * 0.14);
+          ctx.rotate(-this.animClock * 1.8);
+          const rSz = drawSz * 0.88;
+          ctx.drawImage(healRing, -rSz * 0.5, -rSz * 0.5, rSz, rSz);
+          ctx.restore();
+        }
       }
       if (e.brittleTimer > 0) {
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.arc(px, py - drawSz * 0.15, drawSz * 0.34, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = '#bae6fd';
-        ctx.font = '700 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('❖', px - drawSz * 0.3, py - drawSz * 0.45);
+        const frzIcon = Assets.get('status_freeze');
+        if (frzIcon) {
+          const iSz = Math.max(12, cs * 0.34);
+          ctx.drawImage(frzIcon, px - drawSz * 0.42 - iSz * 0.5, py - drawSz * 0.54 - iSz * 0.5, iSz, iSz);
+        }
       }
       if (e.armorBrokenTimer > 0) {
-        ctx.fillStyle = '#4ade80';
-        ctx.font = '700 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('▾', px + drawSz * 0.3, py - drawSz * 0.45);
+        const brkIcon = Assets.get('status_armor_break');
+        if (brkIcon) {
+          const iSz = Math.max(12, cs * 0.34);
+          ctx.drawImage(brkIcon, px + drawSz * 0.42 - iSz * 0.5, py - drawSz * 0.54 - iSz * 0.5, iSz, iSz);
+        }
       }
       if (e.stunTimer > 0) {
-        ctx.fillStyle = '#facc15';
-        ctx.font = '700 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('✦', px, py - drawSz * 0.58);
+        const stnIcon = Assets.get('status_stun');
+        if (stnIcon) {
+          const iSz = Math.max(14, cs * 0.42);
+          ctx.save();
+          ctx.translate(px, py - drawSz * 0.68);
+          ctx.rotate(this.animClock * 4.5);
+          ctx.drawImage(stnIcon, -iSz * 0.5, -iSz * 0.5, iSz, iSz);
+          ctx.restore();
+        }
       }
 
       const hpW = cs * (e.isBoss ? 1.1 : e.isMiniBoss ? 0.92 : 0.68);
@@ -1951,133 +1890,96 @@ export class BoardRenderer {
         const totalD = Math.max(0.25, Math.hypot(p.tx - p.startX, p.ty - p.startY));
         const curD = Math.hypot(p.x - p.startX, p.y - p.startY);
         const prog = Math.min(1, curD / totalD);
-        const arcLift = Math.sin(prog * Math.PI) * cs * 0.88;
+        const arcLift = Math.sin(prog * Math.PI) * cs * 0.92;
 
-        // Ground shadow
-        ctx.fillStyle = 'rgba(15, 14, 12, 0.32)';
+        // Soft ground shadow under parabolic cannonball
+        ctx.fillStyle = 'rgba(15, 14, 12, 0.28)';
         ctx.beginPath();
-        ctx.ellipse(0, 0, cs * 0.13, cs * 0.07, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, cs * 0.16, cs * 0.08, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Parabolic iron cannonball + fuse spark
-        ctx.translate(0, -arcLift);
-        ctx.fillStyle = '#1c1917';
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#f97316';
-        ctx.beginPath();
-        ctx.arc(-2.5, -2.5, cs * 0.07, 0, Math.PI * 2);
-        ctx.fill();
+        const shellImg = Assets.get('vfx_mortar_shell');
+        if (shellImg) {
+          ctx.translate(0, -arcLift);
+          ctx.rotate(this.animClock * 7.5);
+          const sz = cs * 0.72;
+          ctx.drawImage(shellImg, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (p.kind === 'boomerang_lance') {
-        // Zhao Yun's Spinning Silver Dragon Boomerang Spear!
-        ctx.rotate(this.animClock * 18);
-        ctx.strokeStyle = '#e0f2fe';
-        ctx.lineWidth = Math.max(2.5, cs * 0.08);
-        ctx.beginPath();
-        ctx.moveTo(-cs * 0.38, 0);
-        ctx.lineTo(cs * 0.38, 0);
-        ctx.stroke();
-
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(2, cs * 0.06);
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.32, 0, Math.PI * 2);
-        ctx.stroke();
+        const sp = Assets.get('vfx_boomerang_lance');
+        if (sp) {
+          ctx.rotate(this.animClock * 16);
+          const sz = cs * 0.98;
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (p.kind === 'lance') {
-        // Spear Piercing Lance: long crimson-gold shaft + silver tip
-        ctx.rotate(ang);
-        ctx.strokeStyle = '#991b1b';
-        ctx.lineWidth = Math.max(2.4, cs * 0.075);
-        ctx.beginPath();
-        ctx.moveTo(-cs * 0.36, 0);
-        ctx.lineTo(cs * 0.22, 0);
-        ctx.stroke();
-
-        ctx.fillStyle = '#fef08a';
-        ctx.beginPath();
-        ctx.moveTo(cs * 0.38, 0);
-        ctx.lineTo(cs * 0.14, -cs * 0.09);
-        ctx.lineTo(cs * 0.14, cs * 0.09);
-        ctx.closePath();
-        ctx.fill();
+        const sp = Assets.get('vfx_spear_lance');
+        if (sp) {
+          ctx.rotate(ang);
+          const w = cs * 0.98;
+          const h = cs * 0.65;
+          ctx.drawImage(sp, -w * 0.5, -h * 0.5, w, h);
+        }
       } else if (p.kind === 'glaive') {
-        // Guan Yu Wide Emerald Crescent Wave
-        ctx.rotate(ang);
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = cs * 0.17;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.48, -0.95, 0.95);
-        ctx.stroke();
-        ctx.strokeStyle = '#fef08a';
-        ctx.lineWidth = cs * 0.06;
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.5, -0.8, 0.8);
-        ctx.stroke();
+        const sp = Assets.get('vfx_glaive_wave');
+        if (sp) {
+          ctx.rotate(ang);
+          const sz = cs * 1.32;
+          ctx.drawImage(sp, -sz * 0.42, -sz * 0.5, sz, sz);
+        }
       } else if (p.kind === 'sun_arrow') {
-        // Huang Zhong's Blazing Ten-Stone Sunfall Arrow!
-        ctx.rotate(ang);
-        ctx.strokeStyle = '#fde047';
-        ctx.lineWidth = Math.max(2.6, cs * 0.08);
-        ctx.beginPath();
-        ctx.moveTo(-cs * 0.42, 0);
-        ctx.lineTo(cs * 0.34, 0);
-        ctx.stroke();
-
-        ctx.fillStyle = '#facc15';
-        ctx.beginPath();
-        ctx.arc(cs * 0.14, 0, cs * 0.12, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#fffbeb';
-        ctx.beginPath();
-        ctx.moveTo(cs * 0.44, 0);
-        ctx.lineTo(cs * 0.18, -cs * 0.11);
-        ctx.lineTo(cs * 0.18, cs * 0.11);
-        ctx.closePath();
-        ctx.fill();
+        const sp = Assets.get('vfx_sun_arrow');
+        if (sp) {
+          ctx.rotate(ang);
+          const w = cs * 1.15;
+          const h = cs * 0.76;
+          ctx.drawImage(sp, -w * 0.52, -h * 0.5, w, h);
+        }
       } else if (p.kind === 'fireball') {
-        // Zhou Yu's Red Cliffs Crimson Fireball
-        const fg = ctx.createRadialGradient(0, 0, 1, 0, 0, cs * 0.24);
-        fg.addColorStop(0, '#fef08a');
-        fg.addColorStop(0.55, '#f97316');
-        fg.addColorStop(1, 'rgba(220, 38, 38, 0)');
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.24, 0, Math.PI * 2);
-        ctx.fill();
+        const sp = Assets.get('vfx_fireball');
+        if (sp) {
+          ctx.rotate(this.animClock * 9);
+          const sz = cs * 0.78;
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
+      } else if (p.kind === 'lotus') {
+        const sp = Assets.get('vfx_frost_lotus');
+        if (sp) {
+          ctx.rotate(this.animClock * 4.5);
+          const sz = cs * 0.78;
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (p.kind === 'chakram') {
-        // Diao Chan's Spinning Moonlit Rose Chakram Ring
-        ctx.rotate(this.animClock * 16);
-        ctx.strokeStyle = '#fbcfe8';
-        ctx.lineWidth = Math.max(2.4, cs * 0.075);
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.22, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = '#ec4899';
-        ctx.lineWidth = Math.max(1.5, cs * 0.045);
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.15, -0.6, 2.2);
-        ctx.stroke();
+        const sp = Assets.get('vfx_chakram');
+        if (sp) {
+          ctx.rotate(this.animClock * 18);
+          const sz = cs * 0.76;
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (p.kind === 'dragon') {
-        ctx.rotate(ang);
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = cs * 0.14;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(0, 0, cs * 0.36, -0.85, 0.85);
-        ctx.stroke();
+        const sp = Assets.get('vfx_dragon_wave');
+        if (sp) {
+          ctx.rotate(ang);
+          const sz = cs * 1.05;
+          ctx.drawImage(sp, -sz * 0.42, -sz * 0.5, sz, sz);
+        }
+      } else if (p.kind === 'phoenix') {
+        const sp = Assets.get('vfx_phoenix_arrow');
+        if (sp) {
+          ctx.rotate(ang);
+          const w = cs * 0.92;
+          const h = cs * 0.78;
+          ctx.drawImage(sp, -w * 0.5, -h * 0.5, w, h);
+        }
       } else {
-        ctx.rotate(ang);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.moveTo(cs * 0.22, 0);
-        ctx.lineTo(-cs * 0.16, -cs * 0.06);
-        ctx.lineTo(-cs * 0.16, cs * 0.06);
-        ctx.closePath();
-        ctx.fill();
+        // 'arrow'
+        const sp = Assets.get('vfx_arrow');
+        if (sp) {
+          ctx.rotate(ang);
+          const w = cs * 0.82;
+          const h = cs * 0.58;
+          ctx.drawImage(sp, -w * 0.5, -h * 0.5, w, h);
+        }
       }
       ctx.restore();
     }
@@ -2093,7 +1995,7 @@ export class BoardRenderer {
 
     for (const fx of effects) {
       const tNorm = Math.min(1, fx.timer / fx.duration);
-      const alpha = 1 - tNorm;
+      const alpha = Math.max(0, 1 - Math.pow(tNorm, 1.35));
       const px = L.boardX + fx.x * cs;
       const py = L.boardY + fx.y * cs;
 
@@ -2101,101 +2003,143 @@ export class BoardRenderer {
       ctx.globalAlpha = alpha;
 
       if (fx.kind === 'chest_drop') {
+        const ring = Assets.get('vfx_shockwave_gold');
         const chest = Assets.get('icon_chest');
-        const sz = cs * 1.15;
-        const lift = tNorm * cs * 0.8;
+        const sz = cs * 1.12;
+        const lift = tNorm * cs * 0.78;
+        if (ring) {
+          const rSz = cs * (1.1 + tNorm * 0.75);
+          ctx.drawImage(ring, px - rSz * 0.5, py - rSz * 0.5 - lift * 0.5, rSz, rSz);
+        }
         if (chest) {
           ctx.drawImage(chest, px - sz * 0.5, py - sz * 0.5 - lift, sz, sz);
         }
       } else if (fx.kind === 'heavy_chop') {
-        // Single-Target Heavy Blade Guillotine Strike!
-        ctx.translate(px, py);
-        ctx.rotate(fx.angle || 0);
-        const r = fx.radius * cs * (0.65 + tNorm * 0.35);
-        ctx.strokeStyle = fx.color;
-        ctx.lineWidth = Math.max(3.5, cs * 0.13 * (1 - tNorm * 0.4));
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(-r, -r * 0.65);
-        ctx.lineTo(r, r * 0.65);
-        ctx.stroke();
-
-        ctx.strokeStyle = '#fef08a';
-        ctx.lineWidth = Math.max(2, cs * 0.06 * (1 - tNorm * 0.4));
-        ctx.beginPath();
-        ctx.moveTo(-r * 0.7, r * 0.55);
-        ctx.lineTo(r * 0.7, -r * 0.55);
-        ctx.stroke();
+        const sp = Assets.get('vfx_heavy_chop');
+        if (sp) {
+          ctx.translate(px, py);
+          ctx.rotate(fx.angle || 0);
+          const sz = fx.radius * cs * 2.15 * (0.72 + tNorm * 0.34);
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (fx.kind === 'lance_beam' && fx.endX !== undefined && fx.endY !== undefined) {
-        // Straight Piercing Spear Beam Trail
-        const ex = L.boardX + fx.endX * cs;
-        const ey = L.boardY + fx.endY * cs;
-        ctx.strokeStyle = fx.color;
-        ctx.lineWidth = Math.max(2.6, cs * 0.09 * (1 - tNorm * 0.5));
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-      } else if (fx.kind === 'slash') {
-        ctx.translate(px, py);
-        ctx.rotate(fx.angle || 0);
-        ctx.strokeStyle = fx.color;
-        ctx.lineWidth = Math.max(3, cs * 0.11 * (1 - tNorm * 0.5));
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(0, 0, fx.radius * cs * (0.65 + tNorm * 0.35), -0.95, 0.95);
-        ctx.stroke();
-      } else if (fx.kind === 'ring' || fx.kind === 'heal_ring' || fx.kind === 'merge_burst') {
-        ctx.strokeStyle = fx.color;
-        ctx.lineWidth = fx.kind === 'merge_burst' ? 3.5 : 2.4;
-        ctx.beginPath();
-        ctx.arc(px, py, fx.radius * cs * (0.25 + tNorm * 0.75), 0, Math.PI * 2);
-        ctx.stroke();
+        const sp = Assets.get('vfx_lance_beam');
+        if (sp) {
+          const ex = L.boardX + fx.endX * cs;
+          const ey = L.boardY + fx.endY * cs;
+          const len = Math.max(8, Math.hypot(ex - px, ey - py));
+          const ang = Math.atan2(ey - py, ex - px);
+          const thickness = cs * (0.76 - tNorm * 0.22);
+          ctx.translate(px, py);
+          ctx.rotate(ang);
+          ctx.drawImage(sp, 0, -thickness * 0.5, len, thickness);
+        }
+      } else if (
+        fx.kind === 'slash' ||
+        fx.kind === 'slash_cyan' ||
+        fx.kind === 'slash_crimson' ||
+        fx.kind === 'slash_jade'
+      ) {
+        const key =
+          fx.kind === 'slash_crimson'
+            ? 'vfx_slash_crimson'
+            : fx.kind === 'slash_jade'
+              ? 'vfx_glaive_wave'
+              : 'vfx_slash_cyan';
+        const sp = Assets.get(key);
+        if (sp) {
+          ctx.translate(px, py);
+          ctx.rotate(fx.angle || 0);
+          const sz = fx.radius * cs * 1.95 * (0.72 + tNorm * 0.34);
+          ctx.drawImage(sp, -sz * 0.44, -sz * 0.5, sz, sz);
+        }
+      } else if (
+        fx.kind === 'ring' ||
+        fx.kind === 'shockwave_gold' ||
+        fx.kind === 'shockwave_crimson' ||
+        fx.kind === 'heal_ring' ||
+        fx.kind === 'merge_burst'
+      ) {
+        const key =
+          fx.kind === 'heal_ring'
+            ? 'vfx_heal_ring'
+            : fx.kind === 'shockwave_crimson' || fx.color === '#dc2626' || fx.color === '#e11d48'
+              ? 'vfx_shockwave_crimson'
+              : 'vfx_shockwave_gold';
+        const sp = Assets.get(key);
+        if (sp) {
+          const sz = fx.radius * cs * 2.05 * (0.38 + tNorm * 0.66);
+          ctx.translate(px, py);
+          ctx.rotate(tNorm * 0.55);
+          ctx.drawImage(sp, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
       } else if (fx.kind === 'awaken_pillar') {
-        const radPx = fx.radius * cs * (0.3 + tNorm * 0.7);
-        const pGrad = ctx.createLinearGradient(px, py - cs * 2.2, px, py + cs * 0.4);
-        pGrad.addColorStop(0, 'rgba(250, 204, 21, 0)');
-        pGrad.addColorStop(0.5, 'rgba(250, 204, 21, 0.65)');
-        pGrad.addColorStop(1, fx.color);
-        ctx.fillStyle = pGrad;
-        ctx.fillRect(px - cs * 0.38, py - cs * 2.2, cs * 0.76, cs * 2.5);
-
-        ctx.strokeStyle = '#fef08a';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(px, py, radPx, 0, Math.PI * 2);
-        ctx.stroke();
+        const pillar = Assets.get('vfx_awaken_pillar');
+        const ring = Assets.get('vfx_shockwave_gold');
+        const radPx = fx.radius * cs;
+        if (ring) {
+          const rSz = radPx * 1.95 * (0.4 + tNorm * 0.65);
+          ctx.drawImage(ring, px - rSz * 0.5, py - rSz * 0.5, rSz, rSz);
+        }
+        if (pillar) {
+          const pw = radPx * 1.7;
+          const ph = cs * 2.85 * (0.65 + tNorm * 0.35);
+          ctx.drawImage(pillar, px - pw * 0.5, py - ph * 0.84, pw, ph);
+        }
       } else if (fx.kind === 'explosion') {
-        const r = fx.radius * cs * (0.3 + tNorm * 0.7);
-        const g = ctx.createRadialGradient(px, py, 2, px, py, r);
-        g.addColorStop(0, '#fef08a');
-        g.addColorStop(0.5, fx.color);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(px, py, r, 0, Math.PI * 2);
-        ctx.fill();
+        const boom = Assets.get('vfx_explosion');
+        const wave = Assets.get('vfx_shockwave_crimson');
+        const r = fx.radius * cs;
+        if (wave) {
+          const wSz = r * 2.15 * (0.42 + tNorm * 0.68);
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.72;
+          ctx.drawImage(wave, px - wSz * 0.5, py - wSz * 0.5, wSz, wSz);
+          ctx.restore();
+        }
+        if (boom) {
+          const bSz = r * 2.25 * (0.48 + tNorm * 0.58);
+          ctx.translate(px, py);
+          ctx.rotate(tNorm * 0.35);
+          ctx.drawImage(boom, -bSz * 0.5, -bSz * 0.5, bSz, bSz);
+        }
       } else if (fx.kind === 'lightning' && fx.points && fx.points.length >= 2) {
-        ctx.strokeStyle = fx.color;
-        ctx.lineWidth = 2.6;
-        ctx.beginPath();
-        fx.points.forEach((pt, idx) => {
-          const lx = L.boardX + pt.x * cs;
-          const ly = L.boardY + pt.y * cs;
-          if (idx === 0) ctx.moveTo(lx, ly);
-          else ctx.lineTo(lx, ly);
-        });
-        ctx.stroke();
+        const bolt = Assets.get('vfx_lightning_arc');
+        const spark = Assets.get('vfx_shockwave_gold');
+        if (bolt) {
+          for (let k = 0; k < fx.points.length - 1; k++) {
+            const p0 = fx.points[k];
+            const p1 = fx.points[k + 1];
+            const x0 = L.boardX + p0.x * cs;
+            const y0 = L.boardY + p0.y * cs;
+            const x1 = L.boardX + p1.x * cs;
+            const y1 = L.boardY + p1.y * cs;
+            const segLen = Math.max(10, Math.hypot(x1 - x0, y1 - y0));
+            const segAng = Math.atan2(y1 - y0, x1 - x0);
+            const thick = cs * 0.72;
+            ctx.save();
+            ctx.translate(x0, y0);
+            ctx.rotate(segAng);
+            ctx.drawImage(bolt, 0, -thick * 0.5, segLen, thick);
+            ctx.restore();
+            if (spark) {
+              const sSz = cs * 0.68;
+              ctx.drawImage(spark, x1 - sSz * 0.5, y1 - sSz * 0.5, sSz, sSz);
+            }
+          }
+        }
       } else if (fx.kind === 'dragon_ult') {
         const sweepX = L.boardX + L.boardW * tNorm;
-        const g = ctx.createRadialGradient(sweepX, py, 8, sweepX, py, cs * 2.8);
-        g.addColorStop(0, '#e0f2fe');
-        g.addColorStop(0.45, fx.color);
-        g.addColorStop(1, 'rgba(56, 189, 248, 0)');
-        ctx.fillStyle = g;
-        const halfH = sStageHalfH(engine);
-        ctx.fillRect(L.boardX, L.dividerY, L.boardW, L.boardH - halfH);
+        const drg = Assets.get('vfx_dragon_wave');
+        const wave = Assets.get('vfx_shockwave_gold');
+        if (wave) {
+          const wSz = cs * 3.8;
+          ctx.drawImage(wave, sweepX - wSz * 0.5, py - wSz * 0.5, wSz, wSz);
+        }
+        if (drg) {
+          const dSz = cs * 3.4;
+          ctx.drawImage(drg, sweepX - dSz * 0.5, py - dSz * 0.5, dSz, dSz);
+        }
       }
 
       ctx.restore();
@@ -2244,10 +2188,4 @@ export class BoardRenderer {
     ctx.arcTo(x, y, x + w, y, rr);
     ctx.closePath();
   }
-}
-
-function sStageHalfH(engine: GameEngine): number {
-  const s = engine.state;
-  if (!s) return 0;
-  return s.stage.dividerRow * engine.layout.cellSize;
 }

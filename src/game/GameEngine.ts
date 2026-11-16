@@ -136,9 +136,14 @@ export interface GroundZone {
 export interface VisualEffect {
   kind:
     | 'slash'
+    | 'slash_cyan'
+    | 'slash_crimson'
+    | 'slash_jade'
     | 'heavy_chop'
     | 'lance_beam'
     | 'ring'
+    | 'shockwave_gold'
+    | 'shockwave_crimson'
     | 'explosion'
     | 'lightning'
     | 'merge_burst'
@@ -1738,17 +1743,28 @@ export class GameEngine {
       foe.armorBrokenTimer = 3.5;
       foe.stunTimer = Math.max(foe.stunTimer, 0.9);
       foe.regenTimer = 0;
-    }
-
-    if (pts.length >= 1) {
+      // Sky-downward thunderbolt + golden pillar on every smitten enemy!
+      s.effects.push({
+        kind: 'lightning',
+        x: foe.x,
+        y: Math.max(s.stage.dividerRow + 0.1, foe.y - 2.1),
+        points: [
+          { x: foe.x + (Math.random() - 0.5) * 0.35, y: Math.max(s.stage.dividerRow + 0.1, foe.y - 2.1) },
+          { x: foe.x, y: foe.y },
+        ],
+        radius: 1.0,
+        color: '#fde047',
+        timer: 0,
+        duration: 0.32,
+      });
       s.effects.push({
         kind: 'awaken_pillar',
-        x: pts[0].x,
-        y: pts[0].y,
-        radius: 1.4,
-        color: '#22c55e',
+        x: foe.x,
+        y: foe.y,
+        radius: 1.05,
+        color: '#4ade80',
         timer: 0,
-        duration: 0.55,
+        duration: 0.48,
       });
     }
   }
@@ -2301,14 +2317,23 @@ export class GameEngine {
           kind: 'heavy_chop',
           x: target.x,
           y: target.y,
-          radius: isSkill ? 0.72 : 0.52,
+          radius: isSkill ? 0.88 : 0.62,
           color: isSkill ? '#facc15' : '#dc2626',
           timer: 0,
-          duration: 0.22,
+          duration: 0.25,
           angle,
         });
         if (isSkill) {
           target.armorBrokenTimer = Math.max(target.armorBrokenTimer, 2.5);
+          s.effects.push({
+            kind: 'shockwave_gold',
+            x: target.x,
+            y: target.y,
+            radius: 0.72,
+            color: '#facc15',
+            timer: 0,
+            duration: 0.28,
+          });
         }
         this.damageEnemy(
           s,
@@ -2379,20 +2404,20 @@ export class GameEngine {
         const fxX = distToTgt > 0.01 ? ux + Math.cos(angle) * fxDist : target.x;
         const fxY = distToTgt > 0.01 ? uy + Math.sin(angle) * fxDist : target.y;
         s.effects.push({
-          kind: 'slash',
+          kind: 'slash_cyan',
           x: fxX,
           y: fxY,
-          radius: splashR * 0.88,
+          radius: splashR * 1.05,
           color: '#38bdf8',
           timer: 0,
-          duration: 0.24,
+          duration: 0.26,
           angle,
         });
         s.effects.push({
-          kind: 'ring',
+          kind: 'shockwave_gold',
           x: target.x,
           y: target.y,
-          radius: splashR * 0.75,
+          radius: splashR * 0.78,
           color: '#7dd3fc',
           timer: 0,
           duration: 0.24,
@@ -2584,10 +2609,10 @@ export class GameEngine {
         if (playSfx) SoundFX.attack('slash');
         const execThresh = hasSigWeapon ? 0.32 : 0.22;
         s.effects.push({
-          kind: 'slash',
-          x: ux,
-          y: uy,
-          radius: isSkill ? 1.95 : 1.5,
+          kind: 'slash_jade',
+          x: ux + Math.cos(angle) * 0.55,
+          y: uy + Math.sin(angle) * 0.55,
+          radius: isSkill ? 1.55 : 1.2,
           color: '#10b981',
           timer: 0,
           duration: 0.28,
@@ -2637,23 +2662,23 @@ export class GameEngine {
           unitMaxRange * (isSkill ? (hasSigWeapon ? 1.28 : 1.15) : 1.0);
         if (playSfx) SoundFX.attack(isSkill ? 'cannon' : 'slash');
         s.effects.push({
-          kind: 'ring',
+          kind: 'shockwave_crimson',
           x: ux,
           y: uy,
           radius: rad,
           color: isSkill ? '#f97316' : '#c2410c',
           timer: 0,
-          duration: 0.36,
+          duration: 0.38,
         });
         if (isSkill) {
           s.effects.push({
-            kind: 'ring',
+            kind: 'shockwave_gold',
             x: ux,
             y: uy,
-            radius: rad * 0.7,
+            radius: rad * 0.72,
             color: '#facc15',
             timer: 0,
-            duration: 0.28,
+            duration: 0.3,
           });
         }
         for (const e of s.enemies) {
@@ -2901,23 +2926,33 @@ export class GameEngine {
         if (isSkill) {
           const rad = unitMaxRange * (hasSigWeapon ? 1.25 : 1.1);
           s.effects.push({
-            kind: 'ring',
+            kind: 'shockwave_crimson',
             x: ux,
             y: uy,
             radius: rad,
             color: '#e11d48',
             timer: 0,
-            duration: 0.38,
+            duration: 0.4,
           });
           s.effects.push({
-            kind: 'slash',
+            kind: 'slash_crimson',
             x: ux,
             y: uy,
-            radius: rad * 0.95,
+            radius: rad * 0.92,
             color: '#fb7185',
             timer: 0,
-            duration: 0.32,
+            duration: 0.34,
             angle,
+          });
+          s.effects.push({
+            kind: 'slash_crimson',
+            x: ux,
+            y: uy,
+            radius: rad * 0.85,
+            color: '#facc15',
+            timer: 0,
+            duration: 0.3,
+            angle: angle + Math.PI,
           });
           for (const e of s.enemies) {
             if (e.side !== side || e.hp <= 0) continue;
@@ -2936,7 +2971,7 @@ export class GameEngine {
         } else {
           const cleaveR = def.aoeRadiusCells || 1.35;
           s.effects.push({
-            kind: 'slash',
+            kind: 'slash_crimson',
             x: target.x,
             y: target.y,
             radius: cleaveR,
