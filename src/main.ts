@@ -3,10 +3,12 @@ import { Assets } from './game/AssetLoader';
 import { GameEngine } from './game/GameEngine';
 import { BoardRenderer } from './game/Renderer';
 import { SaveManager } from './meta/SaveManager';
+import { DuelManager } from './net/DuelManager';
 import { PlatformSDK } from './platform/PlatformSDK';
 import { UIManager } from './ui/UIManager';
 
 async function bootstrap() {
+  PlatformSDK.loadingStart();
   SaveManager.load();
   await Assets.preloadAll();
 
@@ -40,15 +42,49 @@ async function bootstrap() {
 
   ui = new UIManager(uiLayer, engine);
 
+  DuelManager.bindCallbacks({
+    onLobbyChange: () => ui.refreshDuelHubIfVisible(),
+    onNetStatsChange: () => ui.refreshDuelHubIfVisible(),
+    onPublicRoomsChange: () => ui.refreshDuelHubIfVisible(),
+    onDuelStart: (stageId, mode, matchSeed, matchSeq, lobby) => {
+      ui.startPvpDuelRun(stageId, mode, matchSeed, matchSeq, lobby);
+    },
+    onGameMessage: (msg) => {
+      engine.handlePvpNetMessage(msg);
+    },
+    onPeerDisconnected: (oppName) => {
+      engine.handleOpponentDisconnectedInPvp(oppName);
+    },
+    onReturnLobby: () => {
+      if (!engine.state || engine.state.wavePhase === 'ended') {
+        ui.openDuelLobbyTab();
+      }
+    },
+  });
+
   await PlatformSDK.init((adPaused) => {
     engine.paused = adPaused;
     if (adPaused) {
       engine.drag = null;
     }
   });
+  PlatformSDK.loadingStop();
 
-  // Unlock all stages & endless modes for instant preview per czgame convention
-  ui.showHomeHub();
+  // Live CrazyGames friend-list Join Room listener
+  PlatformSDK.registerJoinRoomListener((inviteCode) => {
+    ui.joinDuelRoomFromInvite(inviteCode);
+  });
+
+  // Instant Join on boot via ?room=CODE or CrazyGames.SDK.game.inviteParams
+  const bootInviteCode = PlatformSDK.consumeInviteRoomCode();
+  if (bootInviteCode) {
+    ui.joinDuelRoomFromInvite(bootInviteCode);
+  } else if (PlatformSDK.isInstantMultiplayerRequested()) {
+    ui.openDuelLobbyTab();
+    DuelManager.quickMatchOrCreate('hulao', 'standard');
+  } else {
+    ui.showHomeHub();
+  }
 
   let lastTime = performance.now();
   let hudTick = 0;

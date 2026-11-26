@@ -10,6 +10,7 @@ import {
 } from '../data/units';
 import { t } from '../i18n/locale';
 import { SaveManager } from '../meta/SaveManager';
+import { DuelManager } from '../net/DuelManager';
 import { CellType, DuelLane, HeroKey, TileUnit } from '../types';
 import { Assets } from './AssetLoader';
 import {
@@ -958,29 +959,97 @@ export class BoardRenderer {
     ctx.font = '700 10px "STKaiti", "KaiTi", "Noto Serif SC", Georgia, serif';
     ctx.textBaseline = 'middle';
 
+    const rivalBaseName = s.isPvp ? s.pvpRivalCallsign || dict.rivalTag : dict.rivalTag;
     const aiLabel = s.aiCollapsed
-      ? `${dict.rivalTag} ✕`
-      : `${dict.rivalTag} ♥${s.aiHearts}`;
+      ? `${rivalBaseName} ✕`
+      : s.isPvp
+        ? `⚔ ${rivalBaseName} · W${s.pvpRivalWave} ♥${s.aiHearts}`
+        : `${dict.rivalTag} ♥${s.aiHearts}`;
     const lw = ctx.measureText(aiLabel).width + 12;
-    ctx.fillStyle = 'rgba(28, 22, 20, 0.88)';
-    this.roundRect(ctx, L.boardX + L.cellSize + 4, y - 9, lw, 18, 9);
+    const lx = L.boardX + 6;
+    ctx.fillStyle = 'rgba(28, 22, 20, 0.9)';
+    this.roundRect(ctx, lx, y - 9, lw, 18, 9);
     ctx.fill();
     ctx.strokeStyle = '#b45309';
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.fillStyle = s.aiCollapsed ? '#9ca3af' : '#fca5a5';
-    ctx.fillText(aiLabel, L.boardX + L.cellSize + 10, y + 0.5);
+    ctx.fillText(aiLabel, lx + 6, y + 0.5);
 
-    const plLabel = `${dict.playerTag} ♥${s.hearts}`;
+    if (s.isPvp) {
+      const p2p = DuelManager.hasDirectP2P();
+      const pingTxt =
+        DuelManager.rttMs > 0
+          ? `${p2p ? 'P2P' : 'WSS'} ${DuelManager.rttMs}ms`
+          : p2p
+            ? 'P2P'
+            : 'LIVE';
+      ctx.font = '800 9px sans-serif';
+      const pw = ctx.measureText(pingTxt).width + 10;
+      const px = L.boardX + (L.boardW - pw) * 0.5;
+      ctx.fillStyle = 'rgba(15, 23, 20, 0.92)';
+      this.roundRect(ctx, px, y - 8, pw, 16, 8);
+      ctx.fill();
+      ctx.strokeStyle = p2p ? '#34d399' : '#facc15';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = p2p ? '#6ee7b7' : '#fde047';
+      ctx.fillText(pingTxt, px + 5, y + 0.5);
+      ctx.font = '700 10px "STKaiti", "KaiTi", "Noto Serif SC", Georgia, serif';
+    }
+
+    const myBaseName = s.isPvp ? DuelManager.getEffectiveCallsign() : dict.playerTag;
+    const plLabel = `${myBaseName} ♥${s.hearts}`;
     const rw = ctx.measureText(plLabel).width + 12;
-    const rx = L.boardX + L.boardW - L.cellSize - rw - 4;
-    ctx.fillStyle = 'rgba(22, 34, 28, 0.9)';
+    const rx = L.boardX + L.boardW - rw - 6;
+    ctx.fillStyle = 'rgba(22, 34, 28, 0.92)';
     this.roundRect(ctx, rx, y - 9, rw, 18, 9);
     ctx.fill();
     ctx.strokeStyle = '#d4af37';
     ctx.stroke();
     ctx.fillStyle = '#fde68a';
     ctx.fillText(plLabel, rx + 6, y + 0.5);
+
+    // Render floating PvP Battle Emote Stamps above/below Great Wall!
+    if (s.isPvp && s.pvpRivalEmote) {
+      const pop = Math.min(1, (2.8 - s.pvpRivalEmote.timer) / 0.14);
+      const alpha = Math.min(1, s.pvpRivalEmote.timer / 0.35);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = '800 11px "STKaiti", "KaiTi", "Noto Serif SC", sans-serif';
+      const ew = ctx.measureText(s.pvpRivalEmote.text).width + 16;
+      const ex = lx + 4;
+      const ey = y - 30 + (1 - pop) * 6;
+      ctx.fillStyle = 'rgba(127, 29, 29, 0.94)';
+      this.roundRect(ctx, ex, ey, ew, 20, 10);
+      ctx.fill();
+      ctx.strokeStyle = '#fca5a5';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#fef2f2';
+      ctx.fillText(s.pvpRivalEmote.text, ex + 8, ey + 10.5);
+      ctx.restore();
+    }
+
+    if (s.isPvp && s.pvpMyEmote) {
+      const pop = Math.min(1, (2.6 - s.pvpMyEmote.timer) / 0.14);
+      const alpha = Math.min(1, s.pvpMyEmote.timer / 0.35);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = '800 11px "STKaiti", "KaiTi", "Noto Serif SC", sans-serif';
+      const ew = ctx.measureText(s.pvpMyEmote.text).width + 16;
+      const ex = L.boardX + L.boardW - ew - 10;
+      const ey = y + 11 - (1 - pop) * 6;
+      ctx.fillStyle = 'rgba(20, 83, 45, 0.94)';
+      this.roundRect(ctx, ex, ey, ew, 20, 10);
+      ctx.fill();
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#fef9c3';
+      ctx.fillText(s.pvpMyEmote.text, ex + 8, ey + 10.5);
+      ctx.restore();
+    }
 
     ctx.restore();
   }

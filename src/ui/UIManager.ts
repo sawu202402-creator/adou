@@ -5,14 +5,30 @@ import { SKILL_SPECS, WEAPON_IDS, WEAPON_SPECS } from '../data/weaponsAndSkills'
 import { GameEngine } from '../game/GameEngine';
 import { getLang, getUnitDisplayText, t } from '../i18n/locale';
 import { SaveManager } from '../meta/SaveManager';
+import { DuelManager } from '../net/DuelManager';
+import { DuelEmoteKey, DuelLobbyState } from '../net/DuelProtocol';
 import { PlatformSDK } from '../platform/PlatformSDK';
-import { GameMode, HeroKey, RunSummary, SkillId, StageDef, TroopKey, WeaponId } from '../types';
+import {
+  GameMode,
+  HeroKey,
+  PvPRaidKind,
+  RunSummary,
+  SkillId,
+  StageDef,
+  TroopKey,
+  WeaponId,
+} from '../types';
 
 export class UIManager {
   private hudRoot: HTMLElement | null = null;
   private modalRoot: HTMLElement;
-  private hubTab: 'stages' | 'armory' | 'skills' | 'codex' = 'stages';
+  private hubTab: 'stages' | 'duel' | 'armory' | 'skills' | 'codex' = 'stages';
   private selectedMode: GameMode = 'standard';
+  private duelStageId = 'hulao';
+  private duelMode: GameMode = 'standard';
+  private pvpDrawerOpen = false;
+  private copyToastTimer = 0;
+  private copyToastTarget: 'code' | 'link' | null = null;
   private pauseOpen = false;
   private needleAnimId = 0;
   private hudCache: Record<string, string> = {};
@@ -24,6 +40,60 @@ export class UIManager {
     this.modalRoot = document.createElement('div');
     this.modalRoot.className = 'modal-host';
     this.uiLayer.appendChild(this.modalRoot);
+  }
+
+  public isInHub(): boolean {
+    return this.engine.state === null;
+  }
+
+  public refreshDuelHubIfVisible(): void {
+    if (this.engine.state === null && this.hubTab === 'duel') {
+      // Preserve room-code input text if user is typing!
+      const activeInput = document.activeElement as HTMLInputElement | null;
+      if (activeInput && (activeInput.id === 'duel-code-input' || activeInput.id === 'duel-callsign-input')) {
+        return;
+      }
+      this.showHomeHub();
+    }
+  }
+
+  public openDuelLobbyTab(): void {
+    this.hubTab = 'duel';
+    this.showHomeHub();
+  }
+
+  public joinDuelRoomFromInvite(roomCode: string): void {
+    if (this.engine.state) {
+      PlatformSDK.gameplayStop();
+      this.engine.state = null;
+      this.hudRoot?.remove();
+      this.hudRoot = null;
+    }
+    this.hubTab = 'duel';
+    DuelManager.joinRoom(roomCode);
+    this.showHomeHub();
+  }
+
+  public startPvpDuelRun(
+    stageId: string,
+    mode: GameMode,
+    matchSeed: number,
+    matchSeq: number,
+    lobby: DuelLobbyState
+  ): void {
+    cancelAnimationFrame(this.needleAnimId);
+    this.pauseOpen = false;
+    this.pvpDrawerOpen = false;
+    this.modalRoot.innerHTML = '';
+    const st = STAGES.find((item) => item.id === stageId) || STAGES[0];
+    const opp = lobby.members.find((m) => m.peerId !== DuelManager.myPeerId);
+    this.engine.startRun(st, mode, {
+      matchSeed,
+      matchSeq,
+      rivalCallsign: opp?.callsign || t().rivalTag,
+    });
+    this.mountHUD();
+    this.syncHUD();
   }
 
   // ==================== HOME HUB ====================
@@ -53,14 +123,19 @@ export class UIManager {
       return lvl < sp.maxLevel && save.gold >= SaveManager.getSkillCost(sp.id);
     }).length;
 
+    DuelManager.ensurePublicDirectoryActive();
+    const openPublicRooms = DuelManager.getPublicRooms().length;
+
     const tabContent =
       this.hubTab === 'stages'
         ? this.renderStagesTab()
-        : this.hubTab === 'armory'
-          ? this.renderArmoryTab()
-          : this.hubTab === 'skills'
-            ? this.renderSkillsTab()
-            : this.renderCodexTab();
+        : this.hubTab === 'duel'
+          ? this.renderDuelTab()
+          : this.hubTab === 'armory'
+            ? this.renderArmoryTab()
+            : this.hubTab === 'skills'
+              ? this.renderSkillsTab()
+              : this.renderCodexTab();
 
     this.modalRoot.innerHTML = `
       <div class="hub-screen" style="background-image: url('./assets/hub_scroll_bg.jpg')">
@@ -78,6 +153,9 @@ export class UIManager {
 
           <div class="hub-nav-tabs">
             <button class="seg-btn ${this.hubTab === 'stages' ? 'active' : ''}" data-hub-tab="stages">${dict.tabStages}</button>
+            <button class="seg-btn duel-tab-btn ${this.hubTab === 'duel' ? 'active' : ''}" data-hub-tab="duel">
+              ${dict.tabDuel}${openPublicRooms > 0 ? `<span class="nav-dot emerald">${openPublicRooms}</span>` : ''}
+            </button>
             <button class="seg-btn ${this.hubTab === 'armory' ? 'active' : ''}" data-hub-tab="armory">
               ${dict.tabArmory}${readyWeaponCount > 0 ? `<span class="nav-dot">${readyWeaponCount}</span>` : ''}
             </button>
@@ -105,10 +183,25 @@ export class UIManager {
     this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-hub-tab]').forEach((btn) => {
       btn.onclick = () => {
         SoundFX.tileClack(true);
-        this.hubTab = btn.dataset.hubTab as 'stages' | 'armory' | 'skills' | 'codex';
+        this.hubTab = btn.dataset.hubTab as 'stages' | 'duel' | 'armory' | 'skills' | 'codex';
+        if (this.hubTab === 'duel') {
+          DuelManager.requestDirectoryRefresh();
+        }
         this.showHomeHub();
       };
     });
+
+    const quickOpenDuelBtn = this.modalRoot.querySelector('#btn-open-duel-hub') as HTMLButtonElement | null;
+    if (quickOpenDuelBtn) {
+      quickOpenDuelBtn.onclick = () => {
+        SoundFX.recruit();
+        this.hubTab = 'duel';
+        DuelManager.requestDirectoryRefresh();
+        this.showHomeHub();
+      };
+    }
+
+    this.bindDuelTabEvents();
 
     const langBtn = this.modalRoot.querySelector('#btn-hub-lang') as HTMLButtonElement | null;
     if (langBtn) {
@@ -226,9 +319,425 @@ export class UIManager {
           <button class="seg-btn ${this.selectedMode === 'standard' ? 'active' : ''}" data-mode-pick="standard">${dict.modeStandard}</button>
           <button class="seg-btn ${this.selectedMode === 'endless' ? 'active' : ''}" data-mode-pick="endless">${dict.modeEndless}</button>
         </div>
+        <button class="btn-guofeng btn-cinnabar duel-cta-banner-btn" id="btn-open-duel-hub">
+          ${dict.tabDuel} · ${dict.duelQuickMatch}
+        </button>
       </div>
       <div class="stage-grid">${cards}</div>
     `;
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private renderDuelTab(): string {
+    const dict = t();
+    const chatDisabled = PlatformSDK.isChatDisabled();
+
+    // Active Room Lobby View
+    if (DuelManager.status === 'ready' && DuelManager.lobby) {
+      const lob = DuelManager.lobby;
+      const isHost = DuelManager.role === 'host';
+      const hostM = lob.members.find((m) => m.slot === 1) || lob.members[0];
+      const guestM = lob.members.find((m) => m.slot === 2);
+      const p2p = DuelManager.hasDirectP2P();
+      const netBadge = guestM
+        ? DuelManager.rttMs > 0
+          ? `${p2p ? '⚡ WebRTC P2P' : '☁ WSS'} · ${DuelManager.rttMs}ms`
+          : p2p
+            ? '⚡ WebRTC P2P'
+            : '☁ WSS Connected'
+        : '☁ Multi-Broker WSS Ready';
+
+      const stageButtons = STAGES.map((st) => {
+        const sName = dict.stages[st.id]?.name || st.id;
+        return `<button class="seg-btn ${lob.stageId === st.id ? 'active' : ''}" data-duel-room-stage="${st.id}" ${!isHost ? 'disabled' : ''}>${sName}</button>`;
+      }).join('');
+
+      const canStart = isHost && Boolean(guestM);
+      const myClientReady = guestM?.ready ?? true;
+
+      return `
+        <div class="duel-wrap">
+          <div class="duel-room-card">
+            <div class="duel-room-top">
+              <div class="duel-code-block">
+                <span class="duel-code-lbl">${dict.duelRoomCodeLabel}</span>
+                <strong class="duel-code-big">${lob.roomCode}</strong>
+                <span class="duel-vis-badge ${lob.isPublic ? 'pub' : 'priv'}">
+                  ${lob.isPublic ? dict.duelPublicBadge : dict.duelPrivateBadge}
+                </span>
+                <span class="duel-net-pill ${p2p ? 'p2p' : ''}">${netBadge}</span>
+              </div>
+
+              <div class="duel-invite-btns">
+                <button class="btn-guofeng btn-mini btn-jade" id="btn-copy-room-code">
+                  ${this.copyToastTarget === 'code' ? dict.duelCopiedToast : dict.duelBtnCopyCode}
+                </button>
+                <button class="btn-guofeng btn-mini btn-gilt" id="btn-copy-invite-link">
+                  ${this.copyToastTarget === 'link' ? dict.duelCopiedToast : dict.duelBtnCopyLink}
+                </button>
+              </div>
+            </div>
+
+            <div class="duel-config-strip">
+              <div class="seg-group">${stageButtons}</div>
+              <div class="seg-group">
+                <button class="seg-btn ${lob.mode === 'standard' ? 'active' : ''}" data-duel-room-mode="standard" ${!isHost ? 'disabled' : ''}>${dict.modeStandard}</button>
+                <button class="seg-btn ${lob.mode === 'endless' ? 'active' : ''}" data-duel-room-mode="endless" ${!isHost ? 'disabled' : ''}>${dict.modeEndless}</button>
+              </div>
+            </div>
+
+            <div class="duel-vs-arena">
+              <div class="duel-slot-card filled">
+                <div class="duel-slot-role">${dict.duelSlotHost}</div>
+                <img class="duel-slot-avatar" src="./assets/hero_zhaoyun.png" alt="" />
+                <div class="duel-slot-name">${this.escapeHtml(hostM?.callsign || 'Host')}</div>
+                <div class="duel-slot-meta">Lv.${hostM?.rankLvl || 1} · <span class="rdy-ok">${dict.duelReadyTag}</span></div>
+              </div>
+
+              <div class="duel-vs-seal">VS</div>
+
+              ${
+                guestM
+                  ? `
+                    <div class="duel-slot-card filled challenger">
+                      <div class="duel-slot-role">${dict.duelSlotGuest}</div>
+                      <img class="duel-slot-avatar" src="./assets/hero_lubu.png" alt="" />
+                      <div class="duel-slot-name">${this.escapeHtml(guestM.callsign)}</div>
+                      <div class="duel-slot-meta">
+                        Lv.${guestM.rankLvl} ·
+                        <span class="${guestM.ready ? 'rdy-ok' : 'rdy-wait'}">
+                          ${guestM.ready ? dict.duelReadyTag : dict.duelNotReadyTag}
+                        </span>
+                      </div>
+                    </div>
+                  `
+                  : `
+                    <div class="duel-slot-card empty">
+                      <div class="duel-slot-role">${dict.duelSlotGuest}</div>
+                      <div class="duel-wait-pulse">⚔</div>
+                      <div class="duel-wait-txt">${dict.duelWaitingChallenger}</div>
+                    </div>
+                  `
+              }
+            </div>
+
+            <div class="duel-room-actions">
+              ${
+                isHost
+                  ? `
+                    <button class="btn-guofeng ${canStart ? 'btn-cinnabar' : 'btn-disabled'} duel-main-go"
+                      id="btn-duel-launch" ${!canStart ? 'disabled' : ''}>
+                      ${canStart ? dict.duelBtnStartMatch : dict.duelBtnWaitOpponent}
+                    </button>
+                  `
+                  : `
+                    <button class="btn-guofeng ${myClientReady ? 'btn-gilt' : 'btn-cinnabar'} duel-main-go"
+                      id="btn-duel-ready-toggle">
+                      ${dict.duelBtnToggleReady(myClientReady)}
+                    </button>
+                  `
+              }
+              <button class="btn-guofeng btn-stone" id="btn-duel-leave">${dict.duelBtnLeaveRoom}</button>
+            </div>
+          </div>
+
+          <div class="codex-tip-box duel-tip-box">${dict.duelRulesTip}</div>
+        </div>
+      `;
+    }
+
+    // Connecting View
+    if (DuelManager.status === 'connecting') {
+      return `
+        <div class="duel-wrap">
+          <div class="duel-room-card connecting-box">
+            <div class="duel-wait-pulse">☯</div>
+            <h3>${dict.duelConnecting}</h3>
+            <button class="btn-guofeng btn-stone" id="btn-duel-leave">${dict.duelBtnLeaveRoom}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Hall / Matchmaking Entry View
+    const publicRooms = DuelManager.getPublicRooms();
+    const stagePills = STAGES.map((st) => {
+      const sName = dict.stages[st.id]?.name || st.id;
+      return `<button class="seg-btn ${this.duelStageId === st.id ? 'active' : ''}" data-duel-pick-stage="${st.id}">${sName}</button>`;
+    }).join('');
+
+    const hallRows =
+      publicRooms.length > 0
+        ? publicRooms
+            .map((rm) => {
+              const sName = dict.stages[rm.stageId]?.name || rm.stageId;
+              const mName = rm.mode === 'standard' ? dict.modeStandard : dict.modeEndless;
+              return `
+                <div class="duel-hall-item">
+                  <div class="dh-left">
+                    <span class="dh-code">${rm.roomCode}</span>
+                    <div>
+                      <strong>${this.escapeHtml(rm.hostCallsign)}</strong>
+                      <div class="dh-sub">${sName} · ${mName} · (${rm.memberCount}/2)</div>
+                    </div>
+                  </div>
+                  <button class="btn-guofeng btn-mini btn-cinnabar" data-join-hall-code="${rm.roomCode}">
+                    ${dict.duelHallJoinBtn}
+                  </button>
+                </div>
+              `;
+            })
+            .join('')
+        : `<div class="duel-hall-empty">${dict.duelHallEmpty}</div>`;
+
+    return `
+      <div class="duel-wrap">
+        <div class="duel-hero-banner">
+          <div>
+            <h2>${dict.duelTitle}</h2>
+            <p>${dict.duelSubtitle}</p>
+          </div>
+          ${
+            !chatDisabled
+              ? `
+                <label class="duel-name-box">
+                  <span>${dict.duelCallsignLabel}</span>
+                  <input type="text" id="duel-callsign-input" maxlength="12" value="${this.escapeHtml(DuelManager.getEffectiveCallsign())}" />
+                </label>
+              `
+              : ''
+          }
+        </div>
+
+        ${
+          DuelManager.status === 'error' && DuelManager.errorMsg
+            ? `<div class="duel-err-bar">⚠ ${this.escapeHtml(DuelManager.errorMsg)}</div>`
+            : ''
+        }
+
+        <div class="duel-setup-panel">
+          <div class="duel-config-strip">
+            <div class="seg-group">${stagePills}</div>
+            <div class="seg-group">
+              <button class="seg-btn ${this.duelMode === 'standard' ? 'active' : ''}" data-duel-pick-mode="standard">${dict.modeStandard}</button>
+              <button class="seg-btn ${this.duelMode === 'endless' ? 'active' : ''}" data-duel-pick-mode="endless">${dict.modeEndless}</button>
+            </div>
+          </div>
+
+          <div class="duel-action-grid">
+            <button class="btn-guofeng btn-cinnabar duel-big-btn" id="btn-duel-quick">
+              ${dict.duelQuickMatch}
+            </button>
+            <button class="btn-guofeng btn-gilt duel-big-btn" id="btn-duel-create-pub">
+              ${dict.duelCreatePublic}
+            </button>
+            <button class="btn-guofeng btn-jade duel-big-btn" id="btn-duel-create-priv">
+              ${dict.duelCreatePrivate}
+            </button>
+          </div>
+
+          <div class="duel-join-code-row">
+            <input type="text" id="duel-code-input" class="duel-code-input" maxlength="6" placeholder="${dict.duelJoinPlaceholder}" />
+            <button class="btn-guofeng btn-gilt" id="btn-duel-join-code">${dict.duelBtnJoinCode}</button>
+          </div>
+        </div>
+
+        <div class="duel-hall-panel">
+          <div class="duel-hall-head">
+            <strong>${dict.duelPublicHallTitle}</strong>
+            <button class="btn-guofeng btn-mini btn-stone" id="btn-duel-refresh-hall">${dict.duelBtnRefreshHall}</button>
+          </div>
+          <div class="duel-hall-list">${hallRows}</div>
+        </div>
+
+        <div class="codex-tip-box duel-tip-box">${dict.duelRulesTip}</div>
+      </div>
+    `;
+  }
+
+  private bindDuelTabEvents(): void {
+    const callsignInput = this.modalRoot.querySelector('#duel-callsign-input') as HTMLInputElement | null;
+    if (callsignInput) {
+      callsignInput.onchange = () => {
+        DuelManager.setCallsign(callsignInput.value);
+      };
+      callsignInput.onblur = () => {
+        DuelManager.setCallsign(callsignInput.value);
+      };
+    }
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-duel-pick-stage]').forEach((btn) => {
+      btn.onclick = () => {
+        SoundFX.tileClack(false);
+        this.duelStageId = btn.dataset.duelPickStage!;
+        this.showHomeHub();
+      };
+    });
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-duel-pick-mode]').forEach((btn) => {
+      btn.onclick = () => {
+        SoundFX.tileClack(false);
+        this.duelMode = btn.dataset.duelPickMode as GameMode;
+        this.showHomeHub();
+      };
+    });
+
+    const quickBtn = this.modalRoot.querySelector('#btn-duel-quick') as HTMLButtonElement | null;
+    if (quickBtn) {
+      quickBtn.onclick = () => {
+        if (callsignInput) DuelManager.setCallsign(callsignInput.value);
+        SoundFX.recruit();
+        DuelManager.quickMatchOrCreate(this.duelStageId, this.duelMode);
+      };
+    }
+
+    const createPubBtn = this.modalRoot.querySelector('#btn-duel-create-pub') as HTMLButtonElement | null;
+    if (createPubBtn) {
+      createPubBtn.onclick = () => {
+        if (callsignInput) DuelManager.setCallsign(callsignInput.value);
+        SoundFX.recruit();
+        DuelManager.createRoom(this.duelStageId, this.duelMode, true);
+      };
+    }
+
+    const createPrivBtn = this.modalRoot.querySelector('#btn-duel-create-priv') as HTMLButtonElement | null;
+    if (createPrivBtn) {
+      createPrivBtn.onclick = () => {
+        if (callsignInput) DuelManager.setCallsign(callsignInput.value);
+        SoundFX.recruit();
+        DuelManager.createRoom(this.duelStageId, this.duelMode, false);
+      };
+    }
+
+    const codeInput = this.modalRoot.querySelector('#duel-code-input') as HTMLInputElement | null;
+    const joinCodeBtn = this.modalRoot.querySelector('#btn-duel-join-code') as HTMLButtonElement | null;
+    if (codeInput && joinCodeBtn) {
+      const doJoin = () => {
+        if (callsignInput) DuelManager.setCallsign(callsignInput.value);
+        SoundFX.recruit();
+        DuelManager.joinRoom(codeInput.value);
+      };
+      joinCodeBtn.onclick = doJoin;
+      codeInput.onkeydown = (ev) => {
+        if (ev.key === 'Enter') doJoin();
+      };
+    }
+
+    const refreshHallBtn = this.modalRoot.querySelector('#btn-duel-refresh-hall') as HTMLButtonElement | null;
+    if (refreshHallBtn) {
+      refreshHallBtn.onclick = () => {
+        SoundFX.tileClack(true);
+        DuelManager.requestDirectoryRefresh();
+        this.showHomeHub();
+      };
+    }
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-join-hall-code]').forEach((btn) => {
+      btn.onclick = () => {
+        if (callsignInput) DuelManager.setCallsign(callsignInput.value);
+        SoundFX.recruit();
+        DuelManager.joinRoom(btn.dataset.joinHallCode!);
+      };
+    });
+
+    const leaveBtn = this.modalRoot.querySelector('#btn-duel-leave') as HTMLButtonElement | null;
+    if (leaveBtn) {
+      leaveBtn.onclick = () => {
+        SoundFX.tileClack(false);
+        DuelManager.leaveRoom();
+      };
+    }
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-duel-room-stage]').forEach((btn) => {
+      btn.onclick = () => {
+        if (!DuelManager.lobby) return;
+        SoundFX.tileClack(false);
+        DuelManager.updateHostConfig(btn.dataset.duelRoomStage!, DuelManager.lobby.mode);
+      };
+    });
+
+    this.modalRoot.querySelectorAll<HTMLButtonElement>('[data-duel-room-mode]').forEach((btn) => {
+      btn.onclick = () => {
+        if (!DuelManager.lobby) return;
+        SoundFX.tileClack(false);
+        DuelManager.updateHostConfig(
+          DuelManager.lobby.stageId,
+          btn.dataset.duelRoomMode as GameMode
+        );
+      };
+    });
+
+    const copyCodeBtn = this.modalRoot.querySelector('#btn-copy-room-code') as HTMLButtonElement | null;
+    if (copyCodeBtn && DuelManager.lobby) {
+      copyCodeBtn.onclick = async () => {
+        const code = DuelManager.lobby?.roomCode || '';
+        await this.copyTextSafe(code);
+        this.triggerCopyFeedback('code');
+      };
+    }
+
+    const copyLinkBtn = this.modalRoot.querySelector('#btn-copy-invite-link') as HTMLButtonElement | null;
+    if (copyLinkBtn && DuelManager.lobby) {
+      copyLinkBtn.onclick = async () => {
+        const code = DuelManager.lobby?.roomCode || '';
+        const link = await PlatformSDK.buildInviteLink(code);
+        await this.copyTextSafe(link);
+        this.triggerCopyFeedback('link');
+      };
+    }
+
+    const launchBtn = this.modalRoot.querySelector('#btn-duel-launch') as HTMLButtonElement | null;
+    if (launchBtn) {
+      launchBtn.onclick = () => {
+        SoundFX.dragonUlt();
+        DuelManager.launchHostDuel();
+      };
+    }
+
+    const readyToggleBtn = this.modalRoot.querySelector('#btn-duel-ready-toggle') as HTMLButtonElement | null;
+    if (readyToggleBtn) {
+      readyToggleBtn.onclick = () => {
+        SoundFX.tileClack(true);
+        DuelManager.toggleClientReady();
+      };
+    }
+  }
+
+  private async copyTextSafe(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        // ignore
+      }
+      ta.remove();
+    }
+  }
+
+  private triggerCopyFeedback(which: 'code' | 'link'): void {
+    SoundFX.tileClack(true);
+    this.copyToastTarget = which;
+    window.clearTimeout(this.copyToastTimer);
+    this.showHomeHub();
+    this.copyToastTimer = window.setTimeout(() => {
+      this.copyToastTarget = null;
+      this.refreshDuelHubIfVisible();
+    }, 1600);
   }
 
   private renderArmoryTab(): string {
@@ -516,6 +1025,39 @@ export class UIManager {
       <div class="unit-inspect-pill" id="hud-unit-info"></div>
       <div class="hud-banner" id="hud-banner"></div>
 
+      <div class="pvp-raid-drawer" id="pvp-raid-drawer" style="display:none">
+        <div class="pvp-raid-row">
+          <button class="pvp-raid-btn" data-pvp-raid="wolf_pack">
+            <img src="./assets/enemy_wolf.png" alt="" />
+            <div>
+              <strong>${dict.duelRaidWolf}</strong>
+              <span>18 · +0.10/s</span>
+            </div>
+          </button>
+          <button class="pvp-raid-btn" data-pvp-raid="iron_shield">
+            <img src="./assets/enemy_shield.png" alt="" />
+            <div>
+              <strong>${dict.duelRaidShield}</strong>
+              <span>34 · +0.18/s</span>
+            </div>
+          </button>
+          <button class="pvp-raid-btn boss" data-pvp-raid="sorcerer_raid">
+            <img src="./assets/enemy_zhangjiao.png" alt="" />
+            <div>
+              <strong>${dict.duelRaidSorcerer}</strong>
+              <span>56 · +0.30/s</span>
+            </div>
+          </button>
+          <button class="pvp-drawer-close" id="btn-close-pvp-drawer">✕</button>
+        </div>
+        <div class="pvp-emote-row">
+          <button class="pvp-emote-chip" data-pvp-emote="salute">${dict.duelEmotes.salute}</button>
+          <button class="pvp-emote-chip" data-pvp-emote="praise">${dict.duelEmotes.praise}</button>
+          <button class="pvp-emote-chip" data-pvp-emote="charge">${dict.duelEmotes.charge}</button>
+          <button class="pvp-emote-chip" data-pvp-emote="hold">${dict.duelEmotes.hold}</button>
+        </div>
+      </div>
+
       <div class="hud-bottom-dock">
         <div class="recruit-row">
           <button class="ult-orb-btn" id="btn-ult" title="${dict.talismanLabel} (Q)">
@@ -605,11 +1147,41 @@ export class UIManager {
     (hud.querySelector('#btn-side-boost') as HTMLButtonElement).onclick = () => {
       this.handleSideBoostClick();
     };
+    const closeDrawerBtn = hud.querySelector('#btn-close-pvp-drawer') as HTMLButtonElement | null;
+    if (closeDrawerBtn) {
+      closeDrawerBtn.onclick = () => {
+        this.pvpDrawerOpen = false;
+        this.syncHUD();
+      };
+    }
+    hud.querySelectorAll<HTMLButtonElement>('[data-pvp-raid]').forEach((btn) => {
+      btn.onclick = () => {
+        const raid = btn.dataset.pvpRaid as PvPRaidKind;
+        if (this.engine.sendPvpRaid(raid)) {
+          this.pvpDrawerOpen = false;
+        }
+        this.syncHUD();
+      };
+    });
+    hud.querySelectorAll<HTMLButtonElement>('[data-pvp-emote]').forEach((btn) => {
+      btn.onclick = () => {
+        const emote = btn.dataset.pvpEmote as DuelEmoteKey;
+        this.engine.sendPvpEmote(emote);
+        this.pvpDrawerOpen = false;
+        this.syncHUD();
+      };
+    });
   }
 
   private async handleSideBoostClick(): Promise<void> {
     const s = this.engine.state;
     if (!s) return;
+    if (s.isPvp) {
+      SoundFX.tileClack(true);
+      this.pvpDrawerOpen = !this.pvpDrawerOpen;
+      this.syncHUD();
+      return;
+    }
     const dict = t();
     const save = SaveManager.get();
 
@@ -692,17 +1264,24 @@ export class UIManager {
       }
     });
 
-    // Top-Right Skill Seals (matching screenshot's 升职 / 攻速 / 秘籍 stamps) + Formation Synergies
-    const skillSig = SKILL_SPECS.map((sp) => `${sp.id}:${save.skills[sp.id]}`).join(',');
+    // Auto-close PvP raid popover if player starts dragging a bench/board tile
+    if (this.pvpDrawerOpen && this.engine.drag?.active) {
+      this.pvpDrawerOpen = false;
+    }
+
+    // Top-Right Skill Seals + Formation Synergies (in fair 2P PvP, only live board synergies apply!)
+    const skillSig = s.isPvp ? 'pvp_fair' : SKILL_SPECS.map((sp) => `${sp.id}:${save.skills[sp.id]}`).join(',');
     const synSig = s.synergies.map((item) => `${item.id}:${item.tier}:${item.count}`).join('|');
     setIf('syn', `${skillSig}#${synSig}`, () => {
-      const skillBadges = SKILL_SPECS.filter((sp) => save.skills[sp.id] > 0)
-        .slice(0, 5)
-        .map((sp) => {
-          const skTxt = dict.skills[sp.id];
-          return `<span class="skill-seal-chip" style="background:${sp.badgeColor}" title="${skTxt.name}: ${skTxt.val(save.skills[sp.id])}">${skTxt.shortTag}<em>Lv.${save.skills[sp.id]}</em></span>`;
-        })
-        .join('');
+      const skillBadges = s.isPvp
+        ? ''
+        : SKILL_SPECS.filter((sp) => save.skills[sp.id] > 0)
+            .slice(0, 5)
+            .map((sp) => {
+              const skTxt = dict.skills[sp.id];
+              return `<span class="skill-seal-chip" style="background:${sp.badgeColor}" title="${skTxt.name}: ${skTxt.val(save.skills[sp.id])}">${skTxt.shortTag}<em>Lv.${save.skills[sp.id]}</em></span>`;
+            })
+            .join('');
 
       const synIcons = {
         vanguard: 'syn_vanguard',
@@ -773,11 +1352,11 @@ export class UIManager {
           : `${ultPct}%`;
     });
 
-    // Battle Speed Toggle (1x / 2x)
-    setIf('spd', `${this.engine.gameSpeed}`, () => {
+    // Battle Speed Toggle (1x / 2x — locked to 1x in Online 2P PvP)
+    setIf('spd', `${this.engine.gameSpeed}:${s.isPvp ? 1 : 0}`, () => {
       const spdBtn = this.hudRoot!.querySelector('#btn-speed') as HTMLButtonElement;
-      spdBtn.textContent = `${this.engine.gameSpeed}x`;
-      spdBtn.classList.toggle('fast', this.engine.gameSpeed === 2);
+      spdBtn.textContent = s.isPvp ? '1x🔒' : `${this.engine.gameSpeed}x`;
+      spdBtn.classList.toggle('fast', !s.isPvp && this.engine.gameSpeed === 2);
     });
 
     // Conscript Button (always replaces all 5 bench slots with a fresh batch of 5!)
@@ -793,32 +1372,51 @@ export class UIManager {
       btn.classList.toggle('confirm-warn', confirmActive);
     });
 
-    // Partner Shard / Supply Boost Button
-    const boostMode = !save.freeHeroScrollUsed
-      ? 'free_hero'
-      : !s.heroScrollAdUsed
-        ? 'ad_hero'
-        : s.supplyAdCooldown <= 0
-          ? 'ad_supply'
-          : `cd:${Math.ceil(s.supplyAdCooldown)}`;
+    // Partner Shard / Supply Boost Button (or PvP Mercenary Raid Toggle!)
+    const raidCd = Math.ceil(s.pvpRaidCooldown);
+    const boostMode = s.isPvp
+      ? `pvp_raid:${this.pvpDrawerOpen ? 1 : 0}:${raidCd}:${s.rations}`
+      : !save.freeHeroScrollUsed
+        ? 'free_hero'
+        : !s.heroScrollAdUsed
+          ? 'ad_hero'
+          : s.supplyAdCooldown <= 0
+            ? 'ad_supply'
+            : `cd:${Math.ceil(s.supplyAdCooldown)}`;
     setIf('boost', boostMode, () => {
       const btn = this.hudRoot!.querySelector('#btn-side-boost') as HTMLButtonElement;
-      if (boostMode === 'free_hero') {
+      const drawer = this.hudRoot!.querySelector('#pvp-raid-drawer') as HTMLElement | null;
+      if (s.isPvp) {
         btn.disabled = false;
-        btn.textContent = dict.btnHeroScrollFree;
-        btn.className = 'boost-side-btn free-glow';
-      } else if (boostMode === 'ad_hero') {
-        btn.disabled = false;
-        btn.textContent = dict.btnHeroScrollAd;
-        btn.className = 'boost-side-btn';
-      } else if (boostMode === 'ad_supply') {
-        btn.disabled = false;
-        btn.textContent = dict.btnSupplyAd;
-        btn.className = 'boost-side-btn';
+        btn.textContent = raidCd > 0 ? `⚔ ${raidCd}s` : dict.duelBtnRaidPanel;
+        btn.className = `boost-side-btn pvp-raid-trigger ${this.pvpDrawerOpen ? 'open' : ''}`;
+        if (drawer) {
+          drawer.style.display = this.pvpDrawerOpen ? 'flex' : 'none';
+          drawer.querySelectorAll<HTMLButtonElement>('[data-pvp-raid]').forEach((rb) => {
+            const rk = rb.dataset.pvpRaid as PvPRaidKind;
+            const cost = this.engine.getPvpRaidSpec(rk).cost;
+            rb.disabled = raidCd > 0 || s.rations < cost;
+          });
+        }
       } else {
-        btn.disabled = true;
-        btn.textContent = `${Math.ceil(s.supplyAdCooldown)}s`;
-        btn.className = 'boost-side-btn disabled';
+        if (drawer) drawer.style.display = 'none';
+        if (boostMode === 'free_hero') {
+          btn.disabled = false;
+          btn.textContent = dict.btnHeroScrollFree;
+          btn.className = 'boost-side-btn free-glow';
+        } else if (boostMode === 'ad_hero') {
+          btn.disabled = false;
+          btn.textContent = dict.btnHeroScrollAd;
+          btn.className = 'boost-side-btn';
+        } else if (boostMode === 'ad_supply') {
+          btn.disabled = false;
+          btn.textContent = dict.btnSupplyAd;
+          btn.className = 'boost-side-btn';
+        } else {
+          btn.disabled = true;
+          btn.textContent = `${Math.ceil(s.supplyAdCooldown)}s`;
+          btn.className = 'boost-side-btn disabled';
+        }
       }
     });
 
@@ -847,7 +1445,7 @@ export class UIManager {
     const shovelActive = s.shovelMode || this.engine.isBenchShovelSelected();
     setIf(
       'shovel',
-      `${s.shovels}:${shovelActive ? 1 : 0}:${benchShovelIdx}:${hasPlayerLocked ? 1 : 0}`,
+      `${s.shovels}:${shovelActive ? 1 : 0}:${benchShovelIdx}:${hasPlayerLocked ? 1 : 0}:${s.isPvp ? 1 : 0}`,
       () => {
         const btn = this.hudRoot!.querySelector('#btn-tac-shovel') as HTMLButtonElement;
         const sub = this.hudRoot!.querySelector('#hud-shovel-cnt') as HTMLElement;
@@ -858,6 +1456,8 @@ export class UIManager {
           sub.textContent = getLang() === 'zh' ? '备战x1' : 'Bench';
         } else if (s.shovels > 0) {
           sub.textContent = `x${s.shovels}`;
+        } else if (s.isPvp) {
+          sub.textContent = dict.duelBuyShovelTag(this.engine.getPvpShovelBuyCost());
         } else {
           sub.textContent = dict.shovelAdTag;
         }
@@ -921,6 +1521,9 @@ export class UIManager {
     };
 
     (this.modalRoot.querySelector('#btn-p-quit') as HTMLButtonElement).onclick = () => {
+      if (this.engine.state?.isPvp) {
+        DuelManager.leaveRoom();
+      }
       this.showHomeHub();
     };
   }
@@ -1056,11 +1659,21 @@ export class UIManager {
     let bonusAdClaimed = false;
 
     const zones = [2, 3, 5, 3, 2];
-    const heading = victory
-      ? sum.aiDefeated
-        ? dict.victoryRivalKoTitle
-        : dict.victoryTitle
-      : dict.defeatTitle;
+    const heading = sum.isPvp
+      ? sum.pvpEndReason === 'rival_ko'
+        ? dict.pvpVictoryKoTitle
+        : sum.pvpEndReason === 'race_win'
+          ? dict.pvpVictoryRaceTitle
+          : sum.pvpEndReason === 'rival_left'
+            ? dict.pvpVictoryForfeitTitle
+            : sum.pvpEndReason === 'race_loss'
+              ? dict.pvpDefeatRaceTitle
+              : dict.pvpDefeatKoTitle
+      : victory
+        ? sum.aiDefeated
+          ? dict.victoryRivalKoTitle
+          : dict.victoryTitle
+        : dict.defeatTitle;
 
     // Count dropped shards by weaponId
     const dropCounts: Partial<Record<WeaponId, number>> = {};
@@ -1126,12 +1739,25 @@ export class UIManager {
       }).join('');
 
       const shownGold = bonusAdClaimed ? baseGold * curMult : baseGold;
+      const isPvpRoomAlive = Boolean(
+        sum.isPvp && DuelManager.isOnline() && DuelManager.lobby && DuelManager.lobby.members.length >= 2
+      );
+      const isPvpHost = sum.isPvp && DuelManager.role === 'host';
 
       this.modalRoot.innerHTML = `
         <div class="popup-backdrop">
           <div class="popup-box settle-wide">
             <h2>${heading}</h2>
             <p class="popup-sub">${dict.settleSub(sum.wave, sum.kills, sum.merges)}</p>
+            ${
+              sum.isPvp
+                ? `<div class="pvp-vs-summary-pill">${dict.pvpSettleVsLine(
+                    this.escapeHtml(sum.rivalCallsign || dict.rivalTag),
+                    sum.rivalWave || 1,
+                    sum.rivalKills || 0
+                  )}</div>`
+                : ''
+            }
 
             <div class="reward-preview">
               <span>◈ <strong id="rew-gold">+${shownGold}</strong></span>
@@ -1140,7 +1766,7 @@ export class UIManager {
             </div>
 
             ${
-              !bonusAdClaimed
+              !bonusAdClaimed && !isPvpRoomAlive
                 ? `
                   <div class="meter-wrap">
                     <div class="meter-bar">
@@ -1168,14 +1794,34 @@ export class UIManager {
 
             <div class="popup-footer">
               ${
-                !bonusAdClaimed
+                !bonusAdClaimed && !isPvpRoomAlive
                   ? `<button class="btn-guofeng btn-cinnabar" id="btn-mult-claim">🎬 x3 (+${baseGold * 2}G) · ${dict.btnMultClaim}</button>`
                   : ''
               }
-              <div class="settle-dual-btns">
-                <button class="btn-guofeng btn-jade" id="btn-retry-stage">↻ ${dict.btnRetryStage}</button>
-                <button class="btn-guofeng btn-gilt" id="btn-normal-claim">${dict.btnNormalClaim}</button>
-              </div>
+              ${
+                sum.isPvp
+                  ? `
+                    ${
+                      isPvpRoomAlive && isPvpHost
+                        ? `<button class="btn-guofeng btn-cinnabar" id="btn-pvp-rematch">${dict.btnPvpRematch}</button>`
+                        : ''
+                    }
+                    <div class="settle-dual-btns">
+                      ${
+                        DuelManager.isOnline()
+                          ? `<button class="btn-guofeng btn-gilt" id="btn-pvp-back-room">${dict.btnPvpBackRoom}</button>`
+                          : `<button class="btn-guofeng btn-gilt" id="btn-pvp-quick-again">${dict.duelQuickMatch}</button>`
+                      }
+                      <button class="btn-guofeng btn-stone" id="btn-normal-claim">${dict.btnPvpLeaveHub}</button>
+                    </div>
+                  `
+                  : `
+                    <div class="settle-dual-btns">
+                      <button class="btn-guofeng btn-jade" id="btn-retry-stage">↻ ${dict.btnRetryStage}</button>
+                      <button class="btn-guofeng btn-gilt" id="btn-normal-claim">${dict.btnNormalClaim}</button>
+                    </div>
+                  `
+              }
             </div>
           </div>
         </div>
@@ -1228,6 +1874,35 @@ export class UIManager {
         };
       }
 
+      const pvpRematchBtn = this.modalRoot.querySelector('#btn-pvp-rematch') as HTMLButtonElement | null;
+      if (pvpRematchBtn) {
+        pvpRematchBtn.onclick = () => {
+          cancelAnimationFrame(this.needleAnimId);
+          SoundFX.dragonUlt();
+          DuelManager.launchHostDuel();
+        };
+      }
+
+      const pvpBackRoomBtn = this.modalRoot.querySelector('#btn-pvp-back-room') as HTMLButtonElement | null;
+      if (pvpBackRoomBtn) {
+        pvpBackRoomBtn.onclick = () => {
+          cancelAnimationFrame(this.needleAnimId);
+          SoundFX.tileClack(true);
+          DuelManager.returnDuelToLobby();
+          this.openDuelLobbyTab();
+        };
+      }
+
+      const pvpQuickAgainBtn = this.modalRoot.querySelector('#btn-pvp-quick-again') as HTMLButtonElement | null;
+      if (pvpQuickAgainBtn) {
+        pvpQuickAgainBtn.onclick = () => {
+          cancelAnimationFrame(this.needleAnimId);
+          SoundFX.recruit();
+          this.openDuelLobbyTab();
+          DuelManager.quickMatchOrCreate(sum.stageId, sum.mode);
+        };
+      }
+
       const retryBtn = this.modalRoot.querySelector('#btn-retry-stage') as HTMLButtonElement | null;
       if (retryBtn) {
         retryBtn.onclick = () => {
@@ -1241,6 +1916,10 @@ export class UIManager {
       const normalBtn = this.modalRoot.querySelector('#btn-normal-claim') as HTMLButtonElement;
       normalBtn.onclick = () => {
         cancelAnimationFrame(this.needleAnimId);
+        if (sum.isPvp) {
+          DuelManager.leaveRoom();
+          this.hubTab = 'duel';
+        }
         this.showHomeHub();
       };
     };

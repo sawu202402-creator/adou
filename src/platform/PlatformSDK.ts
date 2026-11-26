@@ -2,16 +2,45 @@ import { AdPlacement } from '../types';
 import { SoundFX } from '../audio/SoundFX';
 import { t } from '../i18n/locale';
 
+interface CrazyGamesSettings {
+  disableChat?: boolean;
+  muteAudio?: boolean;
+}
+
 declare global {
   interface Window {
     CrazyGames?: {
       SDK?: {
         init: () => Promise<void>;
         environment?: string;
+        system?: {
+          info?: {
+            device?: {
+              type?: 'desktop' | 'tablet' | 'mobile';
+            };
+          };
+        };
         game?: {
+          loadingStart?: () => void;
+          loadingStop?: () => void;
           gameplayStart: () => void;
           gameplayStop: () => void;
           happytime: () => void;
+          settings?: CrazyGamesSettings;
+          addSettingsChangeListener?: (cb: (settings: CrazyGamesSettings) => void) => void;
+          isInstantMultiplayer?: boolean;
+          inviteParams?: Record<string, string | undefined>;
+          getInviteParam?: (key: string) => string | undefined | null;
+          inviteLink?: (params: Record<string, string>) => string;
+          showInviteButton?: (params: Record<string, string>) => string;
+          hideInviteButton?: () => void;
+          updateRoom?: (params: {
+            roomId: string;
+            isJoinable?: boolean;
+            inviteParams?: Record<string, string>;
+          }) => void;
+          leftRoom?: () => void;
+          addJoinRoomListener?: (cb: (params: Record<string, string>) => void) => void;
         };
         ad?: {
           requestAd: (
@@ -29,12 +58,17 @@ declare global {
         };
       };
     };
+    PokiSDK?: {
+      shareableURL?: (params: Record<string, string>) => Promise<string>;
+      getURLParam?: (key: string) => string | undefined;
+    };
   }
 }
 
 class PlatformAdapter {
   private initialized = false;
   private isCrazyGames = false;
+  private isGameplayActive = false;
   private pauseHook: ((paused: boolean) => void) | null = null;
 
   public async init(onPauseChange: (paused: boolean) => void): Promise<void> {
@@ -47,13 +81,41 @@ class PlatformAdapter {
         await window.CrazyGames.SDK.init();
         const env = window.CrazyGames.SDK.environment;
         this.isCrazyGames = env === 'crazygames' || env === 'local';
+
+        const initSettings = window.CrazyGames.SDK.game?.settings;
+        if (initSettings && typeof initSettings.muteAudio === 'boolean') {
+          SoundFX.setAdMuted(initSettings.muteAudio);
+        }
+        window.CrazyGames.SDK.game?.addSettingsChangeListener?.((newSettings) => {
+          if (newSettings && typeof newSettings.muteAudio === 'boolean') {
+            SoundFX.setAdMuted(newSettings.muteAudio);
+          }
+        });
       }
     } catch {
       this.isCrazyGames = false;
     }
   }
 
+  public loadingStart(): void {
+    try {
+      window.CrazyGames?.SDK?.game?.loadingStart?.();
+    } catch {
+      // ignore
+    }
+  }
+
+  public loadingStop(): void {
+    try {
+      window.CrazyGames?.SDK?.game?.loadingStop?.();
+    } catch {
+      // ignore
+    }
+  }
+
   public gameplayStart(): void {
+    if (this.isGameplayActive) return;
+    this.isGameplayActive = true;
     try {
       window.CrazyGames?.SDK?.game?.gameplayStart();
     } catch {
@@ -62,6 +124,8 @@ class PlatformAdapter {
   }
 
   public gameplayStop(): void {
+    if (!this.isGameplayActive) return;
+    this.isGameplayActive = false;
     try {
       window.CrazyGames?.SDK?.game?.gameplayStop();
     } catch {
@@ -77,6 +141,156 @@ class PlatformAdapter {
     }
   }
 
+  public isChatDisabled(): boolean {
+    try {
+      return Boolean(window.CrazyGames?.SDK?.game?.settings?.disableChat);
+    } catch {
+      return false;
+    }
+  }
+
+  public async buildInviteLink(roomCode: string): Promise<string> {
+    try {
+      if (window.PokiSDK?.shareableURL) {
+        const pokiLink = await window.PokiSDK.shareableURL({ room: roomCode });
+        if (pokiLink) return pokiLink;
+      }
+    } catch {
+      // fallback below
+    }
+
+    try {
+      if (this.isCrazyGames && window.CrazyGames?.SDK?.game?.inviteLink) {
+        const cgLink = window.CrazyGames.SDK.game.inviteLink({ roomId: roomCode });
+        if (cgLink) return cgLink;
+      }
+    } catch {
+      // fallback below
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomCode);
+    return url.toString();
+  }
+
+  public showInviteButton(roomCode: string, isJoinable = true): void {
+    try {
+      if (!this.isCrazyGames) return;
+      if (window.CrazyGames?.SDK?.game?.updateRoom) {
+        window.CrazyGames.SDK.game.updateRoom({
+          roomId: roomCode,
+          isJoinable,
+          inviteParams: { roomId: roomCode },
+        });
+      } else if (isJoinable && window.CrazyGames?.SDK?.game?.showInviteButton) {
+        window.CrazyGames.SDK.game.showInviteButton({ roomId: roomCode });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public hideInviteButton(keepRoomCode?: string): void {
+    try {
+      if (!this.isCrazyGames) return;
+      if (keepRoomCode && window.CrazyGames?.SDK?.game?.updateRoom) {
+        window.CrazyGames.SDK.game.updateRoom({
+          roomId: keepRoomCode,
+          isJoinable: false,
+          inviteParams: { roomId: keepRoomCode },
+        });
+      } else {
+        window.CrazyGames?.SDK?.game?.hideInviteButton?.();
+        window.CrazyGames?.SDK?.game?.leftRoom?.();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public registerJoinRoomListener(onJoinRoom: (roomCode: string) => void): void {
+    try {
+      window.CrazyGames?.SDK?.game?.addJoinRoomListener?.((params) => {
+        const code = params?.roomId || params?.room;
+        if (code && code.trim().length >= 4) {
+          onJoinRoom(code.trim().toUpperCase());
+        }
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  public isInstantMultiplayerRequested(): boolean {
+    try {
+      return Boolean(window.CrazyGames?.SDK?.game?.isInstantMultiplayer);
+    } catch {
+      return false;
+    }
+  }
+
+  public hasPendingInviteUrl(): boolean {
+    try {
+      const pokiRoom = window.PokiSDK?.getURLParam?.('room');
+      if (pokiRoom && pokiRoom.trim().length >= 4) return true;
+    } catch {
+      // ignore
+    }
+    try {
+      const cgInvite =
+        window.CrazyGames?.SDK?.game?.inviteParams?.roomId ||
+        window.CrazyGames?.SDK?.game?.inviteParams?.room ||
+        window.CrazyGames?.SDK?.game?.getInviteParam?.('roomId');
+      if (cgInvite && cgInvite.trim().length >= 4) return true;
+    } catch {
+      // ignore
+    }
+    try {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get('room') || url.searchParams.get('roomId');
+      return Boolean(code && code.trim().length >= 4);
+    } catch {
+      return false;
+    }
+  }
+
+  public consumeInviteRoomCode(): string | null {
+    try {
+      const pokiRoom = window.PokiSDK?.getURLParam?.('room');
+      if (pokiRoom && pokiRoom.trim().length >= 4) {
+        return pokiRoom.trim().toUpperCase();
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const initInvite =
+        window.CrazyGames?.SDK?.game?.inviteParams?.roomId ||
+        window.CrazyGames?.SDK?.game?.inviteParams?.room ||
+        window.CrazyGames?.SDK?.game?.getInviteParam?.('roomId');
+      if (initInvite && initInvite.trim().length >= 4) {
+        return initInvite.trim().toUpperCase();
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get('room') || url.searchParams.get('roomId');
+      if (code && code.trim().length >= 4) {
+        url.searchParams.delete('room');
+        url.searchParams.delete('roomId');
+        window.history.replaceState({}, '', url.toString());
+        return code.trim().toUpperCase();
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   /**
    * Pure Rewarded Video API (no forced splash or midgame interstitials).
    * Strictly pauses game loop and mutes WebAudio during playback per CrazyGames QA rules.
@@ -87,7 +301,8 @@ class PlatformAdapter {
     this.pauseHook?.(true);
 
     const finish = (success: boolean) => {
-      SoundFX.setAdMuted(false);
+      const platformMuted = Boolean(window.CrazyGames?.SDK?.game?.settings?.muteAudio);
+      SoundFX.setAdMuted(platformMuted);
       this.pauseHook?.(false);
       if (success) {
         SoundFX.fanfare();

@@ -18,6 +18,15 @@ import {
 } from '../data/units';
 import { getUnitDisplayText, t } from '../i18n/locale';
 import { SaveManager } from '../meta/SaveManager';
+import { DuelManager } from '../net/DuelManager';
+import {
+  createSeededRng,
+  DuelEmoteKey,
+  DuelNetMessage,
+  PvpEnemyTuple,
+  PvpSyncPayload,
+  PvpUnitTuple,
+} from '../net/DuelProtocol';
 import { PlatformSDK } from '../platform/PlatformSDK';
 import {
   ActiveSynergyInfo,
@@ -27,6 +36,7 @@ import {
   EnemyKind,
   GameMode,
   HeroKey,
+  PvPRaidKind,
   RunSummary,
   SideOwner,
   StageDef,
@@ -224,6 +234,20 @@ interface SpawnOrder {
 export interface RunState {
   stage: StageDef;
   mode: GameMode;
+  isPvp: boolean;
+  pvpSeed: number;
+  pvpMatchSeq: number;
+  pvpRivalCallsign: string;
+  pvpRivalWave: number;
+  pvpRivalKills: number;
+  pvpRivalMerges: number;
+  pvpSyncSendAcc: number;
+  pvpRaidCooldown: number;
+  pvpRaidIncomeBonus: number;
+  pvpIncomingQueue: SpawnOrder[];
+  pvpIncomingTimer: number;
+  pvpMyEmote: { text: string; timer: number } | null;
+  pvpRivalEmote: { text: string; timer: number } | null;
   wave: number;
   maxWaves: number | null;
   wavePhase: 'prep' | 'combat' | 'intermission' | 'revive_wait' | 'ended';
@@ -347,7 +371,36 @@ export class GameEngine {
 
   // ==================== RUN INITIALIZATION ====================
 
-  public startRun(stage: StageDef, mode: GameMode): void {
+  public getRunBonuses(s: RunState): ReturnType<typeof SaveManager.getEffectiveBonuses> {
+    if (!s.isPvp) {
+      return SaveManager.getEffectiveBonuses();
+    }
+    return {
+      damageMult: 1.08,
+      aspdMult: 1.05,
+      bossDmgMult: 1.12,
+      startRations: 24,
+      passiveRationBonus: 0.22 + s.pvpRaidIncomeBonus,
+      heroChanceBonus: 0.08,
+      benchShovelChanceBonus: 0.04,
+      roadSlowRatio: 0,
+      meteorLevel: 0,
+      tombRaiderLevel: 0,
+      barricadeHpMult: 1,
+      maxHearts: 8,
+      startShovels: 1,
+    };
+  }
+
+  public startRun(
+    stage: StageDef,
+    mode: GameMode,
+    pvpOpts?: { matchSeed: number; matchSeq: number; rivalCallsign: string }
+  ): void {
+    const isPvp = Boolean(pvpOpts);
+    if (isPvp) {
+      this.gameSpeed = 1;
+    }
     const meta = SaveManager.getEffectiveBonuses();
     const save = SaveManager.get();
     save.totalRuns += 1;
@@ -374,32 +427,70 @@ export class GameEngine {
       board.push(unitRow);
     }
 
-    const baseBarricadeHp = Math.round(180 * meta.barricadeHpMult);
+    const baseBarricadeHp = isPvp ? 240 : Math.round(180 * meta.barricadeHpMult);
     const emptySyn = computeSynergies([]);
 
-    // Build a focused 7-General rotation for this battle (always including any Generals with equipped weapons!)
-    // so all 12 Generals shine across runs without diluting 2-piece puzzle pairing!
-    const equippedHeroes = (Object.keys(save.equippedWeapons) as HeroKey[]).filter((hk) =>
-      Boolean(save.equippedWeapons[hk])
-    );
-    const starterHero: HeroKey =
-      save.totalRuns === 1
-        ? 'zhaoyun'
-        : equippedHeroes.length > 0 && Math.random() < 0.55
-          ? equippedHeroes[Math.floor(Math.random() * equippedHeroes.length)]
-          : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+    let starterHero: HeroKey;
+    let matchHeroes: HeroKey[];
 
-    const poolSet = new Set<HeroKey>([starterHero, ...equippedHeroes]);
-    const shuffled = [...HERO_KEYS].sort(() => Math.random() - 0.5);
-    for (const hk of shuffled) {
-      if (poolSet.size >= 7) break;
-      poolSet.add(hk);
+    if (isPvp && pvpOpts) {
+      // Deterministic shared Hero rotation & starter shard for 100% fair 1v1 PvP!
+      const rng = createSeededRng(pvpOpts.matchSeed);
+      starterHero = HERO_KEYS[Math.floor(rng() * HERO_KEYS.length)];
+      const poolSet = new Set<HeroKey>([starterHero]);
+      const copy = [...HERO_KEYS];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        const tmp = copy[i];
+        copy[i] = copy[j];
+        copy[j] = tmp;
+      }
+      for (const hk of copy) {
+        if (poolSet.size >= 7) break;
+        poolSet.add(hk);
+      }
+      matchHeroes = Array.from(poolSet);
+    } else {
+      // Build a focused 7-General rotation for this battle (always including any Generals with equipped weapons!)
+      const equippedHeroes = (Object.keys(save.equippedWeapons) as HeroKey[]).filter((hk) =>
+        Boolean(save.equippedWeapons[hk])
+      );
+      starterHero =
+        save.totalRuns === 1
+          ? 'zhaoyun'
+          : equippedHeroes.length > 0 && Math.random() < 0.55
+            ? equippedHeroes[Math.floor(Math.random() * equippedHeroes.length)]
+            : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+
+      const poolSet = new Set<HeroKey>([starterHero, ...equippedHeroes]);
+      const shuffled = [...HERO_KEYS].sort(() => Math.random() - 0.5);
+      for (const hk of shuffled) {
+        if (poolSet.size >= 7) break;
+        poolSet.add(hk);
+      }
+      matchHeroes = Array.from(poolSet);
     }
-    const matchHeroes = Array.from(poolSet);
+
+    const initHearts = isPvp ? 8 : meta.maxHearts;
+    const initRations = isPvp ? 24 : meta.startRations;
 
     this.state = {
       stage,
       mode,
+      isPvp,
+      pvpSeed: pvpOpts?.matchSeed ?? 0,
+      pvpMatchSeq: pvpOpts?.matchSeq ?? 0,
+      pvpRivalCallsign: pvpOpts?.rivalCallsign ?? '',
+      pvpRivalWave: 1,
+      pvpRivalKills: 0,
+      pvpRivalMerges: 0,
+      pvpSyncSendAcc: 0,
+      pvpRaidCooldown: 0,
+      pvpRaidIncomeBonus: 0,
+      pvpIncomingQueue: [],
+      pvpIncomingTimer: 0,
+      pvpMyEmote: null,
+      pvpRivalEmote: null,
       wave: 0,
       maxWaves: mode === 'standard' ? 10 : null,
       wavePhase: 'prep',
@@ -410,8 +501,8 @@ export class GameEngine {
       bench: [null, null, null, null, null],
       matchHeroes,
 
-      hearts: meta.maxHearts,
-      maxHearts: meta.maxHearts,
+      hearts: initHearts,
+      maxHearts: initHearts,
       playerBarricade: {
         side: 'player',
         col: stage.playerLane.barricadeCell.col,
@@ -428,21 +519,21 @@ export class GameEngine {
         side: 'ai',
         col: stage.aiLane.barricadeCell.col,
         row: stage.aiLane.barricadeCell.row,
-        hp: 260,
-        maxHp: 260,
+        hp: isPvp ? 240 : 260,
+        maxHp: isPvp ? 240 : 260,
         shakeTimer: 0,
       },
       aiActionTimer: 1.9,
       aiExcavated: 0,
       aiFortifiedOnce: false,
 
-      rations: meta.startRations,
+      rations: initRations,
       passiveRationAcc: 0,
       recruitCost: this.computeNextRecruitCost(0), // Starts at 10, rises EVERY summon!
       recruitCount: 0,
       farmLevel: 1,
       exorciseCooldown: 0,
-      shovels: 0, // Shovels spawn randomly in the 5 bench slots; extra shovels require watching Ad!
+      shovels: isPvp ? 1 : 0, // Fair +1 starting shovel in Online 2P PvP!
       shovelMode: false,
       benchShovelRolledOnce: false,
       talismanMode: false,
@@ -480,11 +571,13 @@ export class GameEngine {
     this.state.bench[0] = this.makeTile('blade', 1);
     this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
 
-    // Seed Rival AI 2 starting tiles on Top Half deploy cells
-    const aiDeploys = this.getSideCells('ai', 'deploy');
-    if (aiDeploys.length >= 2) {
-      this.placeBoardUnit(this.state, this.makeTile('blade', 1), aiDeploys[0].col, aiDeploys[0].row);
-      this.placeBoardUnit(this.state, this.makeTile('archer', 1), aiDeploys[1].col, aiDeploys[1].row);
+    // Seed Rival AI 2 starting tiles ONLY in Solo mode (in PvP, Top Half mirrors live opponent!)
+    if (!isPvp) {
+      const aiDeploys = this.getSideCells('ai', 'deploy');
+      if (aiDeploys.length >= 2) {
+        this.placeBoardUnit(this.state, this.makeTile('blade', 1), aiDeploys[0].col, aiDeploys[0].row);
+        this.placeBoardUnit(this.state, this.makeTile('archer', 1), aiDeploys[1].col, aiDeploys[1].row);
+      }
     }
 
     this.recalcSynergies();
@@ -776,6 +869,12 @@ export class GameEngine {
   }
 
   public toggleGameSpeed(): 1 | 2 {
+    if (this.state?.isPvp) {
+      this.gameSpeed = 1;
+      SoundFX.tileClack(false);
+      this.showBanner(t().bannerPvpSpeedLocked, 1.8);
+      return 1;
+    }
     this.gameSpeed = this.gameSpeed === 1 ? 2 : 1;
     SoundFX.tileClack(true);
     return this.gameSpeed;
@@ -818,21 +917,47 @@ export class GameEngine {
     const s = this.state;
     if (!s) return;
 
+    if (s.isPvp) {
+      DuelManager.flushCoalescedSnapshots();
+    }
+
     // Real-time UI & feedback timers (unaffected by 2x battle speed!)
     if (s.bannerTimer > 0) s.bannerTimer = Math.max(0, s.bannerTimer - dt);
     if (s.confirmOverwriteTimer > 0) {
       s.confirmOverwriteTimer = Math.max(0, s.confirmOverwriteTimer - dt);
     }
     if (s.screenShake > 0) s.screenShake = Math.max(0, s.screenShake - dt * 2.8);
+    if (s.pvpMyEmote) {
+      s.pvpMyEmote.timer -= dt;
+      if (s.pvpMyEmote.timer <= 0) s.pvpMyEmote = null;
+    }
+    if (s.pvpRivalEmote) {
+      s.pvpRivalEmote.timer -= dt;
+      if (s.pvpRivalEmote.timer <= 0) s.pvpRivalEmote = null;
+    }
 
-    if (this.paused || this.modalPaused || s.wavePhase === 'ended' || s.wavePhase === 'revive_wait') {
+    // In live Online 2P PvP, opening the local pause/settings popup does NOT freeze the live duel simulation!
+    const freezeSim =
+      this.paused || (!s.isPvp && this.modalPaused) || s.wavePhase === 'ended' || s.wavePhase === 'revive_wait';
+    if (freezeSim) {
       return;
     }
 
     // Sub-step simulation when at 2x speed so projectiles never tunnel!
-    const steps = this.gameSpeed;
+    const steps = s.isPvp ? 1 : this.gameSpeed;
     for (let step = 0; step < steps; step++) {
       this.stepSimulation(s, dt);
+    }
+
+    if (s.isPvp && s.wavePhase !== 'ended') {
+      s.pvpSyncSendAcc += dt;
+      if (s.pvpSyncSendAcc >= 0.11) {
+        s.pvpSyncSendAcc = 0;
+        DuelManager.sendFastSnapshot({
+          type: 'pvp_sync',
+          s: this.buildPvpSyncPayload(s),
+        });
+      }
     }
   }
 
@@ -840,9 +965,10 @@ export class GameEngine {
     if (s.wavePhase === 'ended' || s.wavePhase === 'revive_wait') return;
     if (s.supplyAdCooldown > 0) s.supplyAdCooldown = Math.max(0, s.supplyAdCooldown - dt);
     if (s.exorciseCooldown > 0) s.exorciseCooldown = Math.max(0, s.exorciseCooldown - dt);
+    if (s.pvpRaidCooldown > 0) s.pvpRaidCooldown = Math.max(0, s.pvpRaidCooldown - dt);
 
     // Scarce Granary Steamed Bun trickle (money grows slowly so every summon & merge counts!)
-    const meta = SaveManager.getEffectiveBonuses();
+    const meta = this.getRunBonuses(s);
     const rationsPerSec = 0.15 + (s.farmLevel - 1) * 0.14 + meta.passiveRationBonus;
     s.passiveRationAcc += rationsPerSec * dt;
     if (s.passiveRationAcc >= 1) {
@@ -865,7 +991,7 @@ export class GameEngine {
 
     this.updateWaveFlow(s, dt);
 
-    if (!s.aiCollapsed) {
+    if (!s.isPvp && !s.aiCollapsed) {
       this.updateRivalAI(s, dt);
     }
 
@@ -912,6 +1038,16 @@ export class GameEngine {
   // ==================== ESCALATING WAVE & BOSS SPAWNING ====================
 
   private updateWaveFlow(s: RunState, dt: number): void {
+    // Dispatch any incoming PvP Mercenary Raid enemies onto player's lane with crisp spacing!
+    if (s.pvpIncomingQueue.length > 0) {
+      s.pvpIncomingTimer -= dt;
+      while (s.pvpIncomingQueue.length > 0 && s.pvpIncomingTimer <= 0) {
+        const raidOrder = s.pvpIncomingQueue.shift()!;
+        this.spawnEnemyOnLane(s, 'player', s.stage.playerLane, raidOrder);
+        s.pvpIncomingTimer += 0.34;
+      }
+    }
+
     if (s.wavePhase === 'prep' || s.wavePhase === 'intermission') {
       s.phaseTimer -= dt;
       if (s.phaseTimer <= 0) {
@@ -930,12 +1066,24 @@ export class GameEngine {
             s.spawnTimer += s.spawnQueue[0].delay;
           }
         }
-      } else {
+      } else if (s.pvpIncomingQueue.length === 0) {
         const playerRemaining = s.enemies.some((e) => e.side === 'player');
-        const aiRemaining = !s.aiCollapsed && s.enemies.some((e) => e.side === 'ai');
+        const aiRemaining = !s.isPvp && !s.aiCollapsed && s.enemies.some((e) => e.side === 'ai');
         if (!playerRemaining && !aiRemaining) {
           if (s.maxWaves !== null && s.wave >= s.maxWaves) {
-            this.finishRun(true, s.aiCollapsed);
+            if (s.isPvp) {
+              DuelManager.sendReliable({
+                type: 'pvp_finish',
+                mSeq: s.pvpMatchSeq,
+                outcome: 'i_won_race',
+                wave: s.wave,
+                kills: s.kills,
+                merges: s.merges,
+              });
+              this.finishPvpRun(true, 'race_win');
+            } else {
+              this.finishRun(true, s.aiCollapsed);
+            }
           } else {
             s.rations += 3 + s.farmLevel;
             s.wavePhase = 'intermission';
@@ -957,6 +1105,7 @@ export class GameEngine {
     const w = s.wave;
     const isFinalBossWave = w % 10 === 0;
     const isEliteBossWave = !isFinalBossWave && w % 5 === 0;
+    const waveRng = s.isPvp ? createSeededRng(s.pvpSeed + w * 7919) : Math.random;
 
     // High-pressure wave size & tactical counter-composition escalation!
     const queue: SpawnOrder[] = [];
@@ -966,7 +1115,7 @@ export class GameEngine {
 
     for (let i = 0; i < totalCount; i++) {
       let kind: EnemyKind = 'grunt';
-      const roll = Math.random();
+      const roll = waveRng();
       if (roll < shieldChance) kind = 'shield';
       else if (roll < shieldChance + wolfChance) kind = 'wolf';
 
@@ -1051,7 +1200,7 @@ export class GameEngine {
 
   private spawnSymmetricOrder(s: RunState, order: SpawnOrder): void {
     this.spawnEnemyOnLane(s, 'player', s.stage.playerLane, order);
-    if (!s.aiCollapsed) {
+    if (!s.isPvp && !s.aiCollapsed) {
       this.spawnEnemyOnLane(s, 'ai', s.stage.aiLane, order);
     }
   }
@@ -1365,7 +1514,7 @@ export class GameEngine {
   // ==================== DRAFTING, 2-PIECE PUZZLE PAIRING & RANDOM BENCH SHOVELS ====================
 
   public getHeroDraftChance(): number {
-    const meta = SaveManager.getEffectiveBonuses();
+    const meta = this.state ? this.getRunBonuses(this.state) : SaveManager.getEffectiveBonuses();
     return Math.min(0.58, 0.32 + meta.heroChanceBonus);
   }
 
@@ -1613,7 +1762,7 @@ export class GameEngine {
     // Random Golden Shovel appearance inside one of the 5 newly summoned bench slots!
     const hasLockedStone = this.getSideCells('player', 'locked').length > 0;
     if (hasLockedStone && s.bench.length > 0) {
-      const meta = SaveManager.getEffectiveBonuses();
+      const meta = this.getRunBonuses(s);
       const shovelProb = Math.min(0.36, 0.14 + meta.benchShovelChanceBonus * 2.2);
       if (Math.random() < shovelProb) {
         const pickSlot = Math.floor(Math.random() * s.bench.length);
@@ -1731,7 +1880,7 @@ export class GameEngine {
     SoundFX.attack('thunder');
     this.showBanner(t().bannerExorciseCast, 2.2);
 
-    const meta = SaveManager.getEffectiveBonuses();
+    const meta = this.getRunBonuses(s);
     const baseStrike = (115 + s.wave * 34) * meta.damageMult * meta.bossDmgMult;
 
     const targets = foes.slice(0, 4);
@@ -1888,8 +2037,28 @@ export class GameEngine {
       return;
     }
 
+    // In Online 2P PvP, never pause for a Rewarded Ad — forge +1 Golden Shovel directly for 28 Buns!
+    if (s.isPvp) {
+      const buyCost = this.getPvpShovelBuyCost();
+      if (s.rations < buyCost) {
+        this.showBanner(t().bannerNeedRations, 1.5);
+        return;
+      }
+      s.rations -= buyCost;
+      s.shovels += 1;
+      s.shovelMode = true;
+      s.selectedSource = null;
+      SoundFX.shovelDig();
+      this.showBanner(t().bannerPvpShovelBought, 2.3);
+      return;
+    }
+
     // Extra shovels beyond random 5-slot bench drops strictly require watching an Ad!
     this.callbacks.onRequestShovelAd();
+  }
+
+  public getPvpShovelBuyCost(): number {
+    return 28;
   }
 
   private excavateLockedCell(col: number, row: number): void {
@@ -1908,7 +2077,7 @@ export class GameEngine {
       duration: 0.45,
     });
 
-    const meta = SaveManager.getEffectiveBonuses();
+    const meta = this.getRunBonuses(s);
     if (meta.tombRaiderLevel > 0) {
       const bonusBuns = 12 + meta.tombRaiderLevel * 6;
       s.rations += bonusBuns;
@@ -2107,15 +2276,19 @@ export class GameEngine {
   // ==================== COMBAT: 2-CELL CENTERS, DISTINCT TROOPS & GENERAL ATTACKS ====================
 
   private updateBoardUnits(s: RunState, dt: number): void {
-    const meta = SaveManager.getEffectiveBonuses();
+    const meta = this.getRunBonuses(s);
 
     for (let r = 0; r < s.stage.rows; r++) {
       const side: SideOwner = r < s.stage.dividerRow ? 'ai' : 'player';
       if (side === 'ai' && s.aiCollapsed) continue;
 
       const syn = side === 'player' ? s.synBonuses : s.aiSynBonuses;
-      const sideDmgScale = side === 'player' ? meta.damageMult : 1.12 + s.stage.index * 0.08;
-      const sideAspdScale = side === 'player' ? meta.aspdMult : 1.05;
+      const sideDmgScale = s.isPvp
+        ? meta.damageMult
+        : side === 'player'
+          ? meta.damageMult
+          : 1.12 + s.stage.index * 0.08;
+      const sideAspdScale = s.isPvp ? meta.aspdMult : side === 'player' ? meta.aspdMult : 1.05;
 
       for (let c = 0; c < s.stage.cols; c++) {
         const u = s.board[r][c];
@@ -2144,7 +2317,7 @@ export class GameEngine {
         const def = UNITS[u.unitId];
 
         const weapBonus =
-          side === 'player' && def.category === 'awakened' && def.heroKey
+          !s.isPvp && side === 'player' && def.category === 'awakened' && def.heroKey
             ? SaveManager.getHeroWeaponBonus(def.heroKey)
             : { weaponId: null, star: 0, isSignature: false, dmgMult: 1, aspdMult: 1 };
 
@@ -3447,7 +3620,14 @@ export class GameEngine {
   ): void {
     if (e.hp <= 0) return;
 
-    const meta = SaveManager.getEffectiveBonuses();
+    // In Online 2P PvP, Top Half ('ai') enemies are mirrored from Rival's authoritative client:
+    // keep local hit-flash visuals so Rival's mirrored troops look alive, without desyncing Rival's real HP!
+    if (s.isPvp && e.side === 'ai') {
+      e.hitFlash = 0.09;
+      return;
+    }
+
+    const meta = this.getRunBonuses(s);
     let scaled = rawDmg;
     if (e.side === 'player' && (e.isBoss || e.isMiniBoss)) {
       scaled *= meta.bossDmgMult;
@@ -3550,6 +3730,36 @@ export class GameEngine {
         e.slowTimer = Math.max(0, e.slowTimer - dt);
         if (e.slowTimer <= 0) e.slowPower = 0;
       }
+
+      // Smooth client-side road dead-reckoning for Rival's mirrored Top Half enemies in Online 2P PvP
+      if (s.isPvp && e.side === 'ai') {
+        if (e.stunTimer > 0) {
+          e.stunTimer = Math.max(0, e.stunTimer - dt);
+          continue;
+        }
+        const aiBar = s.aiBarricade;
+        if (aiBar.hp > 0 && Math.hypot(e.x - (aiBar.col + 0.5), e.y - (aiBar.row + 0.5)) <= 0.52) {
+          continue;
+        }
+        const wps = s.stage.aiLane.waypoints;
+        if (e.waypointIndex < wps.length - 1) {
+          const a = wps[e.waypointIndex];
+          const b = wps[e.waypointIndex + 1];
+          const segLen = Math.max(0.01, Math.hypot(b.col - a.col, b.row - a.row));
+          const effSpd = e.speed * (1 - Math.min(0.72, e.slowPower));
+          e.segProgress = Math.min(0.99, e.segProgress + (effSpd * dt) / segLen);
+          if (e.segProgress >= 0.99 && e.waypointIndex < wps.length - 2) {
+            e.segProgress = 0;
+            e.waypointIndex += 1;
+          }
+          const curA = wps[e.waypointIndex];
+          const curB = wps[Math.min(wps.length - 1, e.waypointIndex + 1)];
+          e.x = curA.col + 0.5 + (curB.col - curA.col) * e.segProgress;
+          e.y = curA.row + 0.5 + (curB.row - curA.row) * e.segProgress;
+        }
+        continue;
+      }
+
       if (e.burnTimer > 0) {
         e.burnTimer = Math.max(0, e.burnTimer - dt);
         this.damageEnemy(s, e, e.burnDps * dt, true, '#ef4444');
@@ -3798,6 +4008,22 @@ export class GameEngine {
 
     if (s.hearts <= 0) {
       PlatformSDK.gameplayStop();
+      if (s.isPvp) {
+        DuelManager.sendFastSnapshot({
+          type: 'pvp_sync',
+          s: this.buildPvpSyncPayload(s),
+        });
+        DuelManager.sendReliable({
+          type: 'pvp_finish',
+          mSeq: s.pvpMatchSeq,
+          outcome: 'i_lost_ko',
+          wave: s.wave,
+          kills: s.kills,
+          merges: s.merges,
+        });
+        this.finishPvpRun(false, 'self_ko');
+        return;
+      }
       if (!s.reviveUsed) {
         s.wavePhase = 'revive_wait';
         this.callbacks.onRequestRevive(true);
@@ -3848,6 +4074,484 @@ export class GameEngine {
       victory,
       aiDefeated,
       droppedShards: [...s.droppedShards],
+    });
+  }
+
+  // ==================== 2P ONLINE PVP MIRROR SYNC, MERCENARY RAIDS & EMOTES ====================
+
+  public getPvpRaidSpec(raid: PvPRaidKind): {
+    cost: number;
+    incomeBonus: number;
+    ultGain: number;
+  } {
+    if (raid === 'wolf_pack') return { cost: 18, incomeBonus: 0.1, ultGain: 8 };
+    if (raid === 'iron_shield') return { cost: 34, incomeBonus: 0.18, ultGain: 14 };
+    return { cost: 56, incomeBonus: 0.3, ultGain: 22 };
+  }
+
+  public sendPvpRaid(raid: PvPRaidKind): boolean {
+    const s = this.state;
+    if (!s || !s.isPvp || s.wavePhase === 'ended') return false;
+    if (s.pvpRaidCooldown > 0) return false;
+
+    const spec = this.getPvpRaidSpec(raid);
+    if (s.rations < spec.cost) {
+      this.showBanner(t().bannerNeedRations, 1.4);
+      return false;
+    }
+
+    s.rations -= spec.cost;
+    s.pvpRaidCooldown = 3.2;
+    s.pvpRaidIncomeBonus += spec.incomeBonus;
+    s.ultCharge = Math.min(100, s.ultCharge + spec.ultGain);
+
+    DuelManager.sendReliable({
+      type: 'pvp_raid',
+      mSeq: s.pvpMatchSeq,
+      raid,
+      senderCallsign: DuelManager.getEffectiveCallsign(),
+    });
+
+    const aiSpawn = s.stage.aiLane.waypoints[0];
+    s.effects.push({
+      kind: 'shockwave_gold',
+      x: aiSpawn.col + 0.5,
+      y: aiSpawn.row + 0.5,
+      radius: 1.15,
+      color: '#facc15',
+      timer: 0,
+      duration: 0.5,
+    });
+
+    const dict = t();
+    const raidName =
+      raid === 'wolf_pack'
+        ? dict.duelRaidWolf
+        : raid === 'iron_shield'
+          ? dict.duelRaidShield
+          : dict.duelRaidSorcerer;
+    SoundFX.recruit();
+    this.showBanner(dict.bannerPvpRaidSent(raidName, spec.incomeBonus.toFixed(2)), 2.3);
+    return true;
+  }
+
+  public sendPvpEmote(emote: DuelEmoteKey): void {
+    const s = this.state;
+    if (!s || !s.isPvp || s.wavePhase === 'ended') return;
+    const text = t().duelEmotes[emote];
+    s.pvpMyEmote = { text, timer: 2.6 };
+    SoundFX.tileClack(true);
+    DuelManager.sendReliable({
+      type: 'pvp_emote',
+      mSeq: s.pvpMatchSeq,
+      emote,
+    });
+  }
+
+  public handleOpponentDisconnectedInPvp(oppName: string): void {
+    const s = this.state;
+    if (!s || !s.isPvp || s.wavePhase === 'ended') return;
+    if (oppName) s.pvpRivalCallsign = oppName;
+    this.finishPvpRun(true, 'rival_left');
+  }
+
+  public handlePvpNetMessage(msg: DuelNetMessage): void {
+    const s = this.state;
+    if (!s || !s.isPvp || s.wavePhase === 'ended') return;
+
+    if (msg.type === 'pvp_sync') {
+      this.applyPvpSyncPayload(msg.s);
+      return;
+    }
+
+    if ('mSeq' in msg && msg.mSeq !== s.pvpMatchSeq) return;
+
+    if (msg.type === 'pvp_raid') {
+      this.receivePvpRaid(msg.raid, msg.senderCallsign || s.pvpRivalCallsign);
+      return;
+    }
+
+    if (msg.type === 'pvp_awaken') {
+      const heroTxt = getUnitDisplayText(msg.unitId);
+      SoundFX.merge(3, true);
+      this.showBanner(t().bannerRivalAwakened(heroTxt.name), 2.4);
+      s.effects.push({
+        kind: 'awaken_pillar',
+        x: s.stage.cols * 0.5,
+        y: s.stage.dividerRow * 0.5,
+        radius: 1.4,
+        color: UNITS[msg.unitId]?.accentColor || '#facc15',
+        timer: 0,
+        duration: 0.7,
+      });
+      return;
+    }
+
+    if (msg.type === 'pvp_emote') {
+      s.pvpRivalEmote = {
+        text: t().duelEmotes[msg.emote],
+        timer: 2.8,
+      };
+      SoundFX.tileClack(false);
+      return;
+    }
+
+    if (msg.type === 'pvp_finish') {
+      s.pvpRivalWave = msg.wave;
+      s.pvpRivalKills = msg.kills;
+      s.pvpRivalMerges = msg.merges;
+      if (msg.outcome === 'i_lost_ko') {
+        s.aiHearts = 0;
+        s.aiCollapsed = true;
+        this.finishPvpRun(true, 'rival_ko');
+      } else if (msg.outcome === 'i_won_race') {
+        this.finishPvpRun(false, 'race_loss');
+      }
+    }
+  }
+
+  private receivePvpRaid(raid: PvPRaidKind, senderCallsign: string): void {
+    const s = this.state;
+    if (!s || !s.isPvp) return;
+
+    const orders: SpawnOrder[] = [];
+    if (raid === 'wolf_pack') {
+      for (let i = 0; i < 3; i++) {
+        orders.push({ delay: 0.28, kind: 'wolf', bossType: 'none', isBoss: false, isMiniBoss: false });
+      }
+    } else if (raid === 'iron_shield') {
+      orders.push({ delay: 0.3, kind: 'shield', bossType: 'none', isBoss: false, isMiniBoss: false });
+      orders.push({ delay: 0.4, kind: 'shield', bossType: 'none', isBoss: false, isMiniBoss: false });
+      orders.push({ delay: 0.45, kind: 'shield', bossType: 'none', isBoss: false, isMiniBoss: true });
+    } else {
+      orders.push({
+        delay: 0.3,
+        kind: 'zhangjiao',
+        bossType: 'zhangbao',
+        isBoss: false,
+        isMiniBoss: true,
+      });
+      orders.push({ delay: 0.35, kind: 'wolf', bossType: 'none', isBoss: false, isMiniBoss: false });
+      orders.push({ delay: 0.35, kind: 'wolf', bossType: 'none', isBoss: false, isMiniBoss: false });
+    }
+
+    s.pvpIncomingQueue.push(...orders);
+    if (s.pvpIncomingTimer <= 0) {
+      s.pvpIncomingTimer = 0.08;
+    }
+
+    const wp0 = s.stage.playerLane.waypoints[0];
+    s.effects.push({
+      kind: 'shockwave_crimson',
+      x: wp0.col + 0.5,
+      y: wp0.row + 0.5,
+      radius: 1.35,
+      color: '#ef4444',
+      timer: 0,
+      duration: 0.55,
+    });
+    s.screenShake = Math.max(s.screenShake, 0.32);
+    SoundFX.alarm();
+
+    const dict = t();
+    const raidName =
+      raid === 'wolf_pack'
+        ? dict.duelRaidWolf
+        : raid === 'iron_shield'
+          ? dict.duelRaidShield
+          : dict.duelRaidSorcerer;
+    this.showBanner(dict.bannerPvpRaidIncoming(senderCallsign || dict.rivalTag, raidName), 2.8);
+  }
+
+  private buildPvpSyncPayload(s: RunState): PvpSyncPayload {
+    const dug: number[] = [];
+    const units: PvpUnitTuple[] = [];
+    const seenUids = new Set<number>();
+
+    for (let r = s.stage.dividerRow; r < s.stage.rows; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        if (s.cells[r][c] === 'deploy') {
+          dug.push(c + (r - s.stage.dividerRow) * s.stage.cols);
+        }
+        const u = s.board[r][c];
+        if (u && !seenUids.has(u.uid)) {
+          seenUids.add(u.uid);
+          units.push([
+            u.uid,
+            u.unitId,
+            u.tier,
+            u.combatLevel,
+            u.anchorCol >= 0 ? u.anchorCol : c,
+            u.anchorRow >= 0 ? u.anchorRow : r,
+            u.secCol,
+            u.secRow,
+          ]);
+        }
+      }
+    }
+
+    const foes: PvpEnemyTuple[] = [];
+    for (const e of s.enemies) {
+      if (e.side !== 'player' || e.hp <= 0) continue;
+      const flags =
+        (e.isBoss ? 1 : 0) |
+        (e.isMiniBoss ? 2 : 0) |
+        (e.slowTimer > 0 ? 4 : 0) |
+        (e.stunTimer > 0 ? 8 : 0) |
+        (e.burnTimer > 0 ? 16 : 0) |
+        (e.armorBrokenTimer > 0 ? 32 : 0);
+      foes.push([
+        e.id,
+        e.kind,
+        e.bossType,
+        e.waypointIndex,
+        Math.round(e.segProgress * 1000),
+        Math.ceil(e.hp),
+        Math.ceil(e.maxHp),
+        Math.round(e.speed * 100),
+        flags,
+      ]);
+    }
+
+    return {
+      mSeq: s.pvpMatchSeq,
+      wave: Math.max(1, s.wave),
+      hearts: s.hearts,
+      maxHearts: s.maxHearts,
+      barHp: Math.ceil(s.playerBarricade.hp),
+      barMaxHp: Math.ceil(s.playerBarricade.maxHp),
+      kills: s.kills,
+      merges: s.merges,
+      dug,
+      units,
+      foes,
+    };
+  }
+
+  private applyPvpSyncPayload(p: PvpSyncPayload): void {
+    const s = this.state;
+    if (!s || !s.isPvp || p.mSeq !== s.pvpMatchSeq || s.wavePhase === 'ended') return;
+
+    s.pvpRivalWave = p.wave;
+    s.pvpRivalKills = p.kills;
+    s.pvpRivalMerges = p.merges;
+    s.aiHearts = p.hearts;
+    s.aiMaxHearts = p.maxHearts;
+
+    if (p.barHp < s.aiBarricade.hp) {
+      s.aiBarricade.shakeTimer = 0.14;
+    }
+    s.aiBarricade.hp = p.barHp;
+    s.aiBarricade.maxHp = Math.max(1, p.barMaxHp);
+
+    // 1) Mirror Rival's excavated 'deploy' pedestals 180° onto Top Half (rows 0..4)
+    const dugMirrored = new Set<string>();
+    for (const idx of p.dug) {
+      const srcCol = idx % s.stage.cols;
+      const srcRow = s.stage.dividerRow + Math.floor(idx / s.stage.cols);
+      const mirCol = s.stage.cols - 1 - srcCol;
+      const mirRow = s.stage.rows - 1 - srcRow;
+      dugMirrored.add(`${mirCol},${mirRow}`);
+    }
+
+    for (let r = 0; r < s.stage.dividerRow; r++) {
+      const rowStr = s.stage.layout[r];
+      for (let c = 0; c < s.stage.cols; c++) {
+        const ch = rowStr[c];
+        if (ch === 'D' || ch === 'L') {
+          const isNowDeploy = ch === 'D' || dugMirrored.has(`${c},${r}`);
+          if (isNowDeploy && s.cells[r][c] === 'locked') {
+            s.effects.push({
+              kind: 'ring',
+              x: c + 0.5,
+              y: r + 0.5,
+              radius: 0.72,
+              color: '#d4af37',
+              timer: 0,
+              duration: 0.4,
+            });
+          }
+          s.cells[r][c] = isNowDeploy ? 'deploy' : 'locked';
+        }
+      }
+    }
+
+    // 2) Mirror Rival's placed Troops & 2x1 Generals 180° onto Top Half while preserving local attack/recoil timers!
+    const prevTopUnits = new Map<number, TileUnit>();
+    for (let r = 0; r < s.stage.dividerRow; r++) {
+      for (let c = 0; c < s.stage.cols; c++) {
+        const u = s.board[r][c];
+        if (u) prevTopUnits.set(u.uid, u);
+        s.board[r][c] = null;
+      }
+    }
+
+    for (const [rawUid, unitId, tier, combatLevel, aC, aR, sC, sR] of p.units) {
+      if (!UNITS[unitId]) continue;
+      const mirUid = 500_000 + rawUid;
+      const prev = prevTopUnits.get(mirUid);
+      let tile: TileUnit;
+      if (prev && prev.unitId === unitId) {
+        tile = prev;
+        if (tier > tile.tier || combatLevel > tile.combatLevel) {
+          tile.mergeAnimTimer = 0.22;
+        }
+        tile.tier = tier;
+        tile.combatLevel = combatLevel;
+        tile.maxXp = getHeroXpForNextLevel(combatLevel);
+      } else {
+        tile = this.makeTile(unitId, tier, combatLevel);
+        tile.uid = mirUid;
+      }
+
+      const mC1 = s.stage.cols - 1 - aC;
+      const mR1 = s.stage.rows - 1 - aR;
+      if (mR1 < 0 || mR1 >= s.stage.dividerRow || mC1 < 0 || mC1 >= s.stage.cols) continue;
+
+      if (tile.cellSpan === 2 && sC >= 0 && sR >= 0) {
+        const mC2 = s.stage.cols - 1 - sC;
+        const mR2 = s.stage.rows - 1 - sR;
+        if (mR2 >= 0 && mR2 < s.stage.dividerRow && mC2 >= 0 && mC2 < s.stage.cols) {
+          this.placeBoardUnit(s, tile, mC1, mR1, mC2, mR2);
+        }
+      } else {
+        this.placeBoardUnit(s, tile, mC1, mR1);
+      }
+    }
+
+    this.recalcSynergies();
+
+    // 3) Mirror Rival's live lane enemies onto `s.stage.aiLane`!
+    const prevTopFoes = new Map<number, EnemyEntity>();
+    const keptPlayerFoes: EnemyEntity[] = [];
+    for (const e of s.enemies) {
+      if (e.side === 'player') {
+        keptPlayerFoes.push(e);
+      } else {
+        prevTopFoes.set(e.id, e);
+      }
+    }
+
+    const wps = s.stage.aiLane.waypoints;
+    const seenMirFoes = new Set<number>();
+
+    for (const [rawId, kind, bossType, wpIdx, segProg1000, hp, maxHp, spd100, flags] of p.foes) {
+      const mirId = 500_000 + rawId;
+      seenMirFoes.add(mirId);
+      const prev = prevTopFoes.get(mirId);
+
+      const safeWp = Math.min(wps.length - 1, Math.max(0, wpIdx));
+      const nextWp = Math.min(wps.length - 1, safeWp + 1);
+      const segProg = Math.min(1, Math.max(0, segProg1000 / 1000));
+      const mx = wps[safeWp].col + 0.5 + (wps[nextWp].col - wps[safeWp].col) * segProg;
+      const my = wps[safeWp].row + 0.5 + (wps[nextWp].row - wps[safeWp].row) * segProg;
+
+      const isBoss = (flags & 1) !== 0;
+      const isMiniBoss = (flags & 2) !== 0;
+      const radius =
+        bossType === 'lubu'
+          ? 0.46
+          : bossType === 'zhangjiao'
+            ? 0.44
+            : bossType === 'zhangbao'
+              ? 0.41
+              : kind === 'shield'
+                ? isMiniBoss
+                  ? 0.39
+                  : 0.34
+                : kind === 'wolf'
+                  ? 0.28
+                  : 0.3;
+
+      keptPlayerFoes.push({
+        id: mirId,
+        side: 'ai',
+        kind,
+        bossType,
+        isBoss,
+        isMiniBoss,
+        waypointIndex: safeWp,
+        segProgress: segProg,
+        x: mx,
+        y: my,
+        hp,
+        maxHp: Math.max(1, maxHp),
+        speed: spd100 / 100,
+        armor: 0,
+        armorBrokenTimer: (flags & 32) !== 0 ? 0.25 : 0,
+        brittleTimer: 0,
+        rewardRations: 0,
+        hitFlash: prev && hp < prev.hp ? 0.09 : prev?.hitFlash ?? 0,
+        slowTimer: (flags & 4) !== 0 ? 0.25 : 0,
+        slowPower: (flags & 4) !== 0 ? 0.32 : 0,
+        stunTimer: (flags & 8) !== 0 ? 0.2 : 0,
+        burnTimer: (flags & 16) !== 0 ? 0.25 : 0,
+        burnDps: 0,
+        bashTimer: 0.4,
+        bossSkillTimer: 99,
+        healChantUsed: false,
+        regenTimer: 0,
+        radius,
+      });
+    }
+
+    for (const [oldId, oldFoe] of prevTopFoes.entries()) {
+      if (!seenMirFoes.has(oldId)) {
+        s.effects.push({
+          kind: 'ring',
+          x: oldFoe.x,
+          y: oldFoe.y,
+          radius: oldFoe.isBoss ? 1.0 : 0.4,
+          color: '#d4af37',
+          timer: 0,
+          duration: 0.22,
+        });
+      }
+    }
+
+    s.enemies = keptPlayerFoes;
+
+    if (p.hearts <= 0) {
+      s.aiCollapsed = true;
+      this.finishPvpRun(true, 'rival_ko');
+    }
+  }
+
+  private finishPvpRun(
+    victory: boolean,
+    reason: 'rival_ko' | 'self_ko' | 'race_win' | 'race_loss' | 'rival_left'
+  ): void {
+    const s = this.state;
+    if (!s || s.wavePhase === 'ended') return;
+    s.wavePhase = 'ended';
+    PlatformSDK.gameplayStop();
+
+    if (victory) {
+      SaveManager.markStageCleared(s.stage.id);
+      const bonusShard = SaveManager.grantRandomWeaponShard(this.pickPreferredWeaponShardId(s));
+      s.droppedShards.push(bonusShard);
+      PlatformSDK.happyTime();
+      SoundFX.fanfare();
+    }
+
+    if (DuelManager.role === 'host' && DuelManager.lobby) {
+      DuelManager.lobby.inGame = false;
+    }
+
+    this.callbacks.onRunFinished(victory, {
+      stageId: s.stage.id,
+      mode: s.mode,
+      wave: Math.max(1, s.wave),
+      kills: s.kills,
+      merges: s.merges,
+      victory,
+      aiDefeated: reason === 'rival_ko',
+      droppedShards: [...s.droppedShards],
+      isPvp: true,
+      rivalCallsign: s.pvpRivalCallsign || t().rivalTag,
+      rivalWave: Math.max(1, s.pvpRivalWave),
+      rivalKills: s.pvpRivalKills,
+      pvpEndReason: reason,
     });
   }
 
@@ -4405,6 +5109,13 @@ export class GameEngine {
           const center = this.getUnitBoardCenter(created, pair.c1, pair.r1);
           this.spawnCombineFX(center.x, center.y, 'awaken', combo.resultId);
           this.recalcSynergies();
+          if (s.isPvp) {
+            DuelManager.sendReliable({
+              type: 'pvp_awaken',
+              mSeq: s.pvpMatchSeq,
+              unitId: combo.resultId,
+            });
+          }
           return true;
         }
 
@@ -4484,6 +5195,13 @@ export class GameEngine {
         const center = this.getUnitBoardCenter(created, anchorCol, anchorRow);
         this.spawnCombineFX(center.x, center.y, 'awaken', combo.resultId);
         this.recalcSynergies();
+        if (s.isPvp) {
+          DuelManager.sendReliable({
+            type: 'pvp_awaken',
+            mSeq: s.pvpMatchSeq,
+            unitId: combo.resultId,
+          });
+        }
         return true;
       }
 

@@ -188,6 +188,10 @@ export interface ActiveSynergyInfo {
   tier: 0 | 1 | 2;
 }
 
+export type PvPRaidKind = 'wolf_pack' | 'iron_shield' | 'sorcerer_raid';
+
+export type PvPEmoteId = 'salute' | 'praise' | 'charge' | 'hold';
+
 export interface RunSummary {
   stageId: string;
   mode: GameMode;
@@ -197,4 +201,9 @@ export interface RunSummary {
   victory: boolean;
   aiDefeated: boolean;
   droppedShards: WeaponId[];
+  isPvp?: boolean;
+  rivalCallsign?: string;
+  rivalWave?: number;
+  rivalKills?: number;
+  pvpEndReason?: 'rival_ko' | 'self_ko' | 'race_win' | 'race_loss' | 'rival_left';
 }

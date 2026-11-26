@@ -41,6 +41,7 @@ interface Dict {
   gameTitle: string;
   gameSubtitle: string;
   tabStages: string;
+  tabDuel: string;
   tabArmory: string;
   tabSkills: string;
   tabCodex: string;
@@ -165,6 +166,61 @@ interface Dict {
   btnRetryStage: string;
   btnNormalClaim: string;
 
+  // === 2P ONLINE DUEL (czgame P2P / MQTT-WSS + CrazyGames v3) ===
+  duelTitle: string;
+  duelSubtitle: string;
+  duelCallsignLabel: string;
+  duelQuickMatch: string;
+  duelCreatePublic: string;
+  duelCreatePrivate: string;
+  duelJoinPlaceholder: string;
+  duelBtnJoinCode: string;
+  duelPublicHallTitle: string;
+  duelBtnRefreshHall: string;
+  duelHallEmpty: string;
+  duelHallJoinBtn: string;
+  duelConnecting: string;
+  duelRoomCodeLabel: string;
+  duelPublicBadge: string;
+  duelPrivateBadge: string;
+  duelBtnCopyCode: string;
+  duelBtnCopyLink: string;
+  duelCopiedToast: string;
+  duelSlotHost: string;
+  duelSlotGuest: string;
+  duelWaitingChallenger: string;
+  duelReadyTag: string;
+  duelNotReadyTag: string;
+  duelBtnStartMatch: string;
+  duelBtnWaitOpponent: string;
+  duelBtnToggleReady: (isReady: boolean) => string;
+  duelBtnLeaveRoom: string;
+  duelRulesTip: string;
+  duelBtnRaidPanel: string;
+  duelRaidWolf: string;
+  duelRaidShield: string;
+  duelRaidSorcerer: string;
+  duelBuyShovelTag: (cost: number) => string;
+  duelEmotes: {
+    salute: string;
+    praise: string;
+    charge: string;
+    hold: string;
+  };
+  bannerPvpRaidSent: (raidName: string, incomeBonus: string) => string;
+  bannerPvpRaidIncoming: (sender: string, raidName: string) => string;
+  bannerPvpSpeedLocked: string;
+  bannerPvpShovelBought: string;
+  pvpVictoryKoTitle: string;
+  pvpVictoryRaceTitle: string;
+  pvpVictoryForfeitTitle: string;
+  pvpDefeatKoTitle: string;
+  pvpDefeatRaceTitle: string;
+  pvpSettleVsLine: (rivalName: string, rivalWave: number, rivalKills: number) => string;
+  btnPvpRematch: string;
+  btnPvpBackRoom: string;
+  btnPvpLeaveHub: string;
+
   mockAdBadge: (placement: string) => string;
   mockAdCalling: string;
   mockAdReward: (title: string) => string;
@@ -200,6 +256,7 @@ const EN_DICT: Dict = {
   gameTitle: 'Dynasty Jade Guard',
   gameSubtitle: '1v1 Split-Board Duel · 2-Piece Hero Puzzle · Combat Leveling & Divine Armory',
   tabStages: 'Passes',
+  tabDuel: '⚔ 2P Duel',
   tabArmory: 'Divine Armory',
   tabSkills: 'Skill Shop',
   tabCodex: 'Range & Codex',
@@ -338,6 +395,65 @@ const EN_DICT: Dict = {
   btnMultClaim: 'Bonus Gold & Return',
   btnRetryStage: 'Play Stage Again',
   btnNormalClaim: 'Confirm & Return to Hub',
+
+  duelTitle: '2-Player Live Split-Board Duel',
+  duelSubtitle:
+    'Fair Competitive Rules · Synchronized Waves · Real-Time 180° Mirrored Board · Dispatch Mercenary Raids!',
+  duelCallsignLabel: 'Commander Name',
+  duelQuickMatch: '⚡ Quick Match 1v1',
+  duelCreatePublic: '🏯 Create Public Room',
+  duelCreatePrivate: '🔒 Private Friend Room',
+  duelJoinPlaceholder: '5-Char Code',
+  duelBtnJoinCode: 'Join Room',
+  duelPublicHallTitle: 'Live Open Duel Rooms',
+  duelBtnRefreshHall: '↻ Refresh',
+  duelHallEmpty: 'No open public rooms right now — click [Quick Match] or [Create Public Room] to host!',
+  duelHallJoinBtn: 'Challenge',
+  duelConnecting: 'Connecting to multi-region duel relays...',
+  duelRoomCodeLabel: 'Room Code',
+  duelPublicBadge: 'Public Hall',
+  duelPrivateBadge: 'Private Invite',
+  duelBtnCopyCode: 'Copy Code',
+  duelBtnCopyLink: '🔗 Invite Friend Link',
+  duelCopiedToast: 'Copied!',
+  duelSlotHost: 'Host (P1)',
+  duelSlotGuest: 'Challenger (P2)',
+  duelWaitingChallenger: 'Waiting for Challenger (Share Invite Link or Room Code)...',
+  duelReadyTag: '✓ READY',
+  duelNotReadyTag: 'Preparing...',
+  duelBtnStartMatch: '⚔ Launch 1v1 Duel!',
+  duelBtnWaitOpponent: 'Waiting for Challenger...',
+  duelBtnToggleReady: (isReady) => (isReady ? '✓ Ready (Waiting Host)' : 'Tap When Ready!'),
+  duelBtnLeaveRoom: 'Leave Room',
+  duelRulesTip:
+    'Fair 1v1 Rules: Equal starting Hearts & Buns · Shared Hero Pool & Wave Seed · Spend Buns in battle to Raid your rival’s lane & boost Bun income! Knock out rival’s Heir or clear Wave 10 first to win!',
+  duelBtnRaidPanel: '⚔ Raid',
+  duelRaidWolf: 'Dire Wolves',
+  duelRaidShield: 'Iron Shields',
+  duelRaidSorcerer: 'Sorcerer Boss',
+  duelBuyShovelTag: (cost) => `${cost} Buns`,
+  duelEmotes: {
+    salute: '🤜 Well Met!',
+    praise: '✦ Nice Merge!',
+    charge: '⚔ Eat My Raid!',
+    hold: '🛡 Hold Fast!',
+  },
+  bannerPvpRaidSent: (raidName, incomeBonus) =>
+    `⚔ Dispatched [${raidName}] to Rival's Lane! (Bun Tribute +${incomeBonus}/s)`,
+  bannerPvpRaidIncoming: (sender, raidName) =>
+    `⚠ ${sender} Dispatched [${raidName}] Raid onto Your Road!`,
+  bannerPvpSpeedLocked: 'Live 2P Duel is locked to 1x synchronized speed!',
+  bannerPvpShovelBought: 'Forged +1 Golden Shovel — Tap any dark stone cell to excavate!',
+  pvpVictoryKoTitle: 'Rival Heir Fallen · 2P Duel Knockout Victory!',
+  pvpVictoryRaceTitle: 'Cleared Wave 10 First · 2P Speed-Duel Victory!',
+  pvpVictoryForfeitTitle: 'Opponent Retreated · Duel Victory!',
+  pvpDefeatKoTitle: 'Royal Heir Breached · Duel Defeat',
+  pvpDefeatRaceTitle: 'Opponent Cleared Wave 10 First · Duel Defeat',
+  pvpSettleVsLine: (rivalName, rivalWave, rivalKills) =>
+    `VS ${rivalName} (Wave ${rivalWave} · ${rivalKills} Kills)`,
+  btnPvpRematch: '⚔ Instant Rematch',
+  btnPvpBackRoom: '🏯 Return to Duel Room',
+  btnPvpLeaveHub: 'Leave Room & Hub',
 
   mockAdBadge: (placement) => `Preview · Simulated Rewarded Video (${placement})`,
   mockAdCalling: 'Summoning Imperial Decree...',
@@ -621,6 +737,7 @@ const ZH_DICT: Dict = {
   gameTitle: '千里护主录 · 国风双阵塔防',
   gameSubtitle: '1V1双阵竞速 · 双拼图合武将 · 杀敌升级 · 五格随机刷铲',
   tabStages: '烽火关卡',
+  tabDuel: '⚔ 双人对战',
   tabArmory: '神兵专武阁',
   tabSkills: '秘籍技能店',
   tabCodex: '射程与合成谱',
@@ -758,6 +875,64 @@ const ZH_DICT: Dict = {
   btnMultClaim: '虎符翻倍赏金并返回',
   btnRetryStage: '再战本关',
   btnNormalClaim: '收下赏金并返回大营',
+
+  duelTitle: '双人实时同屏分阵对战',
+  duelSubtitle: '公平竞技属性 · 同频镜像棋盘 · 共享卡池波次 · 奇袭遣兵互攻！',
+  duelCallsignLabel: '统帅名号',
+  duelQuickMatch: '⚡ 快速匹配对战',
+  duelCreatePublic: '🏯 创建公开房',
+  duelCreatePrivate: '🔒 创建好友私密房',
+  duelJoinPlaceholder: '输入5位房号',
+  duelBtnJoinCode: '加入房间',
+  duelPublicHallTitle: '公开招贤对战大厅（点击即入）',
+  duelBtnRefreshHall: '↻ 刷新列表',
+  duelHallEmpty: '当前暂无等待中的公开房 —— 点击上方【快速匹配】或【创建公开房】立即摆擂！',
+  duelHallJoinBtn: '应战加入',
+  duelConnecting: '正在接入多路跨网对战信令节点...',
+  duelRoomCodeLabel: '对战房号',
+  duelPublicBadge: '公开摆擂',
+  duelPrivateBadge: '好友私密房',
+  duelBtnCopyCode: '复制房号',
+  duelBtnCopyLink: '🔗 复制邀请链接',
+  duelCopiedToast: '已复制！',
+  duelSlotHost: '擂主统帅 (P1)',
+  duelSlotGuest: '应战统帅 (P2)',
+  duelWaitingChallenger: '虚位以待对手加入（复制邀请链接或房号发给好友，或等待大厅匹配）...',
+  duelReadyTag: '✓ 已备战',
+  duelNotReadyTag: '整军中...',
+  duelBtnStartMatch: '⚔ 擂鼓开战！',
+  duelBtnWaitOpponent: '等待对手入阵...',
+  duelBtnToggleReady: (isReady) => (isReady ? '✓ 已准备（等待房主开战）' : '点击准备应战！'),
+  duelBtnLeaveRoom: '退出房间',
+  duelRulesTip:
+    '双人对战规则：双方同享 8 心公平开局、相同名将轮换池与同频刷怪种子；局内消耗馒头可向对手防线【遣兵奇袭】并永久提高自身每秒军粮产出！先击溃对手阿斗或率先斩杀第10波首领者获胜！',
+  duelBtnRaidPanel: '⚔ 奇袭',
+  duelRaidWolf: '疾风狼群',
+  duelRaidShield: '玄甲铁盾',
+  duelRaidSorcerer: '妖术张宝',
+  duelBuyShovelTag: (cost) => `${cost}馒头`,
+  duelEmotes: {
+    salute: '🤜 承让抱拳！',
+    praise: '✦ 好阵法！',
+    charge: '⚔ 奇兵突袭！',
+    hold: '🛡 稳住护主！',
+  },
+  bannerPvpRaidSent: (raidName, incomeBonus) =>
+    `⚔ 已向对手防线派出【${raidName}】！（每秒军粮进贡 +${incomeBonus}/s）`,
+  bannerPvpRaidIncoming: (sender, raidName) =>
+    `⚠ 警报！【${sender}】派出【${raidName}】奇袭我方道路！`,
+  bannerPvpSpeedLocked: '双人实时联机对战固定为 1x 公平同频流速！',
+  bannerPvpShovelBought: '军粮锻造 +1 把洛阳金铲 —— 点击我方深色石格即可开凿！',
+  pvpVictoryKoTitle: '对手阿斗失守 · 双人对战完胜！',
+  pvpVictoryRaceTitle: '率先破尽十波 · 竞速夺魁大捷！',
+  pvpVictoryForfeitTitle: '对手临阵退兵 · 不战而胜！',
+  pvpDefeatKoTitle: '鹿砦告破 · 双人对战惜败',
+  pvpDefeatRaceTitle: '对手率先斩将破关 · 竞速惜败',
+  pvpSettleVsLine: (rivalName, rivalWave, rivalKills) =>
+    `对战劲敌：${rivalName}（第 ${rivalWave} 波 · 斩敌 ${rivalKills}）`,
+  btnPvpRematch: '⚔ 原房再战一局',
+  btnPvpBackRoom: '🏯 返回对战房间',
+  btnPvpLeaveHub: '退房返回大营',
 
   mockAdBadge: (placement) => `开发预览 · 模拟激励视频 (${placement})`,
   mockAdCalling: '八百里加急传召虎符援军...',
