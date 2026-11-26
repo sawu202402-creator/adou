@@ -415,7 +415,7 @@ function buildUnitRegistry(): Record<UnitId, UnitDef> {
       synergy: sp.synergy,
       rangeShape: sp.rangeShape,
       pattern: sp.pattern,
-      baseDamage: sp.awakenedDamage,
+      baseDamage: Math.round(sp.awakenedDamage * 0.86),
       attackInterval: sp.interval,
       minRangeCells: 0,
       rangeCells: sp.range,
@@ -521,15 +521,15 @@ export function isRoadCellInCircleRange(
 }
 
 export function getHeroXpForNextLevel(combatLevel: number): number {
-  return 45 + (combatLevel - 1) * 36;
+  return 58 + (combatLevel - 1) * 45;
 }
 
 export function getCombatLevelDamageMult(combatLevel: number): number {
-  return 1 + (combatLevel - 1) * 0.14;
+  return 1 + (combatLevel - 1) * 0.11;
 }
 
 export function getCombatLevelSpeedMult(combatLevel: number): number {
-  return 1 + (combatLevel - 1) * 0.045;
+  return 1 + (combatLevel - 1) * 0.038;
 }
 
 /**

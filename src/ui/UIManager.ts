@@ -40,6 +40,15 @@ export class UIManager {
     this.modalRoot = document.createElement('div');
     this.modalRoot.className = 'modal-host';
     this.uiLayer.appendChild(this.modalRoot);
+
+    PlatformSDK.onInstallStateChange(() => {
+      if (!this.engine.state && this.modalRoot.querySelector('.hub-screen')) {
+        const btn = this.modalRoot.querySelector('#btn-hub-install') as HTMLButtonElement | null;
+        if (btn && !PlatformSDK.canShowHomeScreenShortcut()) {
+          btn.style.display = 'none';
+        }
+      }
+    });
   }
 
   public isInHub(): boolean {
@@ -143,7 +152,7 @@ export class UIManager {
         <header class="hub-header">
           <div class="brand-block">
             <div class="brand-seal">
-              <img src="./assets/vip_lord.png" alt="" class="brand-logo" />
+              <img src="./assets/app_icon_ui.png" alt="" class="brand-logo" />
             </div>
             <div>
               <h1>${dict.gameTitle}</h1>
@@ -168,6 +177,14 @@ export class UIManager {
           <div class="commander-bar">
             <span class="rank-pill">${rankTitle} · Lv.${save.commanderLevel}</span>
             <span class="gold-pill">◈ ${save.gold}</span>
+            ${
+              PlatformSDK.canShowHomeScreenShortcut()
+                ? `<button class="btn-guofeng btn-mini btn-cinnabar hub-install-btn" id="btn-hub-install" type="button">
+                    <img src="./assets/app_icon_ui.png" alt="" />
+                    <span>${dict.installAppBtn}</span>
+                  </button>`
+                : ''
+            }
             <button class="btn-guofeng btn-mini btn-jade" id="btn-hub-lang">${langLabel}</button>
           </div>
         </header>
@@ -209,6 +226,26 @@ export class UIManager {
         SaveManager.toggleLang();
         SoundFX.tileClack(true);
         this.showHomeHub();
+      };
+    }
+
+    const installBtn = this.modalRoot.querySelector('#btn-hub-install') as HTMLButtonElement | null;
+    if (installBtn) {
+      installBtn.onclick = async () => {
+        SoundFX.tileClack(true);
+        const plat = PlatformSDK.getInstallGuidePlatform();
+        // On Desktop/Edge/Chrome (non-Android), pop native PWA install dialog directly if ready;
+        // on Android/iOS/WeChat, open the crystal-clear Add-to-Home-Screen guide (with optional 1-tap button inside).
+        if (plat !== 'android' && PlatformSDK.hasNativeInstallPrompt()) {
+          const outcome = await PlatformSDK.triggerNativeInstallPrompt();
+          if (outcome === 'accepted') {
+            SoundFX.fanfare();
+            installBtn.style.display = 'none';
+            return;
+          }
+          if (outcome === 'dismissed') return;
+        }
+        this.openInstallAppGuide();
       };
     }
 
@@ -266,6 +303,95 @@ export class UIManager {
         this.showHomeHub();
       };
     });
+  }
+
+  private openInstallAppGuide(): void {
+    const hub = this.modalRoot.querySelector('.hub-screen') as HTMLElement | null;
+    if (!hub) return;
+    hub.querySelector('#install-guide-overlay')?.remove();
+
+    const dict = t();
+    const plat = PlatformSDK.getInstallGuidePlatform();
+    const step1 =
+      plat === 'wechat'
+        ? dict.installWechatStep1
+        : plat === 'ios'
+          ? dict.installIosStep1
+          : plat === 'android'
+            ? dict.installAndroidStep1
+            : dict.installDesktopStep1;
+    const step2 =
+      plat === 'wechat'
+        ? dict.installWechatStep2
+        : plat === 'ios'
+          ? dict.installIosStep2
+          : plat === 'android'
+            ? dict.installAndroidStep2
+            : dict.installDesktopStep2;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'install-guide-overlay';
+    overlay.className = 'popup-backdrop install-guide-overlay';
+    overlay.innerHTML = `
+      <div class="popup-box install-guide-card">
+        <div class="install-guide-top">
+          <div class="install-icon-preview">
+            <img src="./assets/app_icon_ui.png" alt="${dict.appShortName}" />
+            <span>${dict.appShortName}</span>
+          </div>
+          <div class="install-guide-head">
+            <span class="install-badge-pill">${dict.installBadgeTag}</span>
+            <h3>${dict.installModalTitle}</h3>
+            <p>${dict.installModalSub}</p>
+          </div>
+        </div>
+        <div class="install-steps-box">
+          <div class="install-step-item">${step1}</div>
+          <div class="install-step-item">${step2}</div>
+        </div>
+        <div class="install-guide-actions">
+          ${
+            PlatformSDK.hasNativeInstallPrompt()
+              ? `<button class="btn-guofeng btn-mini btn-cinnabar" id="btn-install-native" type="button">${dict.installNativeBtn}</button>`
+              : ''
+          }
+          <button class="btn-guofeng btn-mini btn-jade" id="btn-install-copy-url" type="button">${dict.installCopyUrlBtn}</button>
+          <button class="btn-guofeng btn-mini btn-gilt" id="btn-install-close" type="button">${dict.installGotItBtn}</button>
+        </div>
+      </div>
+    `;
+    const openedAt = performance.now();
+    hub.appendChild(overlay);
+
+    overlay.onclick = (e) => {
+      if (e.target === overlay && performance.now() - openedAt > 350) {
+        overlay.remove();
+      }
+    };
+
+    const closeBtn = overlay.querySelector('#btn-install-close') as HTMLButtonElement;
+    closeBtn.onclick = () => overlay.remove();
+
+    const nativeBtn = overlay.querySelector('#btn-install-native') as HTMLButtonElement | null;
+    if (nativeBtn) {
+      nativeBtn.onclick = async () => {
+        const out = await PlatformSDK.triggerNativeInstallPrompt();
+        if (out === 'accepted') {
+          SoundFX.fanfare();
+          overlay.remove();
+          const hubBtn = this.modalRoot.querySelector('#btn-hub-install') as HTMLElement | null;
+          if (hubBtn) hubBtn.style.display = 'none';
+        }
+      };
+    }
+
+    const copyUrlBtn = overlay.querySelector('#btn-install-copy-url') as HTMLButtonElement;
+    copyUrlBtn.onclick = async () => {
+      const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+      await this.copyTextSafe(cleanUrl);
+      SoundFX.tileClack(true);
+      copyUrlBtn.textContent = dict.installUrlCopied;
+    };
   }
 
   private renderStagesTab(): string {
@@ -1209,8 +1335,8 @@ export class UIManager {
     if (s.supplyAdCooldown <= 0) {
       const ok = await PlatformSDK.showRewardedAd('free_rations_supply', dict.adRewardSupply);
       if (ok && this.engine.state) {
-        this.engine.state.rations += 65;
-        this.engine.state.supplyAdCooldown = 35;
+        this.engine.state.rations += 38;
+        this.engine.state.supplyAdCooldown = 50;
         this.syncHUD();
       }
     }

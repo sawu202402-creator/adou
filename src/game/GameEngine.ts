@@ -366,7 +366,7 @@ export class GameEngine {
    * Sequence: 10 -> 12 -> 15 -> 19 -> 24 -> 30 -> 37 -> 45 -> 54 -> 64 -> 75...
    */
   public computeNextRecruitCost(count: number): number {
-    return 10 + count * 2 + Math.floor((count * (count - 1)) / 2);
+    return 10 + count * 3 + Math.floor((count * (count - 1)) * 0.65);
   }
 
   // ==================== RUN INITIALIZATION ====================
@@ -376,13 +376,13 @@ export class GameEngine {
       return SaveManager.getEffectiveBonuses();
     }
     return {
-      damageMult: 1.08,
-      aspdMult: 1.05,
-      bossDmgMult: 1.12,
-      startRations: 24,
-      passiveRationBonus: 0.22 + s.pvpRaidIncomeBonus,
-      heroChanceBonus: 0.08,
-      benchShovelChanceBonus: 0.04,
+      damageMult: 1.04,
+      aspdMult: 1.03,
+      bossDmgMult: 1.08,
+      startRations: 20,
+      passiveRationBonus: 0.16 + s.pvpRaidIncomeBonus,
+      heroChanceBonus: 0.015,
+      benchShovelChanceBonus: 0.03,
       roadSlowRatio: 0,
       meteorLevel: 0,
       tombRaiderLevel: 0,
@@ -446,33 +446,31 @@ export class GameEngine {
         copy[j] = tmp;
       }
       for (const hk of copy) {
-        if (poolSet.size >= 7) break;
+        if (poolSet.size >= 9) break;
         poolSet.add(hk);
       }
       matchHeroes = Array.from(poolSet);
     } else {
-      // Build a focused 7-General rotation for this battle (always including any Generals with equipped weapons!)
+      // Build a 9-General rotation for this battle (always including any Generals with equipped weapons!)
       const equippedHeroes = (Object.keys(save.equippedWeapons) as HeroKey[]).filter((hk) =>
         Boolean(save.equippedWeapons[hk])
       );
       starterHero =
-        save.totalRuns === 1
-          ? 'zhaoyun'
-          : equippedHeroes.length > 0 && Math.random() < 0.55
-            ? equippedHeroes[Math.floor(Math.random() * equippedHeroes.length)]
-            : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
+        equippedHeroes.length > 0 && Math.random() < 0.5
+          ? equippedHeroes[Math.floor(Math.random() * equippedHeroes.length)]
+          : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
 
       const poolSet = new Set<HeroKey>([starterHero, ...equippedHeroes]);
       const shuffled = [...HERO_KEYS].sort(() => Math.random() - 0.5);
       for (const hk of shuffled) {
-        if (poolSet.size >= 7) break;
+        if (poolSet.size >= 9) break;
         poolSet.add(hk);
       }
       matchHeroes = Array.from(poolSet);
     }
 
     const initHearts = isPvp ? 8 : meta.maxHearts;
-    const initRations = isPvp ? 24 : meta.startRations;
+    const initRations = isPvp ? 20 : meta.startRations;
 
     this.state = {
       stage,
@@ -567,9 +565,9 @@ export class GameEngine {
       selectedUnitInfo: null,
     };
 
-    // Lean starter hand: 1 Blade + 1 Hero Puzzle Half in bench (varies across the 12 Generals!)
+    // Grounded starter hand: 2 basic Tier-1 Troops (no free starting General shard — Generals must be earned!)
     this.state.bench[0] = this.makeTile('blade', 1);
-    this.state.bench[1] = this.makeTile(`shard1_${starterHero}`, 1);
+    this.state.bench[1] = this.makeTile('archer', 1);
 
     // Seed Rival AI 2 starting tiles ONLY in Solo mode (in PvP, Top Half mirrors live opponent!)
     if (!isPvp) {
@@ -1085,9 +1083,9 @@ export class GameEngine {
               this.finishRun(true, s.aiCollapsed);
             }
           } else {
-            s.rations += 3 + s.farmLevel;
+            s.rations += 2 + Math.floor(s.farmLevel * 0.7);
             s.wavePhase = 'intermission';
-            s.phaseTimer = 1.8;
+            s.phaseTimer = 1.6;
           }
         }
       }
@@ -1109,9 +1107,9 @@ export class GameEngine {
 
     // High-pressure wave size & tactical counter-composition escalation!
     const queue: SpawnOrder[] = [];
-    const totalCount = 11 + Math.floor(w * 3.5) + (w >= 4 ? (w - 3) * 2 : 0);
-    const shieldChance = w < 2 ? 0 : Math.min(0.5, 0.22 + (w - 2) * 0.04);
-    const wolfChance = Math.min(0.42, 0.2 + (w - 1) * 0.025);
+    const totalCount = 13 + Math.floor(w * 4.0) + (w >= 3 ? (w - 2) * 2 : 0);
+    const shieldChance = w < 2 ? 0 : Math.min(0.55, 0.26 + (w - 2) * 0.045);
+    const wolfChance = Math.min(0.42, 0.22 + (w - 1) * 0.025);
 
     for (let i = 0; i < totalCount; i++) {
       let kind: EnemyKind = 'grunt';
@@ -1119,7 +1117,7 @@ export class GameEngine {
       if (roll < shieldChance) kind = 'shield';
       else if (roll < shieldChance + wolfChance) kind = 'wolf';
 
-      const gap = Math.max(0.2, 0.78 - w * 0.046) * (kind === 'wolf' ? 0.68 : 1.0);
+      const gap = Math.max(0.18, 0.72 - w * 0.048) * (kind === 'wolf' ? 0.66 : 1.0);
       queue.push({
         delay: i === 0 ? 0.2 : gap,
         kind,
@@ -1132,15 +1130,15 @@ export class GameEngine {
     // Wave 3, 4, 6, 7, 8, 9 mid-wave Elite Armored / Sorcerer Captains!
     if (w >= 3 && !isEliteBossWave && !isFinalBossWave) {
       queue.push({
-        delay: 0.75,
+        delay: 0.7,
         kind: w <= 5 ? 'shield' : 'zhangjiao',
         bossType: w <= 5 ? 'none' : 'zhangbao',
         isBoss: false,
         isMiniBoss: true,
       });
-      if (w >= 8) {
+      if (w >= 6) {
         queue.push({
-          delay: 1.6,
+          delay: 1.4,
           kind: 'shield',
           bossType: 'none',
           isBoss: false,
@@ -1212,51 +1210,51 @@ export class GameEngine {
     order: SpawnOrder
   ): void {
     const w = s.wave;
-    const stageMult = 1 + s.stage.index * 0.35;
-    // High-pressure difficulty curve demanding counter-troops, merges, and leveled 2-cell Generals!
-    const lateSurge = w <= 2 ? 1.0 : 1 + Math.pow(w - 2, 1.28) * 0.2;
-    const waveMult = Math.pow(1.38, w - 1) * lateSurge * stageMult;
-    const spdScale = Math.min(1.62, 1 + (w - 1) * 0.04);
-    // Diminishing per-mob bun yield as wave size grows so money never snowballs!
-    const killBunTaper = 1 / (1 + Math.max(0, w - 2) * 0.12);
+    const stageMult = 1 + s.stage.index * 0.42;
+    // Steepened difficulty curve demanding counter-troops, high-tier merges, economy discipline, and General synergy!
+    const lateSurge = w <= 2 ? 1.0 : 1 + Math.pow(w - 2, 1.35) * 0.26;
+    const waveMult = Math.pow(1.46, w - 1) * lateSurge * stageMult;
+    const spdScale = Math.min(1.72, 1 + (w - 1) * 0.046);
+    // Tightened per-mob bun yield so upgrades & Camp Tent recycling truly matter!
+    const killBunTaper = 1 / (1 + Math.max(0, w - 1) * 0.16);
 
-    let hp = 135 * waveMult;
-    let speed = 1.04 * spdScale;
-    let armor = Math.min(0.3, Math.max(0, (w - 2) * 0.035));
-    let reward = 0.42 * killBunTaper;
+    let hp = 185 * waveMult;
+    let speed = 1.08 * spdScale;
+    let armor = Math.min(0.36, Math.max(0, (w - 2) * 0.042));
+    let reward = 0.34 * killBunTaper;
     let radius = 0.3;
 
     if (order.kind === 'wolf') {
-      hp = 92 * waveMult;
-      speed = 1.72 * spdScale;
+      hp = 130 * waveMult;
+      speed = 1.82 * spdScale;
       armor = 0;
-      reward = 0.42 * killBunTaper;
+      reward = 0.34 * killBunTaper;
       radius = 0.28;
     } else if (order.kind === 'shield') {
-      hp = (order.isMiniBoss ? 560 : 340) * waveMult;
-      speed = 0.78 * spdScale;
-      armor = Math.min(0.72, 0.55 + Math.max(0, w - 2) * 0.022);
-      reward = order.isMiniBoss ? 5 : 0.72 * killBunTaper;
+      hp = (order.isMiniBoss ? 840 : 490) * waveMult;
+      speed = 0.82 * spdScale;
+      armor = Math.min(0.76, 0.62 + Math.max(0, w - 2) * 0.024);
+      reward = order.isMiniBoss ? 4.5 : 0.6 * killBunTaper;
       radius = order.isMiniBoss ? 0.39 : 0.34;
     }
 
     if (order.bossType === 'zhangbao') {
-      hp = 980 * waveMult;
-      speed = 0.64 * spdScale;
-      armor = 0.35;
-      reward = 7;
+      hp = 1600 * waveMult;
+      speed = 0.68 * spdScale;
+      armor = 0.42;
+      reward = 6;
       radius = 0.41;
     } else if (order.bossType === 'zhangjiao') {
-      hp = 1850 * waveMult;
-      speed = 0.62 * spdScale;
-      armor = 0.38;
-      reward = 12;
+      hp = 3200 * waveMult;
+      speed = 0.65 * spdScale;
+      armor = 0.46;
+      reward = 10;
       radius = 0.44;
     } else if (order.bossType === 'lubu') {
-      hp = 2250 * waveMult;
-      speed = 0.66 * spdScale;
-      armor = 0.54;
-      reward = 14;
+      hp = 3950 * waveMult;
+      speed = 0.7 * spdScale;
+      armor = 0.6;
+      reward = 12;
       radius = 0.46;
     }
 
@@ -1514,8 +1512,11 @@ export class GameEngine {
   // ==================== DRAFTING, 2-PIECE PUZZLE PAIRING & RANDOM BENCH SHOVELS ====================
 
   public getHeroDraftChance(): number {
-    const meta = this.state ? this.getRunBonuses(this.state) : SaveManager.getEffectiveBonuses();
-    return Math.min(0.58, 0.32 + meta.heroChanceBonus);
+    const s = this.state;
+    const meta = s ? this.getRunBonuses(s) : SaveManager.getEffectiveBonuses();
+    // Rare General Shard appearance rate: 10.5% base per bench slot (max 18%), lower on first conscript!
+    const base = Math.min(0.18, 0.105 + meta.heroChanceBonus);
+    return s && s.recruitCount <= 1 ? Math.min(0.075, base) : base;
   }
 
   /**
@@ -1648,31 +1649,31 @@ export class GameEngine {
 
   private rollUnitForSide(side: SideOwner): UnitId {
     const s = this.state;
-    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.28;
+    const heroChance = side === 'player' ? this.getHeroDraftChance() : 0.1;
     if (s && Math.random() < heroChance) {
       const unmatched = this.findUnmatchedHeroShards(side);
       const { hasS1, hasS2 } = this.collectHeldHeroHalves(side);
 
-      // Anti-clog: if already holding >=3 unmatched halves on player (>=2 on AI), strongly pair an existing half or roll a troop!
+      // Anti-clog ONLY when holding >=3 unmatched orphan halves: modest 36% pair assist, else standard troop!
       const maxOrphans = side === 'player' ? 3 : 2;
       if (unmatched.length >= maxOrphans) {
-        if (Math.random() < 0.76) {
+        if (Math.random() < 0.36) {
           return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
         }
         return TROOP_KEYS[Math.floor(Math.random() * TROOP_KEYS.length)];
       }
 
-      const pairProb = unmatched.length >= 2 ? 0.72 : 0.58;
+      const pairProb = unmatched.length >= 2 ? 0.28 : 0.22;
       if (unmatched.length > 0 && Math.random() < pairProb) {
         return unmatched[Math.floor(Math.random() * unmatched.length)].missingId;
       }
 
-      // Allow feeding upgrade shards to already-awakened Generals below max rank/level!
+      // Modest chance to roll an upgrade shard for an already-awakened General
       const upgradeable = HERO_KEYS.filter((hk) => {
         const hero = this.findAwakenedHeroOnSide(s, side, hk);
         return Boolean(hero && (hero.tier < MAX_TILE_TIER || hero.combatLevel < MAX_HERO_COMBAT_LEVEL));
       });
-      if (upgradeable.length > 0 && Math.random() < 0.26) {
+      if (upgradeable.length > 0 && Math.random() < 0.12) {
         const uh = upgradeable[Math.floor(Math.random() * upgradeable.length)];
         return Math.random() < 0.5 ? `shard1_${uh}` : `shard2_${uh}`;
       }
@@ -1785,11 +1786,13 @@ export class GameEngine {
     const s = this.state;
     if (!s) return;
 
+    const emptyIdx = s.bench.findIndex((b) => b === null);
+    const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
+
+    // 35% chance to pair an existing orphan shard; otherwise grant 1 random shard from match pool (never 2 free halves at once!)
     const unmatched = this.findUnmatchedHeroShards('player');
-    if (unmatched.length > 0) {
-      const pair = unmatched[0];
-      const emptyIdx = s.bench.findIndex((b) => b === null);
-      const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
+    if (unmatched.length > 0 && Math.random() < 0.35) {
+      const pair = unmatched[Math.floor(Math.random() * unmatched.length)];
       s.bench[targetIdx] = this.makeTile(pair.missingId, 1);
       const txt = getUnitDisplayText(pair.missingId);
       SoundFX.merge(3, true);
@@ -1797,36 +1800,18 @@ export class GameEngine {
       return;
     }
 
+    const { hasS1, hasS2 } = this.collectHeldHeroHalves('player');
+    const freshPool = s.matchHeroes.filter(
+      (hk) => !this.findAwakenedHeroOnSide(s, 'player', hk) && !hasS1.has(hk) && !hasS2.has(hk)
+    );
     const unawakened = HERO_KEYS.filter((hk) => !this.findAwakenedHeroOnSide(s, 'player', hk));
-    if (unawakened.length > 0) {
-      const h = unawakened[Math.floor(Math.random() * unawakened.length)];
-      const slots: number[] = [];
-      for (let i = 0; i < s.bench.length; i++) {
-        if (s.bench[i] === null) slots.push(i);
-      }
-      for (let i = 0; i < s.bench.length && slots.length < 2; i++) {
-        if (!slots.includes(i)) slots.push(i);
-      }
-      s.bench[slots[0]] = this.makeTile(`shard1_${h}`, 1);
-      s.bench[slots[1]] = this.makeTile(`shard2_${h}`, 1);
-      SoundFX.merge(3, true);
-      const hName = getUnitDisplayText(`hero_${h}`).name;
-      this.showBanner(`◈ ${hName} [1/2 + 2/2]`, 2.4);
-      return;
-    }
-
-    // All 6 Generals are already on the board -> grant 2 upgrade shards for an upgradeable General!
-    const upgradeable = Array.from(this.getUpgradeableAwakenedHeroKeys());
-    const h =
-      upgradeable.length > 0
-        ? upgradeable[Math.floor(Math.random() * upgradeable.length)]
-        : HERO_KEYS[Math.floor(Math.random() * HERO_KEYS.length)];
-    const emptyIdx = s.bench.findIndex((b) => b === null);
-    const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
-    s.bench[targetIdx] = this.makeTile(`shard1_${h}`, 1);
+    const pool = freshPool.length > 0 ? freshPool : unawakened.length > 0 ? unawakened : HERO_KEYS;
+    const h = pool[Math.floor(Math.random() * pool.length)];
+    const shardId: UnitId = Math.random() < 0.5 ? `shard1_${h}` : `shard2_${h}`;
+    s.bench[targetIdx] = this.makeTile(shardId, 1);
+    const txt = getUnitDisplayText(shardId);
     SoundFX.merge(3, true);
-    const hName = getUnitDisplayText(`hero_${h}`).name;
-    this.showBanner(`✦ ${hName} [1/2]`, 2.4);
+    this.showBanner(`✦ ${txt.name}`, 2.4);
   }
 
   public getFarmCost(): number {
@@ -1853,7 +1838,7 @@ export class GameEngine {
   }
 
   public getExorciseCost(): number {
-    return 32;
+    return 36;
   }
 
   /**
@@ -1875,7 +1860,7 @@ export class GameEngine {
     if (foes.length === 0) return;
 
     s.rations -= cost;
-    s.exorciseCooldown = 16.0;
+    s.exorciseCooldown = 20.0;
     s.screenShake = 0.4;
     SoundFX.attack('thunder');
     this.showBanner(t().bannerExorciseCast, 2.2);

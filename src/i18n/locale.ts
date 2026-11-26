@@ -20,15 +20,27 @@ function detectDefaultLang(): Lang {
 
 let currentLang: Lang = detectDefaultLang();
 
+export function syncDocumentAppMeta(lang: Lang): void {
+  if (typeof document === 'undefined') return;
+  const isZh = lang === 'zh';
+  document.documentElement.lang = isZh ? 'zh-CN' : 'en';
+  document.title = isZh ? '千里护主录' : 'Dynasty Jade Guard';
+  const shortName = isZh ? '千里护主录' : 'Jade Guard';
+  const appleMeta = document.getElementById('meta-apple-title');
+  if (appleMeta) appleMeta.setAttribute('content', shortName);
+  const appMeta = document.getElementById('meta-app-name');
+  if (appMeta) appMeta.setAttribute('content', shortName);
+  const mf = document.getElementById('app-manifest');
+  if (mf) mf.setAttribute('href', isZh ? './manifest.zh.json?v=1' : './manifest.en.json?v=1');
+}
+
 export function getLang(): Lang {
   return currentLang;
 }
 
 export function setLang(lang: Lang): void {
   currentLang = lang;
-  if (typeof document !== 'undefined') {
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  }
+  syncDocumentAppMeta(lang);
 }
 
 export interface UnitText {
@@ -38,6 +50,23 @@ export interface UnitText {
 }
 
 interface Dict {
+  appShortName: string;
+  installAppBtn: string;
+  installBadgeTag: string;
+  installModalTitle: string;
+  installModalSub: string;
+  installWechatStep1: string;
+  installWechatStep2: string;
+  installIosStep1: string;
+  installIosStep2: string;
+  installAndroidStep1: string;
+  installAndroidStep2: string;
+  installDesktopStep1: string;
+  installDesktopStep2: string;
+  installNativeBtn: string;
+  installCopyUrlBtn: string;
+  installUrlCopied: string;
+  installGotItBtn: string;
   gameTitle: string;
   gameSubtitle: string;
   tabStages: string;
@@ -253,6 +282,23 @@ interface Dict {
 }
 
 const EN_DICT: Dict = {
+  appShortName: 'Jade Guard',
+  installAppBtn: '📲 Add App',
+  installBadgeTag: 'HOME SCREEN SHORTCUT',
+  installModalTitle: 'Add "Jade Guard" to Home Screen',
+  installModalSub: 'Launch full-screen with 1 tap like a native app — progress & Armory saves persist!',
+  installWechatStep1: '1. Tap the top-right [···] menu and choose "Open in Browser" (Safari / System Browser).',
+  installWechatStep2: '2. In your browser menu, tap "Add to Home Screen" to place the Jade Guard icon on your phone.',
+  installIosStep1: '1. Tap the Safari bottom [Share ↑] button.',
+  installIosStep2: '2. Scroll down and tap "Add to Home Screen" -> "Add" in the top-right corner.',
+  installAndroidStep1: '1. Open browser menu [⋮ / ≡] -> tap "Add to Home Screen" or "Create Desktop Shortcut".',
+  installAndroidStep2: '2. Confirm "Add" (ensure Browser "Home Screen Shortcuts" permission is enabled in system settings).',
+  installDesktopStep1: '1. Click the [Install App ⊕] icon on the right side of the browser address bar (Chrome / Edge).',
+  installDesktopStep2: '2. Or open browser menu [⋮] -> "Save and Share / Apps" -> "Install Jade Guard".',
+  installNativeBtn: '⚡ Install Now',
+  installCopyUrlBtn: '🔗 Copy Game URL',
+  installUrlCopied: '✓ URL Copied!',
+  installGotItBtn: 'Got It',
   gameTitle: 'Dynasty Jade Guard',
   gameSubtitle: '1v1 Split-Board Duel · 2-Piece Hero Puzzle · Combat Leveling & Divine Armory',
   tabStages: 'Passes',
@@ -305,8 +351,8 @@ const EN_DICT: Dict = {
   btnReroll: 'Refresh 5',
   btnConfirmOverwrite: 'Tap to Replace!',
   btnHeroScrollFree: 'Free Piece',
-  btnHeroScrollAd: 'Hero Puzzle',
-  btnSupplyAd: '+65 Buns',
+  btnHeroScrollAd: 'Hero Shard',
+  btnSupplyAd: '+38 Buns',
   talismanLabel: 'Talisman',
   talismanReady: 'UPGRADE!',
 
@@ -462,9 +508,9 @@ const EN_DICT: Dict = {
   mockAdCancel: 'Cancel',
 
   adRewardRevive: 'Dragon Rescue + Full Barricade Rebuild',
-  adRewardSupply: '+65 Steamed Buns',
+  adRewardSupply: '+38 Steamed Buns',
   adRewardShovels: '+2 Golden Shovels (Excavate Locked Stone Cells!)',
-  adRewardHero: 'Matching Hero Puzzle Half (Instant General Summon!)',
+  adRewardHero: '1 Random General Puzzle Shard',
   adRewardSettle: (m) => `x${m} Gold & XP Spoils`,
 
   shovelTile: {
@@ -537,8 +583,8 @@ const EN_DICT: Dict = {
     hero_decree: {
       name: 'Hero Decree',
       shortTag: 'Decree',
-      desc: 'Raises Hero Puzzle Piece appearance chance when conscripting',
-      val: (lvl) => `+${(lvl * 4.5).toFixed(1)}% Puzzle`,
+      desc: 'Slightly raises rare Hero Puzzle Piece chance when conscripting',
+      val: (lvl) => `+${(lvl * 1.5).toFixed(1)}% Shard`,
     },
     granary_art: {
       name: 'Peasant Granary',
@@ -734,6 +780,23 @@ const EN_DICT: Dict = {
 };
 
 const ZH_DICT: Dict = {
+  appShortName: '千里护主录',
+  installAppBtn: '📲 添加桌面',
+  installBadgeTag: '桌面快捷图标 · 独立全屏畅玩',
+  installModalTitle: '将【千里护主录】添加到桌面',
+  installModalSub: '生成专属桌面图标，一键全屏秒进大营，军衔与神兵存档永久保留！',
+  installWechatStep1: '① 点击右上角【···】，选择【在默认浏览器中打开】（Safari 或系统自带浏览器）。',
+  installWechatStep2: '② 在浏览器菜单中点击【添加到主屏幕 / 添加至桌面】，即可在手机桌面生成图标！',
+  installIosStep1: '① 点击 Safari 底部正中的【分享按钮 ↑】。',
+  installIosStep2: '② 向上滑动菜单，点击【添加到主屏幕】→ 右上角点击【添加】即可！',
+  installAndroidStep1: '① 点击浏览器底部或右上角菜单【⋮ / ≡】，选择【添加至主屏幕】或【创建桌面快捷方式】。',
+  installAndroidStep2: '② 点击确认添加（若未出现图标，请在手机系统设置中开启该浏览器的「桌面快捷方式」权限）。',
+  installDesktopStep1: '① 点击浏览器地址栏右侧的【安装应用 ⊕】图标（Chrome / Edge）。',
+  installDesktopStep2: '② 或点击右上角菜单【⋮】→【保存并分享 / 应用】→【安装 千里护主录】即可生成电脑桌面图标！',
+  installNativeBtn: '⚡ 系统一键安装',
+  installCopyUrlBtn: '🔗 复制游戏网址',
+  installUrlCopied: '✓ 网址已复制！',
+  installGotItBtn: '我知道了',
   gameTitle: '千里护主录 · 国风双阵塔防',
   gameSubtitle: '1V1双阵竞速 · 双拼图合武将 · 杀敌升级 · 五格随机刷铲',
   tabStages: '烽火关卡',
@@ -785,8 +848,8 @@ const ZH_DICT: Dict = {
   btnReroll: '换批征兵',
   btnConfirmOverwrite: '再点覆盖!',
   btnHeroScrollFree: '赐拼图(免)',
-  btnHeroScrollAd: '招贤拼图',
-  btnSupplyAd: '+65 馒头',
+  btnHeroScrollAd: '随机残卷',
+  btnSupplyAd: '+38 馒头',
   talismanLabel: '神兵符',
   talismanReady: '直升一阶!',
 
@@ -941,9 +1004,9 @@ const ZH_DICT: Dict = {
   mockAdCancel: '婉拒赏赐',
 
   adRewardRevive: '单骑救主清场 + 鹿砦重筑',
-  adRewardSupply: '+65 蒸笼馒头粮饷',
+  adRewardSupply: '+38 蒸笼馒头粮饷',
   adRewardShovels: '赐 2 把洛阳金铲（可立即挖开外圈石格！）',
-  adRewardHero: '定向赐予配对武将另一块拼图（即刻合成真名将！）',
+  adRewardHero: '随机赐予 1 块名将拼图残卷',
   adRewardSettle: (m) => `战功金铢与历练 x${m} 倍奉还`,
 
   shovelTile: {
@@ -1016,8 +1079,8 @@ const ZH_DICT: Dict = {
     hero_decree: {
       name: '招贤金榜',
       shortTag: '招贤',
-      desc: '永久提高征兵刷出武将【左右拼图】的概率，更快合成真名将',
-      val: (lvl) => `拼图率 +${(lvl * 4.5).toFixed(1)}%`,
+      desc: '小幅提高征兵刷出稀有武将拼图的概率',
+      val: (lvl) => `拼图率 +${(lvl * 1.5).toFixed(1)}%`,
     },
     granary_art: {
       name: '屯田农政',

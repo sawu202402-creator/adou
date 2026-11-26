@@ -263,9 +263,9 @@ class SaveService {
       aspdMult: 1 + sk.haste_scroll * 0.09,
       meteorLevel: sk.meteor_art,
       tombRaiderLevel: sk.tomb_raider,
-      bossDmgMult: 1 + sk.exorcist_seal * 0.18,
-      heroChanceBonus: sk.hero_decree * 0.035,
-      roadSlowRatio: sk.frost_inkstone > 0 ? Math.min(0.28, 0.08 + sk.frost_inkstone * 0.035) : 0,
+      bossDmgMult: 1 + sk.exorcist_seal * 0.16,
+      heroChanceBonus: sk.hero_decree * 0.015,
+      roadSlowRatio: sk.frost_inkstone > 0 ? Math.min(0.24, 0.06 + sk.frost_inkstone * 0.03) : 0,
       startShovels: 0,
       benchShovelChanceBonus: sk.tomb_raider * 0.02,
     };

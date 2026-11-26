@@ -6,12 +6,47 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <title>Dynasty Jade Guard | 千里护主录</title>
-    <link rel="icon" type="image/png" href="./assets/vip_lord.png" />
+    <meta name="theme-color" content="#1c1917" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta id="meta-apple-title" name="apple-mobile-web-app-title" content="Jade Guard" />
+    <meta id="meta-app-name" name="application-name" content="Jade Guard" />
+    <title>Dynasty Jade Guard</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=1" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=1" />
+    <link id="app-manifest" rel="manifest" href="./manifest.json?v=1" />
     <script>
-      if (location.hostname.endsWith('github.io') && !location.pathname.includes('/dist/')) {
-        location.replace('./dist/' + location.search + location.hash);
-      }
+      (function () {
+        if (location.hostname.endsWith('github.io') && !location.pathname.includes('/dist/')) {
+          location.replace('./dist/' + location.search + location.hash);
+          return;
+        }
+        var lang = 'en';
+        try {
+          var raw = localStorage.getItem('dynasty_jade_guard_save_v2');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && (parsed.lang === 'zh' || parsed.lang === 'en')) {
+              lang = parsed.lang;
+            } else if ((navigator.language || '').toLowerCase().indexOf('zh') === 0) {
+              lang = 'zh';
+            }
+          } else if ((navigator.language || '').toLowerCase().indexOf('zh') === 0) {
+            lang = 'zh';
+          }
+        } catch (e) {}
+        var isZh = lang === 'zh';
+        document.documentElement.lang = isZh ? 'zh-CN' : 'en';
+        document.title = isZh ? '千里护主录' : 'Dynasty Jade Guard';
+        var shortName = isZh ? '千里护主录' : 'Jade Guard';
+        var appleMeta = document.getElementById('meta-apple-title');
+        if (appleMeta) appleMeta.setAttribute('content', shortName);
+        var appMeta = document.getElementById('meta-app-name');
+        if (appMeta) appMeta.setAttribute('content', shortName);
+        var mf = document.getElementById('app-manifest');
+        if (mf) mf.setAttribute('href', isZh ? './manifest.zh.json?v=1' : './manifest.en.json?v=1');
+      })();
     </script>
     <!-- CrazyGames SDK v3 (async non-blocking load, auto-falls back to local mock in offline/dev) -->
     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async></script>
